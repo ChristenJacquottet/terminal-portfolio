@@ -1,11 +1,12 @@
 {
   "ascii": [
-    "███████╗██╗  ██╗███████╗██╗     ██╗",
-    "██╔════╝██║  ██║██╔════╝██║     ██║",
-    "███████╗███████║█████╗  ██║     ██║",
-    "╚════██║██╔══██║██╔══╝  ██║     ██║",
-    "███████║██║  ██║███████╗███████╗███████╗",
-    "╚══════╝╚═╝  ╚═╝╚══════╝╚══════╝╚══════╝"
+    " ██████╗██╗  ██╗██████╗ ██╗███████╗████████╗███████╗███╗   ██╗",
+    "██╔════╝██║  ██║██╔══██╗██║██╔════╝╚══██╔══╝██╔════╝████╗  ██║",
+    "██║     ███████║██████╔╝██║███████╗   ██║   █████╗  ██╔██╗ ██║",
+    "██║     ██╔══██║██╔══██╗██║╚════██║   ██║   ██╔══╝  ██║╚██╗██║",
+    "╚██████╗██║  ██║██║  ██║██║███████║   ██║   ███████╗██║ ╚████║",
+    " ╚═════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝╚══════╝   ╚═╝   ╚══════╝╚═╝  ╚═══╝",
+    "                                                              "
   ],
   "title": "WebShell",
   "username": "visitor",
@@ -13,44 +14,59 @@
   "password": "050823",
   "repoLink": "https://github.com/nasan016/webshell",
   "social": {
-    "email": "your@email.com",
-    "github": "yourgithub",
-    "linkedin": "you"
+    "email": "info@christenjacquottet.com",
+    "github": "christenjacquottet",
+    "linkedin": "christenjacquottet"
   },
-  "aboutGreeting": "Hi stranger. Welcome to WebShell.",
+  "aboutGreeting": "Hi I'm Christen. I'm an autodidactic technologist who enjoys problem solving.",
   "projects": [
     [
-      "GofeR",
-      "Vue.js reactivity in Go.",
-      "https://github.com/nasan016/gofer"
+      "ARTIE GPT",
+      "Artificially intelligent bartender.",
+      "https://insider.lermaagency.com/chad-gpt/"
     ],
     [
-      "WebShell",
-      "Terminal styled website.",
-      "https://github.com/nasan016/webshell"
+      "DIGIMODEL",
+      "Interoperable branded avatars.",
+      "https://lermaagency.com/digimodel/"
+    ],
+    [
+      "LERMA/ HQ",
+      "Virtual office experience in the Roblox.",
+      "https://www.roblox.com/games/11597042038/LERMA-HQ"
+    ],
+    [
+      "He Gets Us",
+      "New way to explore Jesus.",
+      "https://hegetsus.com/"
+    ],
+    [
+      "Somos MEL",
+      "Hispanic-led communications agency.",
+      "https://somosmel.com/"
     ]
   ],
   "colors": {
-    "background": "#0C0623",
+    "background": "#000000",
     "foreground": "#F8DDE5",
-    "banner": "#FF9951",
+    "banner": "#00FF00",
     "border": {
       "visible": true,
-      "color": "#FFADE2"
+      "color": "#F8DDE5"
     },
     "prompt": {
-      "default": "#A5A7A7",
-      "user": "#FE6BC9",
-      "host": "#70FDFF",
-      "input": "#FF7685"
+      "default": "#00FF00",
+      "user": "#55FFFF",
+      "host": "#FF55FF",
+      "input": "#00FF00"
     },
     "link": {
-      "text": "#B6AAEE",
-      "highlightColor": "#FFADE2",
-      "highlightText": "#0C0623"
+      "text": "#5555FF",
+      "highlightColor": "#00FF00",
+      "highlightText": "#000000"
     },
     "commands": {
-      "textColor": "#FD9BDB"
+      "textColor": "#00FF00"
     }
   }
 }

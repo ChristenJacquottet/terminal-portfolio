@@ -2,7 +2,7 @@ const helpObj = {
   "commands": [
     [
     "'about'",
-    "Who made this website?",
+    "Who is Christen?",
     ],
     [
       "'projects'",
