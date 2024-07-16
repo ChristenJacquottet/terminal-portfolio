@@ -17,12 +17,6 @@ Create your own terminal styled website! Check out [term.nasan.dev](https://term
 * **[Esc]** to clear the input line.
 * **[↑][↓]** to scroll through your command history.
 
-## ???
-<div align="center">
-  <img alt="banner" src="https://raw.githubusercontent.com/nasan016/webshell/main/res/secret.png">
-</div>
-How did we get here?
-
 ## Configuration
 
 Most of the configuration is done in the `config.json` file.
@@ -30,38 +24,39 @@ Most of the configuration is done in the `config.json` file.
 ```json
 {
   "ascii": [
-    "██████╗ ██╗   ██╗ ██████╗",
-    "██╔══██╗██║   ██║██╔════╝",
-    "██║  ██║██║   ██║██║  ███╗",
-    "██║  ██║██║   ██║██║   ██║",
-    "██████╔╝╚██████╔╝╚██████╔╝",
-    "╚═════╝  ╚═════╝  ╚═════╝",
+    " ██████╗██╗  ██╗██████╗ ██╗███████╗████████╗███████╗███╗   ██╗",
+    "██╔════╝██║  ██║██╔══██╗██║██╔════╝╚══██╔══╝██╔════╝████╗  ██║",
+    "██║     ███████║██████╔╝██║███████╗   ██║   █████╗  ██╔██╗ ██║",
+    "██║     ██╔══██║██╔══██╗██║╚════██║   ██║   ██╔══╝  ██║╚██╗██║",
+    "╚██████╗██║  ██║██║  ██║██║███████║   ██║   ███████╗██║ ╚████║",
+    " ╚═════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝╚══════╝   ╚═╝   ╚══════╝╚═╝  ╚═══╝",
+    "                                                              "
   ],
-  "title": "Dug's Terminal",
-  "username": "guest",
-  "hostname": "dug.dev",
-  "password": "squirrel",
-  "repoLink": "https://github.com/nasan016/webshell",
+  "title": "christen's terminal",
+  "username": "visitor",
+  "hostname": "chris.dev",
+  "password": "050823",
+  "repoLink": "https://github.com/christenjacquottet/terminal-portfolio",
   "social": {
-    "email": "dug@pixar.com",
-    "github": "dugfromup",
-    "linkedin": "dugthedog"
+    "email": "info@christenjacquottet.com",
+    "github": "christenjacquottet",
+    "linkedin": "christenjacquottet"
   },
-  "aboutGreeting": "My name is Dug. I have just met you.",
+  "aboutGreeting": "Hi I'm Christen. I'm an autodidactic technologist who enjoys problem solving.",
   "projects": [
     [
-      "Project Name",
-      "Project Description",
-      "Project Link"
+      "ARTIE GPT",
+      "Artificially intelligent bartender.",
+      "https://insider.lermaagency.com/chad-gpt/"
     ],
     [
-      "Another Project Name",
-      "Another Project Description",
-      "Another Project Link"
+      "DIGIMODEL",
+      "Interoperable branded avatars.",
+      "https://lermaagency.com/digimodel/"
     ]
   ],
   "colors": {
-      ...
+   ...
   }
 }
 ```
@@ -70,7 +65,7 @@ Most of the configuration is done in the `config.json` file.
 
 Clone the repository
 ```shell
-git clone https://github.com/nasan016/webshell.git
+git clone https://github.com/ChristenJacquottet/terminal-portfolio.git
 ```
 Go to the project directory
 ```shell
