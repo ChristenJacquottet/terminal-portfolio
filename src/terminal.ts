@@ -27,7 +27,7 @@ export class Terminal {
     private prompt: HTMLElement,
     private mirror: HTMLElement,
     private input: HTMLInputElement,
-    private title: HTMLElement,
+    private onStepBack: () => void,
   ) {
     try {
       this.hist = JSON.parse(store.get("cjsh.history") ?? "[]");
@@ -50,6 +50,7 @@ export class Terminal {
         const t = Math.floor((performance.now() - this.started) / 1000);
         return `${Math.floor(t / 3600)}:${String(Math.floor(t / 60) % 60).padStart(2, "0")}:${String(t % 60).padStart(2, "0")} (this visit)`;
       },
+      stepBack: () => this.onStepBack(),
       open: (url) => {
         if (url.startsWith("mailto:")) window.location.href = url;
         else window.open(url, "_blank", "noopener,noreferrer");
@@ -93,9 +94,13 @@ export class Terminal {
       b.dataset.run = span.run;
       return b;
     }
-    if (!cls) return document.createTextNode(span.t);
+    if (!cls && !span.color) return document.createTextNode(span.t);
     const el = document.createElement("span");
-    el.className = cls;
+    if (cls) el.className = cls;
+    if (span.color) {
+      el.style.color = span.color;
+      el.style.textShadow = "none";
+    }
     el.textContent = span.t;
     return el;
   }
@@ -159,9 +164,7 @@ export class Terminal {
 
   renderPrompt() {
     this.prompt.replaceChildren(...this.promptSpans().map((s) => this.span(s)));
-    const where = `${USER}@${HOST}: ${display(this.cwd)}`;
-    this.title.textContent = where;
-    document.title = where;
+    document.title = `${USER}@${HOST}: ${display(this.cwd)}`;
     this.renderMirror();
   }
 

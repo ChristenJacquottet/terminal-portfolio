@@ -1,7 +1,7 @@
 export type Tone = "fg" | "dim" | "bright" | "accent" | "err";
 
 /** A run of text. `href` makes it a link; `run` makes it a button that types and runs a command. */
-export type Span = { t: string; c?: Tone; href?: string; run?: string };
+export type Span = { t: string; c?: Tone; href?: string; run?: string; color?: string };
 
 export type Block =
   | { kind: "art"; rows: string[]; maxHeight?: number }
@@ -13,6 +13,7 @@ export type Line = Span[] | Block;
 export const s = (t: string, c?: Tone): Span => ({ t, c });
 export const link = (t: string, href: string, c?: Tone): Span => ({ t, href, c });
 export const run = (t: string, cmd = t, c?: Tone): Span => ({ t, run: cmd, c });
+export const swatch = (color: string): Span => ({ t: "██", color });
 
 export const isBlock = (line: Line): line is Block => !Array.isArray(line);
 export const text = (line: Line): string => (isBlock(line) ? "" : line.map((span) => span.t).join(""));

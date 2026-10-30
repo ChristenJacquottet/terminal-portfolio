@@ -1,5 +1,6 @@
 import { EMPLOYER, FOLDERS, OPEN, SOCIAL, fileName, profile, projects, site, type Project } from "./content";
 import { link, run, s, type Line } from "./output";
+import { crtOn, currentTheme } from "./themes";
 
 export type FileNode = { kind: "file"; name: string; read: () => Line[]; url?: string; project?: Project; summary?: string };
 export type DirNode = { kind: "dir"; name: string; children: Map<string, Node>; summary?: string };
@@ -35,6 +36,15 @@ function build(): DirNode {
   const me = dir("christen");
   add(root, home);
   add(home, me);
+
+  add(
+    me,
+    file(".cjshrc", () => [
+      [s("# cjsh settings. change them with the commands, not by hand.", "dim")],
+      [s("theme ", "accent"), s(currentTheme())],
+      [s("crt   ", "accent"), s(crtOn() ? "on" : "off")],
+    ], { summary: "shell settings" }),
+  );
 
   add(
     me,

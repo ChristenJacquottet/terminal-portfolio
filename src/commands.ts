@@ -1,13 +1,16 @@
 import { EMPLOYER, FOLDERS, HOST, SOCIAL, STACK, USER, art, endYear, fileName, profile, projects } from "./content";
 import { HOME, display, findFile, lookup, resolve, type DirNode, type Node } from "./fs";
-import { isBlock, link, pad, run, s, text, type Line, type Span } from "./output";
+import { isBlock, link, pad, run, s, swatch, text, type Line, type Span } from "./output";
 import { THEMES, crtOn, currentTheme, isTheme, nextTheme, setCrt, setTheme } from "./themes";
+import { MODEL_CREDIT } from "./credit";
 
 export interface TermApi {
   clear(): void;
   history(): string[];
   uptime(): string;
   open(url: string): void;
+  /** Leave the screen and look at the desk (loads the 3D scene). */
+  stepBack(): void;
 }
 
 export interface Ctx {
@@ -46,8 +49,8 @@ function entryLine(node: Node, path: string, long: boolean, nameWidth: number): 
   return [s(pad(kind, 11), "dim"), name, padding, s(node.summary ?? "", "dim")];
 }
 
-function list(d: DirNode, path: string, opts: { long: boolean; byTime: boolean }): Line[] {
-  let entries = [...d.children.values()];
+function list(d: DirNode, path: string, opts: { long: boolean; byTime: boolean; all?: boolean }): Line[] {
+  let entries = [...d.children.values()].filter((n) => opts.all || !n.name.startsWith("."));
   entries.sort((a, b) => Number(b.kind === "dir") - Number(a.kind === "dir"));
   if (opts.byTime) {
     const year = (n: Node) => (n.kind === "file" && n.project ? endYear(n.project.year) : 0);
@@ -67,7 +70,7 @@ function list(d: DirNode, path: string, opts: { long: boolean; byTime: boolean }
 }
 
 function tree(d: DirNode, path: string, prefix = ""): Line[] {
-  const entries = [...d.children.values()];
+  const entries = [...d.children.values()].filter((n) => !n.name.startsWith("."));
   return entries.flatMap((node, i) => {
     const last = i === entries.length - 1;
     const branch = s(prefix + (last ? "└── " : "├── "), "dim");
@@ -133,7 +136,7 @@ export const COMMANDS: Record<string, Command> = {
         [],
         ...visible.map(([name, c]): Line => [run(name, name, "accent"), s(" ".repeat(width - name.length)), s(c.desc)]),
         [],
-        [s("try: ", "dim"), run("ls -l ~/shipped"), s(" · ", "dim"), run("grep voice"), s(" · ", "dim"), run("cat ~/shipped/world-cup-host"), s(" · ", "dim"), run("theme amber")],
+        [s("try: ", "dim"), run("ls -l ~/shipped"), s(" · ", "dim"), run("grep voice"), s(" · ", "dim"), run("theme amber"), s(" · ", "dim"), run("exit")],
       ];
     },
   },
@@ -174,8 +177,8 @@ export const COMMANDS: Record<string, Command> = {
   },
 
   ls: {
-    desc: "list a folder (-l details, -t newest first)",
-    usage: "ls [-lt] [path]",
+    desc: "list a folder (-l details, -t newest first, -a dotfiles)",
+    usage: "ls [-alt] [path]",
     run: (args, ctx) => {
       const f = flags(args);
       const target = operands(args)[0];
@@ -183,7 +186,7 @@ export const COMMANDS: Record<string, Command> = {
       const node = lookup(path);
       if (!node) return err(`ls: ${target}: no such file or directory`);
       if (node.kind === "file") return [entryLine(node, path, f.has("l"), node.name.length + 2)];
-      return list(node, path, { long: f.has("l"), byTime: f.has("t") });
+      return list(node, path, { long: f.has("l"), byTime: f.has("t"), all: f.has("a") });
     },
   },
 
@@ -289,20 +292,26 @@ export const COMMANDS: Record<string, Command> = {
   },
 
   theme: {
-    desc: "change colours: github, phosphor, amber, vhs, dos",
+    desc: "colour scheme (github, phosphor, amber, homebrew, pro, solarized, dracula, dos)",
     usage: "theme [name | next]",
     run: (args) => {
       const name = operands(args)[0];
-      if (!name)
+      if (!name) {
+        const width = Math.max(...THEMES.map((t) => t.name.length)) + 2;
         return [
-          ...THEMES.map((t): Line => [s(t.name === currentTheme() ? "● " : "  ", "accent"), run(pad(t.name, 10), `theme ${t.name}`, "bright"), s(t.label.split(": ")[1], "dim")]),
+          ...THEMES.map((t): Line => [
+            s(t.name === currentTheme() ? "* " : "  ", "accent"),
+            run(pad(t.name, width), `theme ${t.name}`, t.name === currentTheme() ? "bright" : "fg"),
+            ...t.ansi.map(swatch),
+            s(`  ${t.about}`, "dim"),
+          ]),
           [],
-          [s("also: ", "dim"), run("theme next"), s(" · ", "dim"), run(crtOn() ? "crt off" : "crt on"), s(" · or the swatches in the title bar", "dim")],
+          [s("usage: theme <name> · theme next · crt on|off   saved to ", "dim"), run("~/.cjshrc", "cat ~/.cjshrc", "dim")],
         ];
+      }
       const target = name === "next" ? nextTheme() : name;
-      if (!isTheme(target)) return err(`theme: no theme called "${name}". try theme`);
+      if (!isTheme(target)) return err(`theme: unknown scheme '${name}'. run theme to list them`);
       setTheme(target);
-      return [[s("theme → ", "dim"), s(target, "accent")]];
     },
   },
 
@@ -313,7 +322,6 @@ export const COMMANDS: Record<string, Command> = {
       const arg = operands(args)[0];
       const on = arg === "on" ? true : arg === "off" ? false : !crtOn();
       setCrt(on);
-      return [[s("crt → ", "dim"), s(on ? "on" : "off", "accent")]];
     },
   },
 
@@ -358,8 +366,24 @@ export const COMMANDS: Record<string, Command> = {
     },
   },
 
-  exit: { desc: "", hidden: true, run: () => [[s("there is no exit, only ", "dim"), run("open site")]] },
+  exit: {
+    desc: "step back from the screen and look at the desk",
+    run: (_, ctx) => {
+      ctx.term.stepBack();
+      return [[s("logout", "dim")]];
+    },
+  },
   logout: { desc: "", hidden: true, run: (_, ctx) => COMMANDS.exit.run([], ctx) },
+
+  credits: {
+    desc: "who made what",
+    run: () => [
+      [s("code, copy and case studies  ", "dim"), s(profile.name)],
+      [s("3d model                     ", "dim"), link(`“${MODEL_CREDIT.title}”`, MODEL_CREDIT.url), s(` by ${MODEL_CREDIT.author}, `), link(MODEL_CREDIT.license, MODEL_CREDIT.licenseUrl)],
+      [s("fonts                        ", "dim"), s("IBM Plex Mono, VT323 (SIL Open Font License)")],
+      [s("first version                ", "dim"), link("WebShell", "https://github.com/nasan016/webshell"), s(" by Nathaniel Macapinlac (MIT)")],
+    ],
+  },
   rm: { desc: "", hidden: true, run: () => err("rm: permission denied. everything in here shipped.") },
   vim: { desc: "", hidden: true, run: () => [[s("you're in vim now. good luck getting out. ", "dim"), run(":q")]] },
   vi: { desc: "", hidden: true, run: (_, ctx) => COMMANDS.vim.run([], ctx) },

@@ -12,34 +12,20 @@
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=VT323&display=swap" rel="stylesheet" />
   </head>
   <body>
-    <div class="monitor">
-      <div class="screen" id="screen">
-        <header class="titlebar">
-          <span class="titlebar-side">cjsh</span>
-          <span class="title" id="title">christen@imagination: ~</span>
-          <nav class="controls" aria-label="Display settings">
-            <span class="controls-label">theme</span>
-            <span class="swatches" id="swatches"></span>
-            <button type="button" class="crt-toggle" id="crt-toggle" aria-pressed="true">crt</button>
-          </nav>
-        </header>
+    <!-- The 3D desk mounts here on `exit`; nothing 3D loads until then. -->
+    <div class="desk" id="desk" hidden></div>
 
-        <main class="term" id="term">
-          <div class="output" id="output" role="log" aria-live="polite" aria-label="Terminal output"></div>
-          <div class="prompt-line" id="prompt-line"><span class="prompt" id="prompt"></span><span class="mirror" id="mirror" aria-hidden="true"></span><input id="input" class="input" type="text" aria-label="Type a command" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go" /></div>
-        </main>
-
-        <div class="fx fx-scan" aria-hidden="true"></div>
-        <div class="fx fx-noise" aria-hidden="true"></div>
-        <div class="fx fx-roll" aria-hidden="true"></div>
-        <div class="fx fx-vignette" aria-hidden="true"></div>
-        <div class="osd" aria-hidden="true">
-          <span class="osd-play">PLAY ▶</span>
-          <span class="osd-time"><span>SP</span> <span id="timecode">0:00:00</span></span>
-          <span class="osd-date" id="osd-date"></span>
-        </div>
-      </div>
+    <div class="screen" id="screen">
+      <main class="term" id="term">
+        <div class="output" id="output" role="log" aria-live="polite" aria-label="Terminal output"></div>
+        <div class="prompt-line" id="prompt-line"><span class="prompt" id="prompt"></span><span class="mirror" id="mirror" aria-hidden="true"></span><input id="input" class="input" type="text" aria-label="Type a command" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go" /></div>
+      </main>
+      <div class="fx fx-scan" aria-hidden="true"></div>
+      <div class="fx fx-vignette" aria-hidden="true"></div>
     </div>
+
+    <p class="desk-hint" id="desk-hint" hidden>click the screen to sit back down · drag to look around</p>
+    <p class="credit" id="credit" hidden></p>
     <noscript>
       <p>This terminal needs JavaScript. The full portfolio is at <a href="https://christenjacquottet.com">christenjacquottet.com</a>.</p>
     </noscript>

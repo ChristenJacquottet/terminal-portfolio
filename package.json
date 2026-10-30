@@ -8,10 +8,16 @@
     "sync": "node scripts/sync-content.mjs",
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "model": "scripts/build-model.sh"
   },
   "devDependencies": {
+    "@gltf-transform/cli": "4.5.1",
+    "@types/three": "0.186.0",
     "typescript": "^5.2.2",
     "vite": "^5.0.0"
+  },
+  "dependencies": {
+    "three": "0.186.1"
   }
 }
