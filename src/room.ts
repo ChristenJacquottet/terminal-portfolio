@@ -146,10 +146,10 @@ export function buildRoom(scene: Scene, assets: RoomAssets, computer: Box3): Roo
   );
   scene.add(frame);
 
-  // Venetian blinds, mostly down with the slats tilted open: the city's light comes through in stripes.
+  // Venetian blinds, half up with the slats tilted open: sun straight in below, in stripes above.
   const slatMat = new MeshStandardMaterial({ color: "#d9d0bd", roughness: 0.6, metalness: 0 });
   const slatW = w - 0.03;
-  const bottom = win.y0 + h * 0.2;
+  const bottom = win.y0 + h * 0.5; // raised halfway: the low sun comes straight in under them
   const pitch = 0.021;
   const count = Math.floor((win.y1 - 0.05 - bottom) / pitch);
   const slats = new InstancedMesh(new BoxGeometry(slatW, 0.0012, 0.024), slatMat, count);
@@ -184,8 +184,11 @@ export function buildRoom(scene: Scene, assets: RoomAssets, computer: Box3): Roo
   // wall casts a shadow, so it lands as a window-shaped patch on the desk, striped by the blinds.
   // Its shadow map is drawn once (and again when something moves), never per frame; see desk.ts.
   const sun = new DirectionalLight("#6f8fc7", 0.55);
-  sun.position.set(cx - 1.3, cy + 0.75, wallZ - 2.2);
-  sun.target.position.set(0.25, 0, computer.max.z);
+  // Aimed through the middle of the window at the desk, so its light actually gets in.
+  const patch = new Vector3(-0.15, 0, computer.max.z - 0.05);
+  const through = new Vector3(cx, cy - 0.1, wallZ - depth / 2);
+  sun.position.copy(through).addScaledVector(through.clone().sub(patch), 2.5);
+  sun.target.position.copy(patch);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
   Object.assign(sun.shadow.camera, { left: -1.8, right: 1.8, top: 1.4, bottom: -1.4, near: 0.5, far: 6 });
@@ -218,7 +221,7 @@ export function buildRoom(scene: Scene, assets: RoomAssets, computer: Box3): Roo
     desk: { minX: deskBox.min.x, maxX: deskBox.max.x, backZ: deskBox.min.z, frontZ: deskBox.max.z },
     setTime(time) {
       // Dusk: the low sun through the blinds, warm. Night: the moon and the city, cool and dim.
-      const look = time === "dusk" ? { sun: ["#ffb46e", 2.6], bounce: ["#ffb780", 0.45], tint: "#d8d0c8" } : { sun: ["#6f8fc7", 0.55], bounce: ["#7d8fc4", 0.18], tint: "#ffffff" };
+      const look = time === "dusk" ? { sun: ["#ffb46e", 3.4], bounce: ["#ffb780", 0.45], tint: "#d8d0c8" } : { sun: ["#6f8fc7", 0.55], bounce: ["#7d8fc4", 0.18], tint: "#ffffff" };
       sun.color.set(look.sun[0] as string);
       sun.intensity = look.sun[1] as number;
       bounce.color.set(look.bounce[0] as string);
