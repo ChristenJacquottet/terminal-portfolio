@@ -8,11 +8,11 @@
 # The order matters: src/props.ts reads the merged scenes in this order.
 set -euo pipefail
 src="${1:?usage: scripts/build-props.sh path/to/downloads}"
-# name | source | texture size
+# name | source | texture size | "parts" keeps the model's pieces as separate named nodes (src/props.ts rearranges them)
 props=(
   "lamp|desk_lamp_arm_01/desk_lamp_arm_01_1k.gltf|512"
-  "cassette|portable_cassette_player/portable_cassette_player_1k.gltf|512"
-  "pens|stationery_supplies/stationery_supplies_1k.gltf|256"
+  "cassette|portable_cassette_player/portable_cassette_player_1k.gltf|512|parts"
+  "pens|stationery_supplies/stationery_supplies_1k.gltf|256|parts"
   "spectacles|round_spectacles/round_spectacles_1k.gltf|256"
   "duck|rubber_duck_toy/rubber_duck_toy_1k.gltf|256"
   "camera|Camera_01/Camera_01_1k.gltf|512"
@@ -36,8 +36,10 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 names=()
 for entry in "${props[@]}"; do
-  IFS='|' read -r name path size <<<"$entry"
-  npx --no-install gltf-transform optimize "$src/$path" "$tmp/$name.glb" --compress false --texture-compress webp --texture-size "$size" --simplify false
+  IFS='|' read -r name path size parts <<<"$entry"
+  keep=()
+  [ "${parts:-}" = parts ] && keep=(--flatten false --join false)
+  npx --no-install gltf-transform optimize "$src/$path" "$tmp/$name.glb" --compress false --texture-compress webp --texture-size "$size" --simplify false "${keep[@]+"${keep[@]}"}"
   names+=("$tmp/$name.glb")
 done
 npx --no-install gltf-transform merge "${names[@]}" "$tmp/merged.glb"

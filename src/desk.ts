@@ -34,6 +34,7 @@ import {
   Box3,
   Matrix3,
   Matrix4,
+  PCFShadowMap,
   type Object3D,
 } from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
@@ -265,7 +266,12 @@ export async function createDesk(opts: {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
   renderer.outputColorSpace = SRGBColorSpace;
   renderer.toneMapping = ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.05;
+  renderer.toneMappingExposure = 0.95;
+  // Real shadows from the window and the lamp, but drawn only when something moves (see `relight`):
+  // between those, orbiting and idling cost the same as without them.
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = PCFShadowMap;
+  renderer.shadowMap.autoUpdate = false;
   const css = new CSS3DRenderer();
   css.domElement.className = "desk-css";
   host.append(css.domElement, renderer.domElement);
@@ -274,11 +280,17 @@ export async function createDesk(opts: {
   scene.background = new Color("#0b0907");
   const pmrem = new PMREMGenerator(renderer);
   scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-  scene.environmentIntensity = 0.28;
+  scene.environmentIntensity = 0.1; // a dim room: the window and the lamp do the lighting
   pmrem.dispose();
 
-  scene.add(new HemisphereLight("#ffeedd", "#1a120c", 0.35));
-  const lamp = new SpotLight("#ffd29a", 14, 6, 0.55, 0.75, 2);
+  scene.add(new HemisphereLight("#d9c9b8", "#120c08", 0.1));
+  const lamp = new SpotLight("#ffcf8f", 14, 6, 0.55, 0.6, 2);
+  lamp.castShadow = true;
+  lamp.shadow.mapSize.set(1024, 1024);
+  lamp.shadow.camera.near = 0.05;
+  lamp.shadow.bias = -0.0006;
+  lamp.shadow.normalBias = 0.01;
+  lamp.shadow.radius = 4;
   lamp.position.set(-0.9, 1.5, 0.7);
   lamp.target.position.set(0, 0.15, 0);
   scene.add(lamp, lamp.target, contactShadow());
@@ -404,6 +416,12 @@ export async function createDesk(opts: {
     running = true;
     requestAnimationFrame(frame);
   }
+  /** Something in the scene moved or arrived: redraw the shadow maps on the next frame. */
+  function relight() {
+    renderer.shadowMap.needsUpdate = true;
+    request();
+  }
+  relight();
   controls.addEventListener("change", request);
   window.addEventListener("resize", () => {
     if (!host.hidden) resize();
@@ -553,11 +571,11 @@ export async function createDesk(opts: {
 
   // The rest of the desk streams in after the computer; each piece just asks for a frame.
   const props = new Map<string, Object3D>();
-  const propsReady = loaded ? addProps(scene, roomLoader, bounds, room, lamp, props, request) : Promise.resolve();
+  const propsReady = loaded ? addProps(scene, roomLoader, bounds, room, lamp, props, relight) : Promise.resolve();
   // `?edit`: the layout editor, for arranging the props (never loaded otherwise).
   if (editing && loaded) {
     void Promise.all([import("./editor"), propsReady]).then(([{ startEditor }]) =>
-      startEditor({ scene, camera, canvas, controls, props, request, sitDown: () => api.sitDown() }),
+      startEditor({ scene, camera, canvas, controls, props, request: relight, sitDown: () => api.sitDown() }),
     );
   }
 

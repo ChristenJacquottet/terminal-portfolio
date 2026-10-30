@@ -3,10 +3,13 @@
 // (`?edit`, see editor.ts). Visitors only ever get the committed file; the editor's unsaved
 // changes live in this browser's localStorage until they're saved.
 import type { Object3D } from "three";
-import locked from "./layout.json";
+import lockedJson from "./layout.json";
 
 export type Pose = { p: [number, number, number]; r: [number, number, number]; s: number; hidden?: boolean };
 export type Layout = Record<string, Pose>;
+
+/** The committed layout (JSON infers number[] for the tuples). */
+export const locked = lockedJson as unknown as Layout;
 
 const KEY = "desk-layout-draft";
 export const editing = new URLSearchParams(location.search).has("edit");
@@ -29,7 +32,7 @@ export function saveDraft(layout: Layout) {
 
 /** The committed layout, plus the editor's draft when editing. */
 export function currentLayout(): Layout {
-  return editing ? { ...(locked as Layout), ...draft() } : (locked as Layout);
+  return editing ? { ...locked, ...draft() } : locked;
 }
 
 const round = (n: number) => Math.round(n * 1000) / 1000;

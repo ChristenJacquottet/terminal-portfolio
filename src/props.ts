@@ -64,7 +64,7 @@ function canvas(w: number, h: number, draw: (g: CanvasRenderingContext2D) => voi
 }
 
 /** Soft blob shadow under a prop (no realtime shadows anywhere). */
-function blob(width: number, depth: number, strength = 0.6): Mesh {
+function blob(width: number, depth: number, strength = 0.42): Mesh {
   const map = canvas(64, 64, (g) => {
     const grad = g.createRadialGradient(32, 32, 2, 32, 32, 32);
     grad.addColorStop(0, `rgba(0,0,0,${strength})`);
@@ -111,6 +111,53 @@ function hang(object: Object3D, x: number, y: number, wallZ: number, height: num
   object.position.sub(new Vector3(c.x, c.y, box.min.z));
   holder.position.set(x, y, wallZ + 0.002);
   return holder;
+}
+
+/**
+ * Pulls the named pieces out of a model, baked into its own space. Poly Haven's kits are laid out
+ * like a product shot (pens floating in a row, the tape standing beside the player), so the desk
+ * re-arranges them as things would really lie. Returns null when a piece is missing.
+ */
+function piece(root: Object3D, name: string, center = false): Group | null {
+  const node = root.getObjectByName(name);
+  if (!node) return null;
+  root.updateMatrixWorld(true);
+  const g = new Group();
+  node.traverse((o) => {
+    const m = o as Mesh;
+    if (m.isMesh) g.add(new Mesh(m.geometry.clone().applyMatrix4(m.matrixWorld), m.material));
+  });
+  if (center) {
+    const c = new Box3().setFromObject(g).getCenter(new Vector3());
+    g.children.forEach((m) => (m as Mesh).geometry.translate(-c.x, -c.y, -c.z));
+  }
+  return g;
+}
+
+/** The pencil cup with its pens and pencils standing in it, leaning on the rim, points up. */
+function penCup(kit: Object3D): Group | null {
+  const cup = piece(kit, "stationery_supplies_pencilcup", true);
+  if (!cup) return null;
+  const g = new Group();
+  const cupBox = new Box3().setFromObject(cup);
+  cup.position.y = -cupBox.min.y;
+  g.add(cup);
+  const inside = ["pen_red", "pencil_new_a", "pen_blue", "pencil_used", "pen_fancy"];
+  inside.forEach((name, i) => {
+    const pen = piece(kit, `stationery_supplies_${name}`, true);
+    if (!pen) return;
+    const length = new Box3().setFromObject(pen).getSize(new Vector3()).x;
+    const a = (i / inside.length) * Math.PI * 2 + 0.4;
+    const pivot = new Group(); // at the pen's foot, on the cup floor
+    pivot.position.set(-Math.cos(a) * 0.018, 0.006, -Math.sin(a) * 0.018);
+    pen.rotation.set(i * 1.7, 0, -Math.PI / 2, "ZYX"); // spun about its own length, then stood up, sharpened end up
+    pen.position.y = length / 2;
+    pivot.add(pen);
+    // lean outwards, towards the far side of the rim
+    pivot.rotation.set(Math.sin(a) * 0.38, 0, -Math.cos(a) * 0.38);
+    g.add(pivot);
+  });
+  return g;
 }
 
 // ── made in code ──────────────────────────────────────────────────────────────────────────
@@ -609,6 +656,13 @@ export async function addProps(scene: Scene, loader: GLTFLoader, bounds: Box3, r
   const put = (name: string, o: Object3D) => {
     o.name = name;
     o.userData.home = poseOf(o); // where the code put it, for the editor's reset
+    o.traverse((m) => {
+      const mesh = m as Mesh;
+      if (!mesh.isMesh) return;
+      const soft = (mesh.material as MeshStandardMaterial).transparent;
+      mesh.castShadow = name !== "lamp" && !soft;
+      mesh.receiveShadow = !soft;
+    });
     applyPose(o, layout[name]);
     props.set(name, o);
     scene.add(o);
@@ -664,9 +718,33 @@ export async function addProps(scene: Scene, loader: GLTFLoader, bounds: Box3, r
   add("super8", (o) => place(o, min.x - 0.42, max.z + 0.06, { height: 0.17, rotY: 0.9 }));
   add("spectacles", (o) => place(o, min.x + 0.1, max.z + 0.14, { width: 0.13, rotY: 0.35, y: 0.0115 }));
   add("duck", (o) => place(o, min.x - 0.08, max.z - 0.17, { height: 0.065, rotY: 0.6 }));
-  add("cassette", (o) => place(o, max.x + 0.12, back + 0.14, { width: 0.16, rotY: -0.5 }));
+  if (byName.cassette) {
+    // The Walkman on its back, lid up, with its tape out on the desk beside it.
+    const kit = byName.cassette;
+    const tape = piece(kit, "portable_cassette_player_casette", true);
+    const body = new Group();
+    for (const name of ["portable_cassette_player", "portable_cassette_player_lid"]) {
+      const p = piece(kit, name);
+      if (p) body.add(p);
+    }
+    const player = tape && body.children.length ? body : kit;
+    player.rotation.x = -Math.PI / 2;
+    put("cassette", place(player, max.x + 0.3, front - 0.14, { width: 0.13, rotY: -0.5 }));
+    if (tape && player === body) {
+      tape.rotation.x = -Math.PI / 2;
+      put("tape", place(tape, max.x + 0.43, front - 0.2, { width: 0.1, rotY: 0.35 }));
+    }
+  }
   add("phone", (o) => place(o, max.x + 0.36, back + 0.24, { height: 0.11, rotY: -0.45 }));
-  add("pens", (o) => place(o, max.x + 0.08, back + 0.36, { width: 0.15, rotY: 0.9 }));
+  if (byName.pens) {
+    const kit = byName.pens;
+    const cup = penCup(kit);
+    put("pens", cup ? place(cup, max.x + 0.24, back + 0.08, { height: 0.17, rotY: 0.9 }) : place(kit, max.x + 0.08, back + 0.36, { width: 0.15, rotY: 0.9 }));
+    const eraser = piece(kit, "stationery_supplies_eraser", true);
+    if (eraser) put("eraser", place(eraser, max.x + 0.32, back + 0.2, { width: 0.044, rotY: 0.4 }));
+    const pencil = piece(kit, "stationery_supplies_pencil_old", true);
+    if (pencil) put("pencil", place(pencil, min.x - 0.08, max.z + 0.33, { width: 0.094, rotY: -0.3 }));
+  }
   add("camera", (o) => place(o, max.x + 0.2, max.z + 0.1, { width: 0.15, rotY: -0.7 }));
   add("cube", (o) => place(o, min.x - 0.25, max.z + 0.2, { height: 0.057, rotY: 0.5 }));
   add("plant", (o) => place(o, room.desk.maxX - 0.13, back + 0.13, { height: 0.24 }));

@@ -6,6 +6,8 @@ import {
   BoxGeometry,
   CanvasTexture,
   DirectionalLight,
+  DoubleSide,
+  PointLight,
   Group,
   InstancedMesh,
   Mesh,
@@ -138,10 +140,10 @@ export function buildRoom(scene: Scene, assets: RoomAssets, computer: Box3): Roo
   );
   scene.add(frame);
 
-  // Venetian blinds, raised a little past halfway, slats tilted open.
+  // Venetian blinds, mostly down with the slats tilted open: the low sun comes through in stripes.
   const slatMat = new MeshStandardMaterial({ color: "#efe7d4", roughness: 0.5, metalness: 0.15 });
   const slatW = w - 0.03;
-  const bottom = win.y0 + h * 0.42;
+  const bottom = win.y0 + h * 0.2;
   const pitch = 0.021;
   const count = Math.floor((win.y1 - 0.05 - bottom) / pitch);
   const slats = new InstancedMesh(new BoxGeometry(slatW, 0.0012, 0.024), slatMat, count);
@@ -168,11 +170,34 @@ export function buildRoom(scene: Scene, assets: RoomAssets, computer: Box3): Roo
   view.position.set(cx + 0.2, win.y0 - 0.28 + 4.3 * 0.05, wallZ - 2.2);
   scene.add(view);
 
-  // Late sun through the window: a warm key from behind, which rims the computer and the props.
-  const sun = new DirectionalLight("#ffc48a", 0.9);
-  sun.position.set(cx + 0.6, cy + 1.2, wallZ - 2);
-  sun.target.position.set(0, 0, computer.max.z);
+  // Late sun, low and from the right, through the window only: the wall casts a shadow, so the
+  // light lands as a window-shaped patch across the desk and the computer, striped by the blinds.
+  // Its shadow map is drawn once (and again when something moves), never per frame; see desk.ts.
+  const sun = new DirectionalLight("#ffb46e", 3.2);
+  sun.position.set(cx + 1.5, cy + 0.75, wallZ - 2.2);
+  sun.target.position.set(-0.2, 0, computer.max.z);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  Object.assign(sun.shadow.camera, { left: -1.8, right: 1.8, top: 1.4, bottom: -1.4, near: 0.5, far: 6 });
+  sun.shadow.bias = -0.0004;
+  sun.shadow.normalBias = 0.015;
+  sun.shadow.radius = 3;
   scene.add(sun, sun.target);
+  // The sun bouncing off the sill and the desk: a soft warm wash on the wall by the window, so the
+  // far side of the room falls off into shadow instead of being evenly lit.
+  const bounce = new PointLight("#ffb780", 0.5, 2.4, 1.6);
+  bounce.position.set(cx - 0.2, win.y0 + 0.1, wallZ + 0.45);
+  scene.add(bounce);
+
+  // Everything in the room takes shadows; the window and its blinds cast them, and so does the
+  // wall (from behind, so both sides). The painted view outside stays out of it.
+  scene.traverse((o) => {
+    const mesh = o as Mesh;
+    if (!mesh.isMesh || mesh === view || (mesh.material as MeshStandardMaterial).transparent) return;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+  });
+  (wall.material as MeshStandardMaterial).shadowSide = DoubleSide;
 
   return {
     windowCenter: new Vector3(cx, cy, wallZ - depth),

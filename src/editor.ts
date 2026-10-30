@@ -3,11 +3,10 @@
 // Every change is kept as a draft in this browser; "save" writes src/layout.json through the dev
 // server (vite.config.ts), and "copy" puts the same JSON on the clipboard to paste anywhere.
 // Loaded only in edit mode, so visitors never download it.
-import { Box3Helper, Box3, Raycaster, Vector2, type Object3D, type PerspectiveCamera, type Scene } from "three";
+import { Box3Helper, Box3, Raycaster, Vector2, Vector3, type Object3D, type PerspectiveCamera, type Scene } from "three";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import locked from "./layout.json";
-import { applyPose, draft, poseOf, saveDraft, type Layout, type Pose } from "./layout";
+import { applyPose, draft, locked, poseOf, saveDraft, type Layout, type Pose } from "./layout";
 
 type Mode = "translate" | "rotate" | "scale";
 
@@ -61,6 +60,7 @@ export function startEditor(opts: {
       <button data-mode="scale" title="S">scale</button>
       <button data-act="hide" title="H">hide</button>
       <button data-act="reset" title="where the code puts it">reset</button>
+      <button data-act="focus" title="F">focus</button>
     </div>
     <div class="editor-row editor-fields" data-fields>
       <label>x <input data-f="x" type="number" step="0.01"></label>
@@ -75,7 +75,7 @@ export function startEditor(opts: {
       <button data-act="discard">discard draft</button>
       <button data-act="sit">sit down</button>
     </div>
-    <p class="editor-status" data-status>G move · R rotate · S scale · H hide · shift snaps · esc deselects · right-drag pans</p>`;
+    <p class="editor-status" data-status>G move · R rotate · S scale · H hide · F focus · shift snaps · esc deselects · right-drag pans</p>`;
   host.append(panel);
   const $ = <T extends HTMLElement>(sel: string) => panel.querySelector(sel) as T;
   const pick = $<HTMLSelectElement>("[data-pick]");
@@ -129,7 +129,7 @@ export function startEditor(opts: {
   }
 
   function merged(): Layout {
-    return { ...(locked as Layout), ...changes };
+    return { ...locked, ...changes };
   }
 
   // ── gizmo ─────────────────────────────────────────────────────────────────────────────
@@ -202,6 +202,19 @@ export function startEditor(opts: {
       o.visible = !o.visible;
       changed();
     },
+    focus() {
+      // Look straight at the selection from close by, keeping the current viewing direction.
+      const o = selected ? props.get(selected) : null;
+      if (!o) return;
+      const b = new Box3().setFromObject(o);
+      const center = b.getCenter(new Vector3());
+      const size = b.getSize(new Vector3()).length();
+      const dir = camera.position.clone().sub(controls.target).normalize();
+      controls.target.copy(center);
+      camera.position.copy(center).addScaledVector(dir, Math.max(0.25, size * 2.2));
+      controls.update();
+      request();
+    },
     reset() {
       const o = selected ? props.get(selected) : null;
       if (!o || !selected) return;
@@ -231,7 +244,7 @@ export function startEditor(opts: {
       if (!window.confirm("throw away every unsaved change and go back to src/layout.json?")) return;
       for (const name of Object.keys(changes)) {
         const o = props.get(name);
-        if (o) applyPose(o, (locked as Layout)[name] ?? home.get(name));
+        if (o) applyPose(o, locked[name] ?? home.get(name));
         delete changes[name];
       }
       saveDraft(changes);
@@ -258,6 +271,7 @@ export function startEditor(opts: {
     if (key === "r" || key === "e") setMode("rotate");
     if (key === "s") setMode("scale");
     if (key === "h") act.hide();
+    if (key === "f") act.focus();
     if (key === "escape") select(null);
   });
   window.addEventListener("keyup", (e) => {
