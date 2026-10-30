@@ -410,6 +410,7 @@ export async function createDesk(opts: {
   }
 
   let seated = true;
+  let transitioning = false;
   holder.addEventListener("click", () => {
     if (!seated) void api.sitDown();
   });
@@ -424,7 +425,8 @@ export async function createDesk(opts: {
     },
 
     async stepBack() {
-      if (!seated) return;
+      if (!seated || transitioning) return;
+      transitioning = true;
       seated = false;
       host.hidden = false;
       resize();
@@ -449,10 +451,12 @@ export async function createDesk(opts: {
       controls.enabled = true;
       if (hint) hint.hidden = false;
       if (credit && loaded) credit.hidden = false;
+      transitioning = false;
     },
 
     async sitDown() {
-      if (seated) return;
+      if (seated || transitioning) return;
+      transitioning = true;
       controls.enabled = false;
       if (hint) hint.hidden = true;
       if (credit) credit.hidden = true;
@@ -467,6 +471,7 @@ export async function createDesk(opts: {
       release();
       host.hidden = true;
       seated = true;
+      transitioning = false;
       opts.onSitDown();
     },
   };
