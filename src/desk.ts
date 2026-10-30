@@ -50,6 +50,7 @@ import { MODEL_CREDIT } from "./credit";
 import { editing } from "./layout";
 import { fileName, projects } from "./content";
 import { display, findFile } from "./fs";
+import type { Cue } from "./audio";
 import { createInteractions, type Drive } from "./interact";
 import { addProps, type Disk } from "./props";
 import { buildRoom, loadRoom } from "./room";
@@ -295,8 +296,14 @@ export async function createDesk(opts: {
   onProgress: (fraction: number) => void;
   /** Types a command into the terminal (a floppy opens its project, the phone runs contact). */
   run: (command: string) => void;
-  sfx?: (cue: string) => void;
-  music?: (on: boolean) => void;
+  /** The sound layer (audio.ts); the desk works silently without it. */
+  sound?: {
+    play(cue: Cue): void;
+    music(on: boolean): Promise<void>;
+    loop(name: "room" | "hum", on: boolean): void;
+    setInside(t: number): void;
+    mount(parent: HTMLElement): void;
+  };
 }): Promise<Desk> {
   const { host, screenEl } = opts;
 
@@ -652,6 +659,7 @@ export async function createDesk(opts: {
     for (const p of ["width", "height", "inset", "transform", "transition", "opacity"] as const) screenEl.style.removeProperty(p === "inset" ? "inset" : p);
   };
 
+  opts.sound?.mount(host); // the mute button, shown with the desk
   const hint = document.getElementById("desk-hint");
   const credit = document.getElementById("credit");
   if (credit && loaded) {
@@ -736,8 +744,8 @@ export async function createDesk(opts: {
     lamp,
     flash,
     drive,
-    sfx: (cue) => opts.sfx?.(cue),
-    music: (on) => opts.music?.(on),
+    sfx: (cue) => opts.sound?.play(cue as Cue),
+    music: (on) => void opts.sound?.music(on),
     sitDownAndRun: async (command) => {
       await api.sitDown();
       opts.run(command);
@@ -770,9 +778,13 @@ export async function createDesk(opts: {
       await nextFrame();
       await Promise.all([animateScreen(close.rect, 380, "cubic-bezier(.45,0,.8,.5)"), fadeMask(mask, 1, 0, 380)]);
 
-      // Hand the element to CSS3D; at the close-up pose it projects onto the same rect.
+      // Hand the element to CSS3D; at the close-up pose it projects onto the same rect. The room's
+      // sound opens up as you lean back.
       release();
       moveScreen(holder);
+      opts.sound?.loop("room", true);
+      opts.sound?.loop("hum", true);
+      opts.sound?.setInside(0);
       await fly(widePose(), 1700, 1, easeOut);
       controls.enabled = true;
       if (hint) hint.hidden = editing; // the editor panel has its own help
@@ -788,6 +800,7 @@ export async function createDesk(opts: {
       if (hint) hint.hidden = true;
       if (credit) credit.hidden = true;
       const close = closeUp();
+      opts.sound?.setInside(1);
       await fly(close, 1200, 0, easeIn);
 
       // Back out of CSS3D onto the same rect, in the glass's shape, then grow to fill the window,

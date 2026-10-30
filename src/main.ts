@@ -1,4 +1,5 @@
 import "./style.css";
+import { audio, mountSoundToggle } from "./audio";
 import { EMPLOYER, art, profile } from "./content";
 import type { Desk } from "./desk";
 import { run, s, type Line } from "./output";
@@ -24,6 +25,13 @@ function stepBack() {
       glow: currentScheme().fg,
       onProgress: () => {},
       run: (command) => void term.type(command, 12),
+      sound: {
+        play: (cue) => audio.play(cue),
+        music: (on) => audio.music(on),
+        loop: (name, on) => audio.loop(name, on),
+        setInside: (t) => audio.setInside(t),
+        mount: (parent) => void mountSoundToggle(parent),
+      },
       onSitDown: () => {
         term.print([[s(`Last login: ${stamp(new Date())} on ttys000`, "dim")]]);
         term.focus();

@@ -78,6 +78,9 @@ function ensureContext(): AudioContext | null {
 
 function onGesture(e: Event) {
   if (!e.isTrusted) return;
+  // Some keys (Escape, modifiers) aren't a gesture the browser lets audio start on: wait for one that is.
+  const activation = (navigator as Navigator & { userActivation?: { isActive: boolean } }).userActivation;
+  if (activation && !activation.isActive) return;
   unlocked = true;
   if (!muted) ensureContext();
 }
