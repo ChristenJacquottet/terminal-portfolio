@@ -2,19 +2,22 @@
 // Made with Natural Earth. Free vector and raster map data @ naturalearthdata.com.
 //
 // Renders public/textures/world-map.webp (4096×2048) and research/map/preview.png (1600×800)
-// from Natural Earth 1:50m Admin-0 Countries in Robinson projection.
+// from Natural Earth 1:50m Admin-0 Countries in a rectangular Miller cylindrical projection (80°S–84°N).
 
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { geoArea, geoCentroid, geoGraticule, geoPath } from "d3-geo";
-import { geoRobinson } from "d3-geo-projection";
+import { geoArea, geoCentroid, geoGraticule, geoPath, geoProjection } from "d3-geo";
 import shapefile from "shapefile";
 import sharp from "sharp";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const W = 4096;
 const H = 2048;
+const TITLE_H = 114;
+const MAP_H = H - TITLE_H;
+const LAT_NORTH = 84;
+const LAT_SOUTH = -80;
 
 const arg = (name, fallback) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -24,29 +27,31 @@ const arg = (name, fallback) => {
 const paletteFile = path.join(root, "art", "palette.json");
 const deskPalette = JSON.parse(fs.readFileSync(paletteFile, "utf8")).swatches;
 
-// Fixed map palette rooted in art/palette.json: five distinct warm pastels tinted towards cream-paper (#ece2cc).
+// Fixed map palette rooted in art/palette.json: richer warm 80s pastels blended onto cream-paper (#ece2cc), never neon.
 const COLORS = {
   paper: deskPalette["cream-paper"].color, // #ece2cc
-  paperLight: "#f1e8d4",
-  titleBand: "#efe6d1",
-  ocean: "#b8cfd6", // soft muted sea blue, warm-shifted to sit on cream paper
-  oceanEdge: "#aec6ce",
-  antarctica: "#f2ece0",
+  paperLight: "#f3ead6",
+  titleBand: "#ece2cc",
+  ocean: "#a8c6d2", // soft sea blue matching wallMap sheet base (#a9c6d6)
+  oceanCenter: "#b3d0db",
+  oceanDeep: "#9bbbc8",
+  antarctica: "#f1ebe0",
   pastels: [
-    "#e3af96", // warm apricot-coral (tomato #b8412c + cream-paper #ece2cc)
-    "#ead08f", // warm butter-ochre (mustard #d39b32 + cream-paper #ece2cc)
-    "#b6ccb3", // soft sage-celadon (teal #2f6f6b + mustard + cream-paper)
-    "#dab4bf", // vintage dusty rose (tomato + taylor-purple #4b2e83 + cream-paper)
-    "#d8c19e", // warm fawn-buff (cork #a87a4f / beige-plastic #d6c9ab + cream-paper)
+    "#e09a78", // warm coral-terracotta (tomato #b8412c + cream-paper)
+    "#e8c26b", // warm golden-mustard (mustard #d39b32 + cream-paper)
+    "#9bc096", // warm meadow-sage green (teal #2f6f6b + mustard + cream-paper)
+    "#d89bae", // vintage dusty rose-pink (tomato + taylor-purple + cream-paper)
+    "#c7c882", // warm olive-pistachio (mustard + teal + cream-paper)
+    "#bca4c8", // dusty mauve-lavender (taylor-purple #4b2e83 + cream-paper)
   ],
-  border: "#3a322b", // warm sepia-charcoal ink (near-black + walnut)
-  frame: "#352d26",
-  gratOcean: "#6f8b94",
-  gratMajor: "#58737c",
-  gratLand: "#3a322b",
-  label: "#28221c",
+  border: "#362e27", // warm dark sepia-charcoal ink (near-black + walnut)
+  frame: "#322a23",
+  gratOcean: "#5c7c88",
+  gratMajor: "#486773",
+  gratLand: "#362e27",
+  label: "#251f1a",
   labelHalo: "#efe6d2",
-  oceanLabel: "#526d77",
+  oceanLabel: "#44626e",
 };
 
 const DISPLAY_NAMES = {
@@ -102,37 +107,36 @@ const TWO_LINE_NAMES = {
   "Fr. Guiana": ["Fr.", "Guiana"],
 };
 
-// Curated cartographic anchors [lon, lat, allowedWidthPx, targetFontSize] for major archipelagos & coastal/enclave shapes.
 const CURATED_ANCHORS = {
-  IDN: { coord: [117.8, -4.7], maxW: 265, fs: 18.5 },
-  JPN: { coord: [139.3, 36.3], maxW: 96, fs: 15 },
-  PHL: { coord: [124.6, 12.5], maxW: 115, fs: 12 },
-  GBR: { coord: [-2.0, 54.2], maxW: 92, fs: 12.5 },
-  IRL: { coord: [-8.5, 53.3], maxW: 74, fs: 9.8 },
-  NZL: { coord: [172.8, -41.8], maxW: 96, fs: 12.5 },
-  MDG: { coord: [46.7, -19.4], maxW: 102, fs: 11.5 },
-  CUB: { coord: [-79.2, 21.8], maxW: 72, fs: 10.5 },
-  LKA: { coord: [80.7, 7.5], maxW: 58, fs: 9.5 },
-  ISL: { coord: [-18.8, 64.9], maxW: 78, fs: 11.5 },
-  TWN: { coord: [121.2, 23.7], maxW: 64, fs: 9.8 },
-  KOR: { coord: [127.9, 36.3], maxW: 64, fs: 9.5 },
-  MYS: { coord: [109.5, 3.2], maxW: 120, fs: 12.5 },
-  PNG: { coord: [145.2, -6.3], maxW: 105, fs: 11.5 },
-  ZAF: { coord: [22.7, -30.8], maxW: 112, fs: 13.5 },
-  MLI: { coord: [-3.2, 17.6], maxW: 110, fs: 14.5 },
-  CHL: { coord: [-71.2, -35.5], maxW: 64, fs: 12 },
-  NOR: { coord: [9.2, 61.2], maxW: 76, fs: 12.5 },
-  VNM: { coord: [108.2, 15.6], maxW: 74, fs: 11 },
-  ITA: { coord: [12.6, 42.8], maxW: 74, fs: 13.5 },
-  GRC: { coord: [22.2, 39.2], maxW: 68, fs: 11 },
-  PRT: { coord: [-8.6, 39.6], maxW: 74, fs: 9.8 },
-  ECU: { coord: [-78.5, -1.5], maxW: 72, fs: 10 },
-  URY: { coord: [-56.0, -32.8], maxW: 68, fs: 10 },
-  GUY: { coord: [-59.0, 4.9], maxW: 54, fs: 8.8 },
-  SUR: { coord: [-55.9, 3.8], maxW: 52, fs: 8.5 },
-  KHM: { coord: [104.9, 12.7], maxW: 72, fs: 9.5 },
-  FJI: { coord: [178.0, -17.8], maxW: 56, fs: 9.5 },
-  FLK: { coord: [-59.2, -51.8], maxW: 68, fs: 9 },
+  IDN: { coord: [117.8, -4.7], maxW: 280, fs: 19 },
+  JPN: { coord: [139.3, 36.3], maxW: 102, fs: 15.5 },
+  PHL: { coord: [124.6, 12.5], maxW: 118, fs: 12.5 },
+  GBR: { coord: [-2.0, 54.3], maxW: 102, fs: 13 },
+  IRL: { coord: [-8.5, 53.3], maxW: 78, fs: 10.2 },
+  NZL: { coord: [172.8, -41.8], maxW: 102, fs: 13 },
+  MDG: { coord: [46.7, -19.4], maxW: 104, fs: 12 },
+  CUB: { coord: [-79.2, 21.8], maxW: 76, fs: 10.8 },
+  LKA: { coord: [80.7, 7.5], maxW: 60, fs: 9.5 },
+  ISL: { coord: [-18.8, 64.9], maxW: 92, fs: 13 },
+  TWN: { coord: [121.2, 23.7], maxW: 66, fs: 10 },
+  KOR: { coord: [127.9, 36.3], maxW: 66, fs: 9.8 },
+  MYS: { coord: [109.5, 3.2], maxW: 126, fs: 12.5 },
+  PNG: { coord: [145.2, -6.3], maxW: 110, fs: 11.8 },
+  ZAF: { coord: [22.7, -30.8], maxW: 118, fs: 14 },
+  MLI: { coord: [-3.2, 17.6], maxW: 116, fs: 15 },
+  CHL: { coord: [-71.2, -35.5], maxW: 68, fs: 12.5 },
+  NOR: { coord: [9.3, 61.5], maxW: 92, fs: 14 },
+  VNM: { coord: [108.2, 15.6], maxW: 76, fs: 11.2 },
+  ITA: { coord: [12.6, 42.8], maxW: 78, fs: 13.8 },
+  GRC: { coord: [22.2, 39.2], maxW: 70, fs: 11.2 },
+  PRT: { coord: [-8.6, 39.6], maxW: 76, fs: 10 },
+  ECU: { coord: [-78.5, -1.5], maxW: 74, fs: 10 },
+  URY: { coord: [-56.0, -32.8], maxW: 70, fs: 10.2 },
+  GUY: { coord: [-59.0, 4.9], maxW: 56, fs: 8.8 },
+  SUR: { coord: [-55.9, 3.8], maxW: 54, fs: 8.6 },
+  KHM: { coord: [104.9, 12.7], maxW: 74, fs: 9.6 },
+  FJI: { coord: [177.8, -17.8], maxW: 56, fs: 9.5 },
+  FLK: { coord: [-59.2, -51.8], maxW: 74, fs: 9.5 },
 };
 
 const cleanStr = (v) => (typeof v === "string" ? v.replace(/\0+/g, "").trim() : "");
@@ -163,7 +167,38 @@ function resolveShapefile() {
 }
 
 /**
- * Assigns each country one of the 5 warm pastel colours using DSATUR graph colouring
+ * Builds a rectangular Miller cylindrical projection filling [0, W] × [TITLE_H, H]
+ * edge to edge for longitude [-180°, 180°] and latitude [LAT_SOUTH, LAT_NORTH] (80°S to 84°N).
+ */
+function createMillerWallProjection() {
+  const millerY = (phi) => 1.25 * Math.log(Math.tan(Math.PI / 4 + 0.4 * phi));
+  const yNorth = millerY((LAT_NORTH * Math.PI) / 180);
+  const ySouth = millerY((LAT_SOUTH * Math.PI) / 180);
+  const rawSpanY = yNorth - ySouth;
+  // Scale raw y so [-π, π] × [ySouth, yNorth] matches W × MAP_H exactly
+  const aspectY = ((MAP_H / W) * (2 * Math.PI)) / rawSpanY;
+
+  const raw = (lambda, phi) => {
+    const clamped = Math.max(-Math.PI / 2 + 1e-5, Math.min(Math.PI / 2 - 1e-5, phi));
+    return [lambda, aspectY * millerY(clamped)];
+  };
+  raw.invert = (x, y) => [
+    x,
+    2.5 * (Math.atan(Math.exp(y / (1.25 * aspectY))) - Math.PI / 4),
+  ];
+
+  const scale = W / (2 * Math.PI);
+  // In d3.geoProjection, screen y = ty - scale * rawY; solve ty so phi=LAT_NORTH maps to y=TITLE_H
+  const ty = TITLE_H + scale * aspectY * yNorth;
+
+  return geoProjection(raw)
+    .scale(scale)
+    .translate([W / 2, ty])
+    .precision(0.2);
+}
+
+/**
+ * Assigns each country one of the 6 warm pastel colours using DSATUR graph colouring
  * with strict zero shared-border conflicts, narrow-strait separation, and land-area balancing.
  */
 function colorCountries(features, areas) {
@@ -293,7 +328,6 @@ function colorCountries(features, areas) {
     countUsed[chosen] += 1;
   }
 
-  // Verify zero hard-border conflicts
   let conflicts = 0;
   for (let i = 0; i < n; i++) {
     if (assigned[i] < 0) continue;
@@ -355,7 +389,6 @@ function horizontalIntervals(rings, y) {
   return segs;
 }
 
-/** Returns [totalSpanH, symmetricVerticalClearance] at (x, y) inside the polygon rings. */
 function verticalMetricsAt(rings, x, y) {
   const ys = [];
   for (const ring of rings) {
@@ -379,10 +412,6 @@ function verticalMetricsAt(rings, x, y) {
   return [0, 0];
 }
 
-/**
- * Finds the best-centered interior point inside a projected polygon by scoring both
- * horizontal chord width and symmetric vertical clearance from top/bottom/hole borders.
- */
 function findInteriorAnchor(rings) {
   const outer = rings[0];
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -392,8 +421,10 @@ function findInteriorAnchor(rings) {
     if (y < minY) minY = y;
     if (y > maxY) maxY = y;
   }
-  const boxW = maxX - minX;
-  const boxH = maxY - minY;
+  minY = Math.max(minY, TITLE_H + 8);
+  maxY = Math.min(maxY, H - 8);
+  const boxW = Math.max(1, maxX - minX);
+  const boxH = Math.max(1, maxY - minY);
   const midY = (minY + maxY) * 0.5;
   const midX = (minX + maxX) * 0.5;
 
@@ -408,9 +439,9 @@ function findInteriorAnchor(rings) {
     for (const [x0, x1] of segs) {
       const w = x1 - x0;
       if (w < 3) continue;
-      // Sample 3 candidate x positions along the horizontal chord (35%, 50%, 65%) in case a hole/bay indents the midpoint
       for (const xf of [0.5, 0.4, 0.6]) {
         const cx = x0 + w * xf;
+        if (cx < 14 || cx > W - 14) continue;
         const horizClearance = 2 * Math.min(cx - x0, x1 - cx);
         const [spanH, clearY] = verticalMetricsAt(rings, cx, y);
         if (clearY <= 2) continue;
@@ -482,7 +513,8 @@ function buildCountryLabels(features, projection) {
         };
       }
     } else if (adm0 === "ATA") {
-      const pt = projection([25, -77]);
+      // East Antarctica ice plateau above the 80°S bottom crop
+      const pt = projection([72, -75.2]);
       if (pt) anchor = { x: pt[0], y: pt[1], chordW: 520, chordH: 48, boxW: 1600, boxH: 90 };
     }
 
@@ -512,7 +544,7 @@ function buildCountryLabels(features, projection) {
               adm0: "GUF",
               name: "Fr. Guiana",
               areaPx: areaPx + 50,
-              anchor: { x: anc[0], y: anc[1], chordW: 52, chordH: 28, boxW: 52, boxH: 28 },
+              anchor: { x: anc[0], y: anc[1], chordW: 54, chordH: 28, boxW: 54, boxH: 28 },
               curatedFs: 8.6,
               allowCoastalOverhang: true,
               isAntarctica: false,
@@ -527,7 +559,7 @@ function buildCountryLabels(features, projection) {
             adm0: "REU",
             name: "Réunion",
             areaPx: 140,
-            anchor: { x: pt[0], y: pt[1], chordW: 72, chordH: 18, boxW: 72, boxH: 18 },
+            anchor: { x: pt[0], y: pt[1], chordW: 74, chordH: 18, boxW: 74, boxH: 18 },
             curatedFs: 9.2,
             allowCoastalOverhang: true,
             isAntarctica: false,
@@ -544,6 +576,7 @@ function buildCountryLabels(features, projection) {
   const placedLabels = [];
 
   const overlaps = (box) => {
+    if (box.x0 < 12 || box.x1 > W - 12 || box.y0 < TITLE_H + 8 || box.y1 > H - 8) return true;
     for (const b of placedBoxes) {
       if (box.x0 < b.x1 && box.x1 > b.x0 && box.y0 < b.y1 && box.y1 > b.y0) return true;
     }
@@ -554,8 +587,10 @@ function buildCountryLabels(features, projection) {
     const { anchor, areaPx } = c;
     const sqrtA = Math.sqrt(areaPx);
 
-    let targetFs = c.curatedFs ?? Math.min(38, Math.max(9.2, 4.3 + sqrtA * 0.115));
-    if (c.isAntarctica) targetFs = 23;
+    // High-latitude areas expand in Miller; temper giant polar sizes slightly so Russia/Canada/Greenland stay balanced
+    let targetFs = c.curatedFs ?? Math.min(38, Math.max(9.2, 4.5 + Math.pow(sqrtA, 0.92) * 0.15));
+    if (c.adm0 === "GRL") targetFs = Math.min(targetFs, 23);
+    if (c.isAntarctica) targetFs = 21;
 
     const splitWords =
       TWO_LINE_NAMES[c.name] ||
@@ -568,7 +603,6 @@ function buildCountryLabels(features, projection) {
           })()
         : null);
 
-    // Strictly keep continental countries within their territory; allow curated coastal/island nations modest overhang
     const maxAllowedW = c.allowCoastalOverhang
       ? anchor.chordW * 1.05
       : Math.max(anchor.chordW * 0.96, anchor.boxW * 0.72);
@@ -598,9 +632,9 @@ function buildCountryLabels(features, projection) {
           c.adm0 === "IDN"
             ? 5.0
             : fs >= 28
-              ? Math.round((fs - 18) * 0.36 * 10) / 10
+              ? Math.round((fs - 18) * 0.38 * 10) / 10
               : fs >= 18
-                ? 2.2
+                ? 2.4
                 : fs >= 13
                   ? 1.3
                   : 0.8;
@@ -655,22 +689,21 @@ function buildCountryLabels(features, projection) {
 }
 
 function renderTitleBand() {
-  const bandTop = 29;
-  const bandH = 116;
-  const bandBot = bandTop + bandH;
-  const cy = bandTop + 76;
+  const cy = 75;
+  const ruleY = 58;
 
   return `
-  <!-- Cream Title Band -->
-  <rect x="29" y="${bandTop}" width="${W - 58}" height="${bandH}" fill="${COLORS.titleBand}" />
-  <line x1="29" y1="${bandBot}" x2="${W - 29}" y2="${bandBot}" stroke="${COLORS.frame}" stroke-width="2.2" />
-  <line x1="29" y1="${bandBot + 5}" x2="${W - 29}" y2="${bandBot + 5}" stroke="${COLORS.frame}" stroke-width="0.9" />
+  <!-- Full-width Cream Title Band at the top -->
+  <rect x="0" y="0" width="${W}" height="${TITLE_H}" fill="${COLORS.titleBand}" />
+  <line x1="0" y1="6" x2="${W}" y2="6" stroke="${COLORS.frame}" stroke-width="1" stroke-opacity="0.45" />
+  <line x1="0" y1="${TITLE_H - 5}" x2="${W}" y2="${TITLE_H - 5}" stroke="${COLORS.frame}" stroke-width="0.9" stroke-opacity="0.75" />
+  <line x1="0" y1="${TITLE_H}" x2="${W}" y2="${TITLE_H}" stroke="${COLORS.frame}" stroke-width="2.4" />
 
   <!-- Subtle symmetric cartographic rules flanking title -->
-  <line x1="1120" y1="${bandTop + 60}" x2="1650" y2="${bandTop + 60}" stroke="${COLORS.frame}" stroke-width="1" stroke-opacity="0.55" />
-  <polygon points="1668,${bandTop + 60} 1675,${bandTop + 55} 1682,${bandTop + 60} 1675,${bandTop + 65}" fill="${COLORS.frame}" fill-opacity="0.65" />
-  <line x1="2446" y1="${bandTop + 60}" x2="2976" y2="${bandTop + 60}" stroke="${COLORS.frame}" stroke-width="1" stroke-opacity="0.55" />
-  <polygon points="2414,${bandTop + 60} 2421,${bandTop + 55} 2428,${bandTop + 60} 2421,${bandTop + 65}" fill="${COLORS.frame}" fill-opacity="0.65" />
+  <line x1="1120" y1="${ruleY}" x2="1650" y2="${ruleY}" stroke="${COLORS.frame}" stroke-width="1" stroke-opacity="0.55" />
+  <polygon points="1668,${ruleY} 1675,${ruleY - 5} 1682,${ruleY} 1675,${ruleY + 5}" fill="${COLORS.frame}" fill-opacity="0.65" />
+  <line x1="2446" y1="${ruleY}" x2="2976" y2="${ruleY}" stroke="${COLORS.frame}" stroke-width="1" stroke-opacity="0.55" />
+  <polygon points="2414,${ruleY} 2421,${ruleY - 5} 2428,${ruleY} 2421,${ruleY + 5}" fill="${COLORS.frame}" fill-opacity="0.65" />
 
   <text x="${W / 2}" y="${cy}" text-anchor="middle"
     font-family="Baskerville, Georgia, 'Times New Roman', serif"
@@ -679,55 +712,46 @@ function renderTitleBand() {
   `;
 }
 
-function renderDegreeLabels(projection) {
+function renderEdgeDegreeTicks(projection) {
   const out = [];
   const lats = [75, 60, 45, 30, 15, 0, -15, -30, -45, -60, -75];
   for (const lat of lats) {
+    const pt = projection([0, lat]);
+    if (!pt || pt[1] < TITLE_H + 16 || pt[1] > H - 16) continue;
+    const y = pt[1].toFixed(1);
     const label = lat === 0 ? "0°" : `${Math.abs(lat)}°${lat > 0 ? "N" : "S"}`;
-    const left = projection([-180, lat]);
-    const right = projection([180, lat]);
-    if (left) {
-      out.push(
-        `<text x="${(left[0] - 10).toFixed(1)}" y="${(left[1] + 4).toFixed(1)}" text-anchor="end" font-family="'Gill Sans', Optima, sans-serif" font-size="11.5" fill="${COLORS.frame}" fill-opacity="0.72">${label}</text>`
-      );
-    }
-    if (right) {
-      out.push(
-        `<text x="${(right[0] + 10).toFixed(1)}" y="${(right[1] + 4).toFixed(1)}" text-anchor="start" font-family="'Gill Sans', Optima, sans-serif" font-size="11.5" fill="${COLORS.frame}" fill-opacity="0.72">${label}</text>`
-      );
-    }
+    out.push(
+      `<line x1="0" y1="${y}" x2="7" y2="${y}" stroke="${COLORS.frame}" stroke-width="1" stroke-opacity="0.6" />`,
+      `<text x="11" y="${(pt[1] + 3.8).toFixed(1)}" text-anchor="start" font-family="'Gill Sans', Optima, sans-serif" font-size="11" fill="${COLORS.frame}" fill-opacity="0.72" stroke="${COLORS.ocean}" stroke-opacity="0.55" stroke-width="2.2" paint-order="stroke fill">${label}</text>`,
+      `<line x1="${W - 7}" y1="${y}" x2="${W}" y2="${y}" stroke="${COLORS.frame}" stroke-width="1" stroke-opacity="0.6" />`,
+      `<text x="${W - 11}" y="${(pt[1] + 3.8).toFixed(1)}" text-anchor="end" font-family="'Gill Sans', Optima, sans-serif" font-size="11" fill="${COLORS.frame}" fill-opacity="0.72" stroke="${COLORS.ocean}" stroke-opacity="0.55" stroke-width="2.2" paint-order="stroke fill">${label}</text>`
+    );
   }
 
-  const lons = [-150, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150];
+  const lons = [-165, -150, -135, -120, -105, -90, -75, -60, -45, -30, -15, 0, 15, 30, 45, 60, 75, 90, 105, 120, 135, 150, 165];
   for (const lon of lons) {
+    const pt = projection([lon, 0]);
+    if (!pt) continue;
+    const x = pt[0].toFixed(1);
     const label = lon === 0 ? "0°" : `${Math.abs(lon)}°${lon > 0 ? "E" : "W"}`;
-    const top = projection([lon, 90]);
-    const bot = projection([lon, -90]);
-    if (top) {
-      out.push(
-        `<text x="${top[0].toFixed(1)}" y="${(top[1] - 8).toFixed(1)}" text-anchor="middle" font-family="'Gill Sans', Optima, sans-serif" font-size="11" fill="${COLORS.frame}" fill-opacity="0.68">${label}</text>`
-      );
-    }
-    if (bot) {
-      out.push(
-        `<text x="${bot[0].toFixed(1)}" y="${(bot[1] + 17).toFixed(1)}" text-anchor="middle" font-family="'Gill Sans', Optima, sans-serif" font-size="11" fill="${COLORS.frame}" fill-opacity="0.68">${label}</text>`
-      );
-    }
+    out.push(
+      `<line x1="${x}" y1="${TITLE_H}" x2="${x}" y2="${TITLE_H + 6}" stroke="${COLORS.frame}" stroke-width="1" stroke-opacity="0.6" />`,
+      `<text x="${x}" y="${TITLE_H + 17}" text-anchor="middle" font-family="'Gill Sans', Optima, sans-serif" font-size="10.5" fill="${COLORS.frame}" fill-opacity="0.72" stroke="${COLORS.ocean}" stroke-opacity="0.5" stroke-width="2.2" paint-order="stroke fill">${label}</text>`
+    );
   }
-  return out.join("\n  ");
+  return out.join("\n    ");
 }
 
 function renderOceanLabels(projection) {
-  // Coordinates chosen mid-cell so labels sit cleanly away from 15° graticules and dashed tropics
   const oceans = [
     { lines: ["North", "Atlantic", "Ocean"], coord: [-41, 35.5], size: 22, spacing: 6 },
-    { lines: ["South", "Atlantic", "Ocean"], coord: [-20, -35.5], size: 22, spacing: 6 },
-    { lines: ["North", "Pacific", "Ocean"], coord: [-151, 35.5], size: 25, spacing: 7 },
-    { lines: ["South", "Pacific", "Ocean"], coord: [-134, -36.5], size: 25, spacing: 7 },
-    { lines: ["Pacific", "Ocean"], coord: [158, 19.5], size: 21, spacing: 6 },
+    { lines: ["South", "Atlantic", "Ocean"], coord: [-19, -34.5], size: 22, spacing: 6 },
+    { lines: ["North", "Pacific", "Ocean"], coord: [-150, 36], size: 25, spacing: 7 },
+    { lines: ["South", "Pacific", "Ocean"], coord: [-126, -34.5], size: 25, spacing: 7 },
+    { lines: ["Pacific", "Ocean"], coord: [159, 17], size: 21, spacing: 6 },
     { lines: ["Indian", "Ocean"], coord: [78, -34.5], size: 24, spacing: 7 },
-    { lines: ["Arctic Ocean"], coord: [15, 82.5], size: 17, spacing: 7 },
-    { lines: ["Southern Ocean"], coord: [-105, -64.5], size: 17, spacing: 6 },
+    { lines: ["Arctic Ocean"], coord: [128, 80.5], size: 16.5, spacing: 7 },
+    { lines: ["Southern Ocean"], coord: [16, -62], size: 17, spacing: 6 },
   ];
 
   const items = [];
@@ -740,28 +764,33 @@ function renderOceanLabels(projection) {
       .map((ln, idx) => `<tspan x="${pt[0].toFixed(1)}" y="${(startY + idx * lh).toFixed(1)}">${escXml(ln)}</tspan>`)
       .join("");
     items.push(
-      `<text text-anchor="middle" font-family="Baskerville, Georgia, serif" font-style="italic" font-variant="small-caps" font-size="${o.size}" letter-spacing="${o.spacing}" fill="${COLORS.oceanLabel}" fill-opacity="0.72">${tspans}</text>`
+      `<text text-anchor="middle" font-family="Baskerville, Georgia, serif" font-style="italic" font-variant="small-caps" font-size="${o.size}" letter-spacing="${o.spacing}" fill="${COLORS.oceanLabel}" fill-opacity="0.76">${tspans}</text>`
     );
   }
-  return items.join("\n  ");
+  return items.join("\n    ");
 }
 
-function renderScaleBar(projection) {
+function renderScaleCartouche(projection) {
+  // Exact pixel scale at the Equator (1° = 111.31949 km)
   const p0 = projection([0, 0]);
   const p10 = projection([10, 0]);
   const pxPerDeg = (p10[0] - p0[0]) / 10;
   const pxPerKm = pxPerDeg / 111.31949;
-  const km1000 = pxPerKm * 1000;
+  const totalKm = 3000;
+  const barW = pxPerKm * totalKm; // ~306.6 px
   const mi1000 = pxPerKm * 1609.344;
 
-  const x0 = 86;
-  const yBar = 1938;
-  const barH = 8;
-  const totalKm = 4000;
-  const totalW = km1000 * 4;
+  // Compact cream cartouche in the open South-West Pacific (clear of NZ, Chile, Antarctica, and corner pins)
+  const boxW = Math.round(barW + 68);
+  const boxH = 98;
+  const boxX = 86;
+  const boxY = 1784;
+  const x0 = boxX + (boxW - barW) * 0.5 - 6;
+  const yBar = boxY + 46;
+  const barH = 7.5;
 
   const segments = [];
-  const stops = [0, 500, 1000, 2000, 3000, 4000];
+  const stops = [0, 500, 1000, 2000, 3000];
   for (let i = 0; i < stops.length - 1; i++) {
     const sx = x0 + stops[i] * pxPerKm;
     const sw = (stops[i + 1] - stops[i]) * pxPerKm;
@@ -771,42 +800,39 @@ function renderScaleBar(projection) {
     );
   }
 
-  const kmLabels = [0, 1000, 2000, 3000, 4000].map((km) => {
+  const kmLabels = [0, 1000, 2000, 3000].map((km) => {
     const tx = x0 + km * pxPerKm;
     const label = km === totalKm ? `${km} km` : String(km);
     return `
-    <line x1="${tx.toFixed(2)}" y1="${yBar - 4}" x2="${tx.toFixed(2)}" y2="${yBar}" stroke="${COLORS.frame}" stroke-width="1" />
-    <text x="${tx.toFixed(2)}" y="${yBar - 8}" text-anchor="middle" font-family="'Gill Sans', Optima, sans-serif" font-size="11.5" fill="${COLORS.label}">${label}</text>`;
+      <line x1="${tx.toFixed(2)}" y1="${yBar - 4}" x2="${tx.toFixed(2)}" y2="${yBar}" stroke="${COLORS.frame}" stroke-width="1" />
+      <text x="${tx.toFixed(2)}" y="${yBar - 7.5}" text-anchor="middle" font-family="'Gill Sans', Optima, sans-serif" font-size="11" fill="${COLORS.label}">${label}</text>`;
   });
 
-  const miLabels = [0, 1000, 2000].map((mi) => {
+  const miLabels = [0, 1000, 1500].map((mi) => {
     const tx = x0 + (mi / 1000) * mi1000;
-    const label = mi === 2000 ? `${mi} mi` : String(mi);
+    const label = mi === 1500 ? `${mi} mi` : String(mi);
     return `
-    <line x1="${tx.toFixed(2)}" y1="${yBar + barH}" x2="${tx.toFixed(2)}" y2="${yBar + barH + 4}" stroke="${COLORS.frame}" stroke-width="1" />
-    <text x="${tx.toFixed(2)}" y="${yBar + barH + 15}" text-anchor="middle" font-family="'Gill Sans', Optima, sans-serif" font-size="11" fill="${COLORS.frame}" fill-opacity="0.82">${label}</text>`;
+      <line x1="${tx.toFixed(2)}" y1="${yBar + barH}" x2="${tx.toFixed(2)}" y2="${yBar + barH + 3.5}" stroke="${COLORS.frame}" stroke-width="1" />
+      <text x="${tx.toFixed(2)}" y="${yBar + barH + 14}" text-anchor="middle" font-family="'Gill Sans', Optima, sans-serif" font-size="10.5" fill="${COLORS.frame}" fill-opacity="0.84">${label}</text>`;
   });
+
+  const cx = (boxX + boxW * 0.5).toFixed(1);
 
   return `
-  <!-- Equatorial Scale Bar (bottom-left cream spandrel) -->
-  <g>
-    <text x="${(x0 + totalW * 0.5).toFixed(1)}" y="${yBar - 26}" text-anchor="middle"
-      font-family="'Gill Sans', Optima, sans-serif" font-variant="small-caps" font-weight="600"
-      font-size="13.5" letter-spacing="2.2" fill="${COLORS.label}">Equatorial Scale</text>
-    ${segments.join("\n    ")}
-    ${kmLabels.join("")}
-    ${miLabels.join("")}
-  </g>
-
-  <!-- Projection note (bottom-right cream spandrel) -->
-  <g>
-    <text x="${W - 86}" y="${yBar + 2}" text-anchor="end"
-      font-family="'Gill Sans', Optima, sans-serif" font-variant="small-caps" font-weight="600"
-      font-size="13.5" letter-spacing="2.2" fill="${COLORS.label}" fill-opacity="0.82">Robinson Projection</text>
-    <text x="${W - 86}" y="${yBar + 20}" text-anchor="end"
-      font-family="'Gill Sans', Optima, sans-serif" font-variant="small-caps"
-      font-size="11.5" letter-spacing="1.6" fill="${COLORS.frame}" fill-opacity="0.68">15° Graticule · Political Edition</text>
-  </g>
+    <!-- Equatorial Scale & Projection Cartouche -->
+    <g>
+      <rect x="${boxX}" y="${boxY}" width="${boxW}" height="${boxH}" fill="${COLORS.titleBand}" fill-opacity="0.93" stroke="${COLORS.frame}" stroke-width="1.3" />
+      <rect x="${boxX + 3.5}" y="${boxY + 3.5}" width="${boxW - 7}" height="${boxH - 7}" fill="none" stroke="${COLORS.frame}" stroke-width="0.6" stroke-opacity="0.65" />
+      <text x="${cx}" y="${boxY + 21}" text-anchor="middle"
+        font-family="'Gill Sans', Optima, sans-serif" font-variant="small-caps" font-weight="600"
+        font-size="13" letter-spacing="2" fill="${COLORS.label}">Equatorial Scale</text>
+      ${segments.join("\n      ")}
+      ${kmLabels.join("")}
+      ${miLabels.join("")}
+      <text x="${cx}" y="${boxY + boxH - 10}" text-anchor="middle"
+        font-family="'Gill Sans', Optima, sans-serif" font-variant="small-caps"
+        font-size="10.5" letter-spacing="1.5" fill="${COLORS.frame}" fill-opacity="0.78">Miller Cylindrical Projection · 15° Graticule</text>
+    </g>
   `;
 }
 
@@ -816,24 +842,16 @@ async function main() {
   const fc = await shapefile.read(shpPath, dbfPath, { encoding: "utf-8" });
   const features = fc.features.filter((f) => f && f.geometry);
 
-  const sphere = { type: "Sphere" };
-  const projection = geoRobinson().fitExtent(
-    [
-      [170, 184],
-      [W - 170, H - 62],
-    ],
-    sphere
-  );
+  const projection = createMillerWallProjection();
   const pathGen = geoPath(projection).digits(2);
 
   const areas = features.map((f) => geoArea(f));
   const fills = colorCountries(features, areas);
 
-  const spherePath = pathGen(sphere);
-
+  // 15° Graticule across full rectangular extent
   const grat15 = geoGraticule()
     .step([15, 15])
-    .extentMajor([[-180, -90], [180, 90]])
+    .extentMajor([[-180, -85], [180, 85]])
     .extentMinor([[-180, -75], [180, 75]]);
   const gratPath = pathGen(grat15());
 
@@ -841,7 +859,7 @@ async function main() {
     type: "MultiLineString",
     coordinates: [
       Array.from({ length: 181 }, (_, i) => [-180 + i * 2, 0]),
-      Array.from({ length: 91 }, (_, i) => [0, -90 + i * 2]),
+      Array.from({ length: 86 }, (_, i) => [0, -85 + i * 2]),
     ],
   };
   const majorPath = pathGen(majorLines);
@@ -870,79 +888,79 @@ async function main() {
       const tspans = lb.lines
         .map((ln, idx) => `<tspan x="${lb.cx.toFixed(1)}" y="${(startY + idx * lb.lineH).toFixed(1)}">${escXml(ln)}</tspan>`)
         .join("");
-      const opacity = lb.isAntarctica ? "0.62" : "0.94";
+      const opacity = lb.isAntarctica ? "0.65" : "0.95";
       const haloColor = lb.isAntarctica ? COLORS.antarctica : COLORS.labelHalo;
       const haloW = Math.max(1.9, Math.min(3.4, lb.fs * 0.15)).toFixed(2);
       const leader = lb.oceanOffsetLabel
-        ? `<circle cx="${lb.oceanOffsetLabel[0].toFixed(1)}" cy="${lb.oceanOffsetLabel[1].toFixed(1)}" r="1.6" fill="${COLORS.border}" fill-opacity="0.7" />`
+        ? `<circle cx="${lb.oceanOffsetLabel[0].toFixed(1)}" cy="${lb.oceanOffsetLabel[1].toFixed(1)}" r="1.6" fill="${COLORS.border}" fill-opacity="0.72" />`
         : "";
       return `${leader}<text text-anchor="middle"
       font-family="'Gill Sans', Optima, 'Helvetica Neue', sans-serif"
       font-variant="small-caps" font-weight="600"
       font-size="${lb.fs.toFixed(1)}" letter-spacing="${lb.ls.toFixed(1)}"
       fill="${COLORS.label}" fill-opacity="${opacity}"
-      stroke="${haloColor}" stroke-opacity="0.52" stroke-width="${haloW}" stroke-linejoin="round"
+      stroke="${haloColor}" stroke-opacity="0.46" stroke-width="${haloW}" stroke-linejoin="round"
       paint-order="stroke fill">${tspans}</text>`;
     })
-    .join("\n    ");
+    .join("\n      ");
 
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
   <defs>
-    <clipPath id="globe-clip">
-      <path d="${spherePath}" />
+    <clipPath id="map-clip">
+      <rect x="0" y="${TITLE_H}" width="${W}" height="${MAP_H}" />
     </clipPath>
-    <radialGradient id="paper-warmth" cx="48%" cy="44%" r="68%">
-      <stop offset="0%" stop-color="${COLORS.paperLight}" stop-opacity="0.45" />
-      <stop offset="72%" stop-color="${COLORS.paper}" stop-opacity="0" />
-      <stop offset="100%" stop-color="#c9b898" stop-opacity="0.22" />
+    <radialGradient id="ocean-tone" cx="50%" cy="52%" r="64%">
+      <stop offset="0%" stop-color="${COLORS.oceanCenter}" />
+      <stop offset="72%" stop-color="${COLORS.ocean}" />
+      <stop offset="100%" stop-color="${COLORS.oceanDeep}" />
     </radialGradient>
-    <radialGradient id="ocean-tone" cx="50%" cy="48%" r="56%">
-      <stop offset="0%" stop-color="#c0d6dc" />
-      <stop offset="78%" stop-color="${COLORS.ocean}" />
-      <stop offset="100%" stop-color="${COLORS.oceanEdge}" />
+    <radialGradient id="laminate-warmth" cx="48%" cy="44%" r="72%">
+      <stop offset="0%" stop-color="${COLORS.paperLight}" stop-opacity="0.24" />
+      <stop offset="75%" stop-color="${COLORS.paper}" stop-opacity="0" />
+      <stop offset="100%" stop-color="#c4b292" stop-opacity="0.18" />
     </radialGradient>
   </defs>
 
-  <rect width="${W}" height="${H}" fill="${COLORS.paper}" />
+  <!-- Full-bleed Rectangular Map Panel (80°S to 84°N, -180° to +180°) -->
+  <g clip-path="url(#map-clip)">
+    <rect x="0" y="${TITLE_H}" width="${W}" height="${MAP_H}" fill="url(#ocean-tone)" />
 
-  ${renderTitleBand()}
-
-  <rect x="22" y="22" width="${W - 44}" height="${H - 44}" fill="none" stroke="${COLORS.frame}" stroke-width="2.6" />
-  <rect x="29" y="29" width="${W - 58}" height="${H - 58}" fill="none" stroke="${COLORS.frame}" stroke-width="1" />
-
-  <g clip-path="url(#globe-clip)">
-    <path d="${spherePath}" fill="url(#ocean-tone)" />
-
-    <path d="${gratPath}" fill="none" stroke="${COLORS.gratOcean}" stroke-width="0.9" stroke-opacity="0.52" />
+    <!-- Ocean 15° Graticule -->
+    <path d="${gratPath}" fill="none" stroke="${COLORS.gratOcean}" stroke-width="0.9" stroke-opacity="0.5" />
     <path d="${specialLatPath}" fill="none" stroke="${COLORS.gratMajor}" stroke-width="0.85" stroke-dasharray="7,6" stroke-opacity="0.52" />
-    <path d="${majorPath}" fill="none" stroke="${COLORS.gratMajor}" stroke-width="1.15" stroke-opacity="0.64" />
+    <path d="${majorPath}" fill="none" stroke="${COLORS.gratMajor}" stroke-width="1.15" stroke-opacity="0.62" />
 
+    <!-- Saturated Warm Pastel Country Fills -->
     <g shape-rendering="geometricPrecision">
       ${countryFillPaths.join("\n      ")}
     </g>
 
+    <!-- Faint overland 15° graticule trace -->
     <path d="${gratPath}" fill="none" stroke="${COLORS.gratLand}" stroke-width="0.7" stroke-opacity="0.12" />
     <path d="${majorPath}" fill="none" stroke="${COLORS.gratLand}" stroke-width="0.85" stroke-opacity="0.18" />
 
+    <!-- 1px Dark Country Borders & Coastlines -->
     <g fill="none" stroke="${COLORS.border}" stroke-width="1" stroke-linejoin="round" stroke-linecap="round" stroke-opacity="0.92">
       ${countryBorderPaths.join("\n      ")}
     </g>
 
     ${renderOceanLabels(projection)}
 
+    <!-- Country Small-Caps Labels -->
     <g>
       ${labelSvg}
     </g>
+
+    ${renderEdgeDegreeTicks(projection)}
+
+    ${renderScaleCartouche(projection)}
   </g>
 
-  <path d="${spherePath}" fill="none" stroke="${COLORS.frame}" stroke-width="2" />
+  ${renderTitleBand()}
 
-  ${renderDegreeLabels(projection)}
-
-  ${renderScaleBar(projection)}
-
-  <rect width="${W}" height="${H}" fill="url(#paper-warmth)" pointer-events="none" />
+  <!-- Subtle warm 80s laminated poster toning -->
+  <rect width="${W}" height="${H}" fill="url(#laminate-warmth)" pointer-events="none" />
 </svg>`;
 
   const outWebp = path.join(root, "public", "textures", "world-map.webp");
@@ -955,7 +973,7 @@ async function main() {
 
   const maxBytes = 900 * 1024;
   let webpBuf = null;
-  let usedQuality = 90;
+  let usedQuality = 92;
   for (const q of [92, 90, 86, 82, 78, 74, 70]) {
     const candidate = await sharp(rawPng)
       .webp({ quality: q, effort: 6, smartSubsample: true })
