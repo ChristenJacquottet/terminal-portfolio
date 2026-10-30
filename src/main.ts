@@ -31,6 +31,8 @@ function stepBack() {
         loop: (name, on) => audio.loop(name, on),
         setInside: (t) => audio.setInside(t),
         mount: (parent) => void mountSoundToggle(parent),
+        muted: () => audio.muted,
+        setMuted: (m) => audio.setMuted(m),
       },
       onSitDown: () => {
         term.print([[s(`Last login: ${stamp(new Date())} on ttys000`, "dim")]]);

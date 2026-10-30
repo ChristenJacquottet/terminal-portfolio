@@ -1031,6 +1031,8 @@ def main():
     for mname in sorted(scene_mats.keys()):
         mat = scene_mats[mname]
         cfg = mat_mappings.get(mname, default_mat_cfg)
+        if cfg == "keep":  # already in the palette's spirit (e.g. resistor colour bands): leave it alone
+            continue
         if cfg is None:
             raise KeyError(
                 f"Material '{mname}' in '{in_path}' has no mapping entry in {mapping_path}"

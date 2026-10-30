@@ -20,7 +20,6 @@ import {
   CatmullRomCurve3,
   CylinderGeometry,
   DoubleSide,
-  FrontSide,
   Group,
   LatheGeometry,
   Mesh,
@@ -49,6 +48,7 @@ const PROPS_URL = "/models/props.glb";
 const ORDER = [
   "lamp", "cassette", "pens", "spectacles", "duck", "camera", "plant", "clock", "frame", "globe", "super8", "phone",
   "longhorn", "rugby", "skateboard", "clapper", "biplane", "studiolight", "chair", "suitcase",
+  "breadboard", "multimeter", "joystick", "headphones", "answering",
 ] as const;
 
 /** Decals (shadows, labels, paper) sit a hair above what they're on and win the depth test. */
@@ -907,7 +907,19 @@ export async function addProps(
       put("tape", place(tape, max.x + 0.43, front - 0.2, { width: 0.1, rotY: 0.35 }));
     }
   }
-  add("phone", (o) => place(o, max.x + 0.36, back + 0.24, { height: 0.11, rotY: -0.45 }));
+  if (byName.phone) {
+    // The handset is its own part, so a click can lift it out of the cradle.
+    const kit = byName.phone;
+    const handset = piece(kit, "sellphone_low.002_phone.001_0");
+    const phone = new Group();
+    for (const o of [...kit.children]) if (o.name !== "sellphone_low.002_phone.001_0") phone.add(o);
+    if (handset) {
+      handset.name = "handset";
+      phone.add(handset);
+    }
+    put("phone", place(phone, max.x + 0.36, back + 0.22, { height: 0.12, rotY: -0.45 })); // by height: the coiled cord is long
+  }
+  add("answering", (o) => place(o, max.x + 0.14, back + 0.08, { width: 0.14, rotY: -0.2 })); // behind the drives, with the phone
   if (byName.pens) {
     const kit = byName.pens;
     const cup = penCup(kit);
@@ -922,25 +934,26 @@ export async function addProps(
   add("clock", (o) => hang(o, room.desk.minX + 0.02, 0.86, wall, 0.17));
   add("clapper", (o) => place(o, max.x + 0.62, back + 0.1, { width: 0.24, rotY: -0.3 }));
   add("longhorn", (o) => {
-    o.rotation.z = 0.3; // level the horns
-    o.traverse((m) => {
-      const mesh = m as Mesh;
-      if (!mesh.isMesh) return;
-      // Normals were made consistent in Blender, so one side is enough (double-sided lit the inside).
-      Object.assign(mesh.material as MeshStandardMaterial, { roughness: 0.85, metalness: 0, side: FrontSide }).color.set("#e3d6bc"); // sun-bleached bone
-    });
-    return hang(o, mid + 0.1, 0.8, wall, 0.3); // over the computer, DFW style
+    o.rotation.set(Math.PI / 2, 0, -Math.PI / 2, "ZYX"); // face out from the wall, nose down
+    return hang(o, mid + 0.1, 0.8, wall, 0.24); // a steer skull over the computer, DFW style
   });
   add("biplane", (o) => onSill(o, sill.x0 + 0.18, { width: 0.24, rotY: 0.5 }));
   add("rugby", (o) => place(o, room.desk.minX - 0.45, wall + 0.75, { width: 0.28, rotY: -0.4, y: floor, shadow: true }));
   add("chair", (o) => place(o, min.x - 0.62, front + 0.32, { height: 0.85, rotY: 0.9, y: floor, shadow: true }));
   add("studiolight", (o) => place(o, room.desk.maxX + 0.45, wall + 0.55, { height: 1.75, rotY: -0.6, y: floor, shadow: true }));
-  add("suitcase", (o) => place(o, room.desk.minX - 0.3, wall + 0.3, { width: 0.55, rotY: 0.15, y: floor, shadow: true }));
-  if (byName.skateboard) {
-    // Leaning against the wall at the left end of the desk, wheels out.
-    const deck = byName.skateboard;
-    deck.rotation.x = -1.3;
-    put("skateboard", place(deck, room.desk.minX - 0.12, wall + 0.12, { height: 0.78, y: floor, shadow: true }));
+  add("suitcase", (o) => place(o, room.desk.minX - 0.3, wall + 0.3, { width: 0.6, rotY: 0.15, y: floor, shadow: true }));
+  add("skateboard", (o) => place(o, room.desk.minX - 0.12, wall + 0.2, { height: 0.7, y: floor, shadow: true }));
+  // The implementation side: a breadboard mid-build, the meter on it, the joystick by the keys.
+  add("breadboard", (o) => place(o, max.x + 0.72, front - 0.12, { width: 0.15, rotY: -0.25 }));
+  add("multimeter", (o) => place(o, max.x + 0.8, front - 0.3, { height: 0.12, rotY: -0.7 }));
+  add("joystick", (o) => place(o, max.x + 0.12, max.z + 0.18, { height: 0.11, rotY: -0.3 }));
+  if (byName.headphones) {
+    // Only the headphones from the Walkman kit, lying on the desk by the player.
+    const cans = piece(byName.headphones, "headset_Material_0", true);
+    if (cans) {
+      cans.rotation.x = -Math.PI / 2;
+      put("headphones", place(cans, max.x + 0.56, front - 0.16, { width: 0.15, rotY: 0.4 }));
+    }
   }
   if (byName.frame) {
     byName.frame.traverse((o) => {

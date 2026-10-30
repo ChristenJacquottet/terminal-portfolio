@@ -44,7 +44,7 @@ const BY_NAME: Record<string, Hotspot> = {
   super8: { kind: "wiggle", label: "Super 8", hint: "filmmaking" },
   camera: { kind: "flash", label: "35mm camera", hint: "photography" },
   clapper: { kind: "hop", label: "the slate", hint: "directing" },
-  studiolight: { kind: "wiggle", label: "studio light", hint: "shooting" },
+  studiolight: { kind: "wiggle", label: "spotlight", hint: "shooting" },
   notebook: { kind: "wiggle", label: "graph-paper notebook", hint: "computer science" },
   card: { kind: "hop", label: "CAN YOU HEAR ME?", hint: "the call where the mic died" },
   racquet: { kind: "wiggle", label: "my wooden racquet", hint: "college tennis" },
@@ -53,7 +53,12 @@ const BY_NAME: Record<string, Hotspot> = {
   frame: { kind: "swing", label: "Réunion's peaks", hint: "where I was born" },
   diploma: { kind: "swing", label: "the baccalauréat" },
   mortarboard: { kind: "hop", label: "grad cap", hint: "Taylor University" },
-  longhorn: { kind: "wiggle", label: "longhorn skull", hint: "DFW" },
+  longhorn: { kind: "wiggle", label: "steer skull", hint: "DFW" },
+  answering: { kind: "answering", label: "answering machine", hint: "leave a message", nav: true },
+  headphones: { kind: "headphones", label: "headphones" },
+  breadboard: { kind: "wiggle", label: "breadboard", hint: "something half wired" },
+  multimeter: { kind: "wiggle", label: "multimeter" },
+  joystick: { kind: "wiggle", label: "joystick" },
   rugby: { kind: "bounce", label: "rugby ball" },
   skateboard: { kind: "wiggle", label: "a skateboard I built", hint: "I built them for friends" },
   bitcoin: { kind: "flip", label: "my first bitcoin", hint: "flip it" },
@@ -97,6 +102,9 @@ export function createInteractions(o: {
   drive: Drive | null;
   sfx: (cue: string) => void;
   music: (on: boolean) => void;
+  /** The sound switch, for the headphones (null when there's no sound layer). */
+  muted: () => boolean | null;
+  setMuted: (m: boolean) => void;
 }) {
   const { scene, camera } = o;
   const targets: Object3D[] = [];
@@ -223,6 +231,7 @@ export function createInteractions(o: {
   const labelFor = (t: Target): [string, string | undefined] => {
     const { spot } = t;
     if (spot.kind === "lamp") return [spot.label, lampOn ? "switch it off" : "switch it on"];
+    if (spot.kind === "headphones") return [spot.label, o.muted() ? "sound on" : "sound off"];
     if (spot.kind === "walkman") return [spot.label, tapeIn ? (playing ? "pause" : "play") : "no tape in it"];
     if (spot.kind === "tape") return [spot.label, tapeIn ? "take it out" : spot.hint];
     if (spot.kind === "disk" && t.object === inDrive) return [spot.label, "it's in the drive: open it"];
@@ -501,10 +510,42 @@ export function createInteractions(o: {
         o.sfx("phoneUp");
         void once(object, async () => {
           leave();
+          const handset = object.getObjectByName("handset");
+          if (handset) {
+            const y = handset.position.y;
+            const tilt = handset.rotation.x;
+            await o.animate(420, (t) => {
+              handset.position.y = y + 0.18 * easeOut(t);
+              handset.rotation.x = tilt - 0.35 * easeOut(t);
+            });
+            // back in the cradle while you're in the screen
+            void o.sitDownAndRun("contact").then(() => {
+              handset.position.y = y;
+              handset.rotation.x = tilt;
+              o.sfx("phoneDown");
+            });
+            return;
+          }
           await wiggle(object, 0.06);
           await o.sitDownAndRun("contact");
         });
         return;
+      case "answering":
+        o.sfx("click");
+        void once(object, async () => {
+          leave();
+          await hop(object, 0.01, 260);
+          await o.sitDownAndRun("email");
+        });
+        return;
+      case "headphones": {
+        const now = o.muted();
+        if (now === null) return;
+        o.setMuted(!now);
+        if (now) o.sfx("tapeButton");
+        void once(object, () => hop(object, 0.015, 380));
+        return;
+      }
       case "lamp":
         o.sfx("switch");
         setLamp(!lampOn);

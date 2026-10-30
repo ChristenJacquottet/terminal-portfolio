@@ -306,70 +306,76 @@
       }
     },
     "phone": {
-      "source": "sketchfab/phone.glb",
+      "source": "sketchfab/phone-rotary.glb",
       "sourceMaterials": [
-        "sfmtelephone001rotary",
-        "sfmtelephone001rotary_rotary"
+        "transparent.001",
+        "phone.001"
       ],
       "materials": {
-        "sfmtelephone001rotary": {
+        "phone.001": {
           "swatch": "beige-plastic",
-          "flatten": 0.84,
-          "dropMaps": [
-            "roughness"
+          "flatten": 0.7,
+          "roughnessBand": [
+            0.42,
+            0.52
           ],
-          "note": "Rescues the phone body, receiver and cord from metallic-1.0 black into warm 1980s Bell-style beige-plastic per art/palette.json."
+          "note": "A 500-series rotary in the Apple II beige."
         },
-        "sfmtelephone001rotary_rotary": {
-          "swatch": "warm-grey",
-          "flatten": 0.55,
-          "dropMaps": [
-            "roughness"
-          ],
-          "note": "Rotary dial wheel and number ring in contrasting warm-grey so finger holes and numerals stay readable."
+        "transparent.001": {
+          "swatch": "glass",
+          "flatten": 0.8,
+          "note": "The clear finger wheel."
         }
       }
     },
     "longhorn": {
-      "source": "sketchfab/longhorn-up.glb",
+      "source": "sketchfab/skull.glb",
       "sourceMaterials": [
-        "Scene_-_Root"
+        "Material"
       ],
       "materials": {
-        "Scene_-_Root": {
+        "Material": {
           "swatch": "cream-paper",
-          "flatten": 1.0,
-          "note": "Untextured decimated skull scan takes matte cream-paper (sun-bleached bone) instead of raw dark brown."
+          "flatten": 0.5,
+          "roughnessBand": [
+            0.82,
+            0.92
+          ],
+          "note": "Bleached bone; keeps the dirt in the cracks."
         }
       }
     },
     "rugby": {
-      "source": "sketchfab/rugby.glb",
+      "source": "sketchfab/rugby-ball.glb",
       "sourceMaterials": [
-        "material0"
+        "Material.001"
       ],
       "materials": {
-        "material0": {
+        "Material.001": {
           "swatch": "walnut",
-          "flatten": 0.74,
-          "note": "Flattens baked underside studio shadow and scan noise on the leather rugby ball into rich walnut leather while preserving seams and lacing."
+          "flatten": 0.5,
+          "roughnessBand": [
+            0.6,
+            0.75
+          ],
+          "note": "An old leather ball."
         }
       }
     },
     "skateboard": {
-      "source": "sketchfab/skateboard.glb",
+      "source": "sketchfab/cruiser.glb",
       "sourceMaterials": [
-        "defaultMat"
+        "lambert1"
       ],
       "materials": {
-        "defaultMat": {
+        "lambert1": {
           "swatch": "walnut",
-          "flatten": 0.56,
+          "flatten": 0.35,
           "roughnessBand": [
-            0.52,
-            0.68
+            0.5,
+            0.65
           ],
-          "note": "Photogrammetry scan with deck, grip tape, trucks and wheels in one texture; moderate flatten removes lighting gradients and warms wood to walnut while keeping dark grip and light wheels."
+          "note": "Inlaid wood cruiser: light touch so the stripes stay."
         }
       }
     },
@@ -422,21 +428,15 @@
       }
     },
     "studiolight": {
-      "source": "sketchfab/studiolight.glb",
+      "source": "sketchfab/spotlight.glb",
       "sourceMaterials": [
-        "LMP0001_Textures"
+        "blinn1"
       ],
       "materials": {
-        "LMP0001_Textures": {
-          "swatch": "near-black",
-          "flatten": 0.78,
-          "roughnessBand": [
-            0.4,
-            0.52
-          ],
-          "emissionSwatch": "cream-paper",
-          "emissionStrength": 0.85,
-          "note": "Tripod stand and softbox shroud unified to near-black; front diffuser emission warmed from clinical #ffffff to cream-paper."
+        "blinn1": {
+          "swatch": "dark-metal",
+          "flatten": 0.3,
+          "note": "Vintage tungsten spot on a wooden tripod; light touch."
         }
       }
     },
@@ -458,29 +458,84 @@
       }
     },
     "suitcase": {
-      "source": "vintage_suitcase/vintage_suitcase_1k.gltf",
+      "source": "sketchfab/suitcase.glb",
       "sourceMaterials": [
-        "vintage_suitcase_01",
-        "vintage_suitcase_02"
+        "Maleta"
       ],
       "materials": {
-        "vintage_suitcase_01": {
+        "Maleta": {
           "swatch": "walnut",
-          "flatten": 0.46,
+          "flatten": 0.5,
           "roughnessBand": [
-            0.52,
-            0.66
+            0.5,
+            0.65
           ],
-          "note": "Stickered vintage suitcase: lower flatten turns the olive-grey body to warm walnut leather while keeping the travel stickers colorful and readable."
+          "note": "One leather suitcase."
+        }
+      }
+    },
+    "breadboard": {
+      "source": "sketchfab/breadboard.glb",
+      "default": "keep",
+      "materials": {
+        "White.001": {
+          "swatch": "cream-paper",
+          "flatten": 1.0,
+          "roughnessBand": [
+            0.5,
+            0.6
+          ],
+          "note": "The board itself, warm white plastic; components keep their colour codes."
+        }
+      }
+    },
+    "multimeter": {
+      "source": "retro_multimeter/retro_multimeter_1k.gltf",
+      "sourceMaterials": [
+        "retro_multimeter",
+        "retro_multimeter_glass"
+      ],
+      "materials": {
+        "retro_multimeter": {
+          "swatch": "near-black",
+          "flatten": 0.45,
+          "note": "Analogue meter; keeps the scale and the red leads."
         },
-        "vintage_suitcase_02": {
-          "swatch": "cork",
-          "flatten": 0.76,
-          "roughnessBand": [
-            0.86,
-            0.96
-          ],
-          "note": "Plain companion suitcase mapped to warm tan cork/suede leather."
+        "retro_multimeter_glass": {
+          "swatch": "glass",
+          "flatten": 1.0,
+          "alpha": 0.2
+        }
+      }
+    },
+    "joystick": {
+      "source": "sketchfab/joystick.glb",
+      "sourceMaterials": [
+        "Texture"
+      ],
+      "materials": {
+        "Texture": {
+          "swatch": "near-black",
+          "flatten": 0.35,
+          "note": "Keeps the red fire button."
+        }
+      }
+    },
+    "headphones": {
+      "source": "sketchfab/walkman-tpsl2.glb",
+      "default": "keep",
+      "materials": {}
+    },
+    "answering": {
+      "source": "sketchfab/answering/scene.gltf",
+      "sourceMaterials": [
+        "Scene_-_Root"
+      ],
+      "materials": {
+        "Scene_-_Root": {
+          "swatch": "beige-plastic",
+          "flatten": 1.0,
+          "note": "An untextured box: Apple II beige."
         }
       }
     }

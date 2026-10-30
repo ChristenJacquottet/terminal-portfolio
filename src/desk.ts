@@ -303,6 +303,8 @@ export async function createDesk(opts: {
     loop(name: "room" | "hum", on: boolean): void;
     setInside(t: number): void;
     mount(parent: HTMLElement): void;
+    muted(): boolean;
+    setMuted(m: boolean): void;
   };
 }): Promise<Desk> {
   const { host, screenEl } = opts;
@@ -746,6 +748,8 @@ export async function createDesk(opts: {
     drive,
     sfx: (cue) => opts.sound?.play(cue as Cue),
     music: (on) => void opts.sound?.music(on),
+    muted: () => opts.sound?.muted() ?? null,
+    setMuted: (m) => opts.sound?.setMuted(m),
     sitDownAndRun: async (command) => {
       await api.sitDown();
       opts.run(command);
