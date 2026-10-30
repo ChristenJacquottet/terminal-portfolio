@@ -380,6 +380,7 @@ export const COMMANDS: Record<string, Command> = {
     run: () => [
       [s("code, copy and case studies  ", "dim"), s(profile.name)],
       [s("3d model                     ", "dim"), link(`“${MODEL_CREDIT.title}”`, MODEL_CREDIT.url), s(` by ${MODEL_CREDIT.author}, `), link(MODEL_CREDIT.license, MODEL_CREDIT.licenseUrl)],
+      [s("desk props                   ", "dim"), link("Poly Haven", "https://polyhaven.com/models"), s(" (CC0): lamp, cassette player, notepads, pens, spectacles, duck")],
       [s("fonts                        ", "dim"), s("IBM Plex Mono, VT323 (SIL Open Font License)")],
       [s("first version                ", "dim"), link("WebShell", "https://github.com/nasan016/webshell"), s(" by Nathaniel Macapinlac (MIT)")],
     ],

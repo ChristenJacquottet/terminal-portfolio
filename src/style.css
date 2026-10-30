@@ -162,6 +162,22 @@ body {
   text-shadow: none;
 }
 
+/* Boot: the art is painted in, then the tube settles with a short bloom. */
+.art.drawing {
+  color: var(--bright);
+}
+
+.art.drawn {
+  animation: settle 0.6s ease-out;
+}
+
+@keyframes settle {
+  from {
+    color: var(--bright);
+    filter: brightness(1.6);
+  }
+}
+
 .neofetch {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -257,7 +273,8 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .prompt-line.focused .cursor {
+  .prompt-line.focused .cursor,
+  .art.drawn {
     animation: none;
   }
 }

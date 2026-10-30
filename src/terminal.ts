@@ -145,6 +145,49 @@ export class Terminal {
     }
   }
 
+  /**
+   * Draws ASCII art the way a tube paints a frame: top to bottom, each row arriving as glyph
+   * noise that settles into the real characters. Rows not yet drawn are kept as blank space so
+   * the layout never shifts. Any key or click finishes it.
+   */
+  async reveal(rows: string[], { maxHeight, ms = 1500 }: { maxHeight?: number; ms?: number } = {}) {
+    const pre = this.art(rows, maxHeight);
+    pre.classList.add("drawing");
+    this.output.append(pre);
+    this.fitArt();
+    const chars = rows.map((r) => [...r]);
+    const blank = chars.map((r) => " ".repeat(r.length));
+    const NOISE = "░▒▓█▄▀#%&@$*+=~:;,.";
+    const noisy = (row: string[], settled: number) =>
+      row.map((ch, i) => (ch === " " || i < settled ? ch : NOISE[(Math.random() * NOISE.length) | 0])).join("");
+
+    if (!this.skip && !this.reduced) {
+      const start = performance.now();
+      const band = 6; // rows in the noisy leading edge
+      await new Promise<void>((done) => {
+        const frame = (now: number) => {
+          const t = this.skip ? 1 : Math.min(1, (now - start) / ms);
+          const head = t * (rows.length + band);
+          const out: string[] = [];
+          for (let i = 0; i < rows.length; i++) {
+            const age = head - i; // > band: settled; 0..band: resolving; < 0: not drawn yet
+            if (age >= band) out.push(rows[i]);
+            else if (age > 0) out.push(noisy(chars[i], Math.floor((age / band) * chars[i].length)));
+            else out.push(blank[i]);
+          }
+          pre.textContent = out.join("\n");
+          if (t < 1) requestAnimationFrame(frame);
+          else done();
+        };
+        requestAnimationFrame(frame);
+      });
+    }
+    pre.textContent = rows.join("\n");
+    pre.classList.remove("drawing");
+    pre.classList.add("drawn");
+    this.scroll();
+  }
+
   print(lines: Line[]) {
     const frag = document.createDocumentFragment();
     for (const line of lines) frag.append(this.line(line));

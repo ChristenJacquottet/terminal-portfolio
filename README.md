@@ -1,6 +1,6 @@
 # terminal-portfolio
 
-My portfolio as a working terminal: the same ASCII art and look as my [GitHub profile](https://github.com/ChristenJacquottet), terminal colour schemes, and every published case study from [christenjacquottet.com](https://christenjacquottet.com) as a file you can `ls`, `cat` and `open`. Type `exit` to step back from the screen: it is an Apple II on a desk, and you can keep typing on it.
+My portfolio as a working terminal: the same ASCII art and look as my [GitHub profile](https://github.com/ChristenJacquottet), terminal colour schemes, and every published case study from [christenjacquottet.com](https://christenjacquottet.com) as a file you can `ls`, `cat` and `open`. Type `exit` to step back from the screen: it is an Apple II on a desk under a lamp, and you can keep typing on it.
 
 ```console
 $ ls -l ~/shipped
@@ -39,9 +39,10 @@ The sync loads projects through the portfolio's own publication resolver, so the
 
 ## The model
 
-`public/models/apple-ii.glb` is built from the Sketchfab download with `npm run model -- path/to/scene.gltf` (114 MB → about 1 MB).
+`public/models/apple-ii.glb` is built from the Sketchfab download with `npm run model -- path/to/scene.gltf` (114 MB → about 1 MB). `public/models/props.glb` (the lamp, cassette player, notepads, pens, spectacles and duck, ~0.7 MB) is built from Poly Haven downloads with `npm run props -- path/to/downloads`; it loads after the computer, so `exit` never waits for it. The mug and the floppies are made in code (`src/props.ts`).
 
 ## Credit
 
 - 3D model: "[Apple II Computer](https://sketchfab.com/3d-models/apple-ii-computer-b5d316548d634f16a72dd503db0aa01b)" by [dark_igorek](https://sketchfab.com/dark_igorek), licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Credited in the desk view and in `credits`.
+- Desk props: [Poly Haven](https://polyhaven.com/models) (CC0): Desk Lamp Arm 01, Portable Cassette Player, Office Notepads, Stationery Supplies, Round Spectacles, Rubber Duck Toy.
 - The first version of this repo was [Nathaniel Macapinlac's WebShell](https://github.com/nasan016/webshell) template (MIT). This is a rewrite; his history is kept below it.

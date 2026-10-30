@@ -35,6 +35,7 @@ import { CSS3DObject, CSS3DRenderer } from "three/examples/jsm/renderers/CSS3DRe
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { MODEL_CREDIT } from "./credit";
+import { addProps } from "./props";
 
 /** CSS size of the terminal while it sits in the monitor (a 4:3 tube). */
 const SCREEN_W = 800;
@@ -284,13 +285,15 @@ export async function createDesk(opts: {
   const camera = new PerspectiveCamera(FOV, 1, 0.01, 20);
   const bounds = new Box3().setFromObject(root);
   const size = bounds.getSize(new Vector3());
+  // Props flank the computer, so the wide shot frames a little more than the machine.
+  size.x += 0.35;
   const target = new Vector3(0, size.y * 0.5, 0);
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
   controls.enablePan = false;
   controls.minDistance = Math.max(size.x, size.y) * 0.9;
-  controls.maxDistance = Math.max(size.x, size.y) * 4.5;
+  controls.maxDistance = Math.max(size.x, size.y) * 8;
   controls.minAzimuthAngle = -0.65;
   controls.maxAzimuthAngle = 0.65;
   controls.minPolarAngle = 0.95;
@@ -299,6 +302,8 @@ export async function createDesk(opts: {
 
   let vw = 0;
   let vh = 0;
+  let seated = true;
+  let transitioning = false;
   const resize = () => {
     vw = window.innerWidth;
     vh = window.innerHeight;
@@ -306,6 +311,15 @@ export async function createDesk(opts: {
     camera.updateProjectionMatrix();
     renderer.setSize(vw, vh);
     css.setSize(vw, vh);
+    // Fog starts just behind the computer at any framing distance.
+    const fog = scene.fog as Fog;
+    fog.near = wideDistance() * 1.05;
+    fog.far = wideDistance() * 3.2;
+    // At the desk, keep the viewing angle but re-frame for the new window shape.
+    if (!seated && !transitioning) {
+      const dir = camera.position.clone().sub(controls.target).normalize();
+      camera.position.copy(controls.target).addScaledVector(dir, wideDistance());
+    }
     request();
   };
 
@@ -324,12 +338,15 @@ export async function createDesk(opts: {
   };
 
   /** Three-quarter view from the lamp side, far enough back to see the whole machine and some desk. */
-  const widePose = () => {
+  function wideDistance() {
     const tan = Math.tan((FOV * Math.PI) / 360);
-    const fit = Math.max(size.y, size.x / camera.aspect, size.z * 0.6);
-    const distance = (fit / (2 * tan)) * 1.9;
+    // On tall screens let the outer props crop rather than shrinking the computer to a speck.
+    const fit = Math.max(size.y, (size.x * (camera.aspect < 1 ? 0.62 : 1)) / camera.aspect, size.z * 0.6);
+    return (fit / (2 * tan)) * 1.75;
+  }
+  const widePose = () => {
     const dir = new Vector3(-0.42, 0.34, 1).normalize();
-    return { position: target.clone().addScaledVector(dir, distance), target: target.clone() };
+    return { position: target.clone().addScaledVector(dir, wideDistance()), target: target.clone() };
   };
 
   // Render on demand only.
@@ -388,8 +405,9 @@ export async function createDesk(opts: {
     screenEl.style.inset = "0 auto auto 0";
     screenEl.style.transform = `translate(${rect.x}px, ${rect.y}px) scale(${rect.h / SCREEN_H})`;
   };
-  const cover = () => {
-    const s = Math.max(vw / SCREEN_W, vh / SCREEN_H);
+  /** The 4:3 screen fitted inside the window: nothing is cropped, the bezel shows around it. */
+  const fitWindow = () => {
+    const s = Math.min(vw / SCREEN_W, vh / SCREEN_H);
     return { x: (vw - SCREEN_W * s) / 2, y: (vh - SCREEN_H * s) / 2, w: SCREEN_W * s, h: SCREEN_H * s };
   };
   const animateScreen = async (rect: { x: number; y: number; w: number; h: number }, ms: number) => {
@@ -409,8 +427,6 @@ export async function createDesk(opts: {
     credit.innerHTML = `<a href="${c.url}" target="_blank" rel="noopener noreferrer">“${c.title}”</a> by ${c.author} · <a href="${c.licenseUrl}" target="_blank" rel="noopener noreferrer">${c.license}</a>`;
   }
 
-  let seated = true;
-  let transitioning = false;
   holder.addEventListener("click", () => {
     if (!seated) void api.sitDown();
   });
@@ -436,7 +452,7 @@ export async function createDesk(opts: {
 
       // Fullscreen → the 4:3 tube rect, still as a plain fixed element above the canvas.
       screenEl.style.opacity = "0";
-      pin(cover());
+      pin(fitWindow());
       await nextFrame();
       screenEl.style.opacity = "";
       await animateScreen(close.rect, 420);
@@ -467,7 +483,7 @@ export async function createDesk(opts: {
       document.body.append(screenEl);
       pin(close.rect);
       await nextFrame();
-      await animateScreen(cover(), 380);
+      await animateScreen(fitWindow(), 380);
       release();
       host.hidden = true;
       seated = true;
@@ -475,6 +491,13 @@ export async function createDesk(opts: {
       opts.onSitDown();
     },
   };
+
+  // The rest of the desk streams in after the computer; each piece just asks for a frame.
+  if (loaded) {
+    const propLoader = new GLTFLoader();
+    propLoader.setMeshoptDecoder(MeshoptDecoder);
+    void addProps(scene, propLoader, bounds, lamp, request);
+  }
 
   resize();
   return api;

@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "model": "scripts/build-model.sh"
+    "model": "scripts/build-model.sh",
+    "props": "scripts/build-props.sh"
   },
   "devDependencies": {
     "@gltf-transform/cli": "4.5.1",

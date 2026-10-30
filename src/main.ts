@@ -1,7 +1,7 @@
 import "./style.css";
-import { art } from "./content";
+import { EMPLOYER, art, profile } from "./content";
 import type { Desk } from "./desk";
-import { run, s } from "./output";
+import { run, s, type Line } from "./output";
 import { Terminal } from "./terminal";
 import { currentScheme, onDisplayChange, restoreDisplay } from "./themes";
 
@@ -52,13 +52,31 @@ if (!connection?.saveData) {
 }
 
 async function boot() {
-  term.print([{ kind: "art", rows: art, maxHeight: 0.55 }, [], [s(`Last login: ${stamp(new Date())} on ttys000`, "dim")]]);
-  await term.pause(500);
-  await term.type("whoami");
-  term.print([
+  const promptLine = $("prompt-line");
+  promptLine.hidden = true;
+  const skip = () => (term.skip = true);
+  window.addEventListener("pointerdown", skip, { once: true });
+  window.addEventListener("keydown", skip, { once: true });
+
+  await term.reveal(art, { maxHeight: 0.55 });
+
+  // The login message: who's here, then where to start.
+  const motd: Line[] = [
+    [],
+    [s(`Last login: ${stamp(new Date())} on ttys000`, "dim")],
+    [s(profile.name.toLowerCase(), "bright"), s(` · ${profile.role.toLowerCase()} · ${EMPLOYER}, ${profile.location.split(",")[0].toLowerCase()}`)],
+    [s(profile.headline.toLowerCase())],
     [],
     [s("try ", "dim"), run("ls"), s(", ", "dim"), run("projects"), s(", ", "dim"), run("theme"), s(" or ", "dim"), run("help"), s(". ", "dim"), run("exit"), s(" steps back from the screen.", "dim")],
-  ]);
+  ];
+  for (const line of motd) {
+    term.print([line]);
+    await term.pause(70);
+  }
+  promptLine.hidden = false;
+  term.skip = false;
+  window.removeEventListener("pointerdown", skip);
+  window.removeEventListener("keydown", skip);
 
   // Shareable links: /#cat ~/shipped/world-cup-host
   const fromHash = decodeURIComponent(location.hash.slice(1)).trim();
