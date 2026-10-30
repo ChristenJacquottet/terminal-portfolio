@@ -15,6 +15,8 @@ import {
   Box3,
   BoxGeometry,
   CanvasTexture,
+  Color,
+  Float32BufferAttribute,
   CatmullRomCurve3,
   CylinderGeometry,
   DoubleSide,
@@ -45,7 +47,7 @@ import type { Room } from "./room";
 
 const PROPS_URL = "/models/props.glb";
 const ORDER = [
-  "lamp", "cassette", "pens", "spectacles", "duck", "camera", "plant", "clock", "frame", "globe", "super8", "cube", "phone",
+  "lamp", "cassette", "pens", "spectacles", "duck", "camera", "plant", "clock", "frame", "globe", "super8", "phone",
   "longhorn", "rugby", "skateboard", "clapper", "biplane", "studiolight", "chair", "suitcase",
 ] as const;
 
@@ -246,6 +248,51 @@ function diskBox(disks: Disk[]): Group {
     holder.name = `disk:${disk.label.toLowerCase()}`;
     g.add(holder);
   });
+  return g;
+}
+
+/**
+ * A Rubik's cube in the palette's colours: 27 cubies under "cubies", one draw each (the stickers are
+ * vertex colours through one shared sticker texture), so interact.ts can turn real faces.
+ */
+function rubik(): Group {
+  const step = 0.019;
+  const sticker = canvas(64, 64, (c) => {
+    c.fillStyle = "#000";
+    c.fillRect(0, 0, 64, 64);
+    c.fillStyle = "#fff";
+    c.beginPath();
+    c.roundRect(6, 6, 52, 52, 9);
+    c.fill();
+  });
+  sticker.colorSpace = SRGBColorSpace;
+  const material = new MeshStandardMaterial({ map: sticker, vertexColors: true, roughness: 0.42 });
+  // +x, -x, +y, -y, +z, -z: the classic scheme, aged towards the palette
+  const faces = ["#c46a2b", "#b8412c", "#ece2cc", "#d39b32", "#2f6f6b", "#3f5f8c"].map((h) => new Color(h).convertSRGBToLinear());
+  const inside = new Color("#1f1d1b").convertSRGBToLinear();
+  const cubies = new Group();
+  cubies.name = "cubies";
+  cubies.userData.step = step;
+  for (let i = -1; i <= 1; i++) {
+    for (let j = -1; j <= 1; j++) {
+      for (let k = -1; k <= 1; k++) {
+        const geo = new BoxGeometry(step * 0.97, step * 0.97, step * 0.97);
+        const colours: number[] = [];
+        const outer = [i === 1, i === -1, j === 1, j === -1, k === 1, k === -1];
+        outer.forEach((out, f) => {
+          const c = out ? faces[f] : inside;
+          for (let v = 0; v < 4; v++) colours.push(c.r, c.g, c.b);
+        });
+        geo.setAttribute("color", new Float32BufferAttribute(colours, 3));
+        const cubie = new Mesh(geo, material);
+        cubie.position.set(i * step, j * step, k * step);
+        cubies.add(cubie);
+      }
+    }
+  }
+  cubies.position.y = 1.5 * step;
+  const g = new Group();
+  g.add(cubies);
   return g;
 }
 
@@ -797,6 +844,7 @@ export async function addProps(
   put("card", place(card(), max.x + 0.42, max.z - 0.14, { width: 0.11, rotY: -0.55 }));
   put("racquet", place(racquet(), max.x + 0.52, front - 0.2, { width: 0.4, rotY: 1.9 }));
   put("ball", place(tennisBall(), max.x + 0.3, front - 0.1, { height: 0.067 }));
+  put("cube", place(rubik(), min.x - 0.25, max.z + 0.2, { height: 0.057, rotY: 0.5 }));
   put("bitcoin", place(bitcoin(), max.x + 0.16, max.z + 0.03, { width: 0.04 }));
   put("pennant", hang(pennant(), max.x + 0.05, 0.6, wall, 0.14));
   put("diploma", onWall(diploma(), room.desk.minX + 0.33, 0.87, 0.15));
@@ -870,7 +918,6 @@ export async function addProps(
     if (pencil) put("pencil", place(pencil, min.x - 0.08, max.z + 0.33, { width: 0.094, rotY: -0.3 }));
   }
   add("camera", (o) => place(o, max.x + 0.2, max.z + 0.1, { width: 0.15, rotY: -0.7 }));
-  add("cube", (o) => place(o, min.x - 0.25, max.z + 0.2, { height: 0.057, rotY: 0.5 }));
   add("plant", (o) => place(o, room.desk.maxX - 0.13, back + 0.13, { height: 0.24 }));
   add("clock", (o) => hang(o, room.desk.minX + 0.02, 0.86, wall, 0.17));
   add("clapper", (o) => place(o, max.x + 0.62, back + 0.1, { width: 0.24, rotY: -0.3 }));

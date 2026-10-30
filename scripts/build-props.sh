@@ -21,7 +21,6 @@ props=(
   "frame|hanging_picture_frame_01/hanging_picture_frame_01_1k.gltf|256"
   "globe|sketchfab/globe.glb|512"
   "super8|sketchfab/super8.glb|512"
-  "cube|sketchfab/rubik.glb|256"
   "phone|sketchfab/phone.glb|512"
   "longhorn|sketchfab/longhorn-up.glb|256"
   "rugby|sketchfab/rugby.glb|512"

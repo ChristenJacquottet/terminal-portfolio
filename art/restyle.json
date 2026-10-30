@@ -305,22 +305,6 @@
         }
       }
     },
-    "cube": {
-      "source": "sketchfab/rubik.glb",
-      "sourceMaterials": [
-        "RubixCube"
-      ],
-      "materials": {
-        "RubixCube": {
-          "swatch": "beige-plastic",
-          "flatten": 0.26,
-          "dropMaps": [
-            "roughness"
-          ],
-          "note": "All six sticker colours share one texture; light flatten ages harsh digital RGB primaries towards warm 1980s vinyl stickers and normalizes roughness to 0.5."
-        }
-      }
-    },
     "phone": {
       "source": "sketchfab/phone.glb",
       "sourceMaterials": [

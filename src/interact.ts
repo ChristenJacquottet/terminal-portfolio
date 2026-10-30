@@ -8,6 +8,7 @@ import {
   Box3,
   BufferGeometry,
   Color,
+  Matrix4,
   Mesh,
   Quaternion,
   Raycaster,
@@ -60,7 +61,7 @@ const BY_NAME: Record<string, Hotspot> = {
   suitcase: { kind: "hop", label: "the suitcase", hint: "always moving" },
   pixelart: { kind: "swing", label: "pixel portrait", hint: "collecting digital art" },
   mug: { kind: "wiggle", label: "the mug", hint: "still warm" },
-  cube: { kind: "hop", label: "Rubik's cube" },
+  cube: { kind: "twist", label: "Rubik's cube", hint: "give it a turn" },
   duck: { kind: "hop", label: "rubber duck", hint: "for debugging" },
   spectacles: { kind: "wiggle", label: "my glasses" },
   pens: { kind: "wiggle", label: "pen cup" },
@@ -165,7 +166,8 @@ export function createInteractions(o: {
       lit = object;
       object?.traverseVisible((m) => {
         const mesh = m as Mesh;
-        if (!mesh.isMesh || mesh.material === rim || !(mesh.geometry as BufferGeometry).getAttribute("normal")) return;
+        // not the rim itself, nor decals and shadows (transparent): those would light up as squares
+        if (!mesh.isMesh || mesh.material === rim || (mesh.material as MeshStandardMaterial).transparent || !(mesh.geometry as BufferGeometry).getAttribute("normal")) return;
         const shell = new Mesh(mesh.geometry, rim);
         shell.raycast = () => {};
         shell.renderOrder = 2;
@@ -447,6 +449,46 @@ export function createInteractions(o: {
     tapeIn = false;
   }
 
+  // ── the Rubik's cube: real face turns, and it solves itself when you leave it alone ──
+  const turns: { axis: "x" | "y" | "z"; layer: number; dir: number }[] = [];
+  let solveTimer = 0;
+  async function turn(cubies: Object3D, move: { axis: "x" | "y" | "z"; layer: number; dir: number }, ms: number) {
+    const step = cubies.userData.step as number;
+    const layer = cubies.children.filter((c) => Math.round(c.position[move.axis] / step) === move.layer);
+    const pivot = new Mesh();
+    cubies.add(pivot);
+    for (const c of layer) pivot.attach(c);
+    await o.animate(ms, (t) => (pivot.rotation[move.axis] = (move.dir * Math.PI * ease(t)) / 2));
+    for (const c of layer) {
+      cubies.attach(c);
+      // back onto the grid, square to it
+      c.position.set(Math.round(c.position.x / step) * step, Math.round(c.position.y / step) * step, Math.round(c.position.z / step) * step);
+      c.updateMatrix();
+      const m = new Matrix4().extractRotation(c.matrix);
+      m.elements.forEach((v, i) => (m.elements[i] = Math.round(v)));
+      c.quaternion.setFromRotationMatrix(m);
+    }
+    pivot.removeFromParent();
+  }
+  async function twist(cube: Object3D) {
+    const cubies = cube.getObjectByName("cubies");
+    if (!cubies) return hop(cube);
+    const axes = ["x", "y", "z"] as const;
+    const move = { axis: axes[Math.floor(Math.random() * 3)], layer: Math.floor(Math.random() * 3) - 1, dir: Math.random() < 0.5 ? 1 : -1 };
+    await turn(cubies, move, 260);
+    turns.push(move);
+    clearTimeout(solveTimer);
+    solveTimer = window.setTimeout(() => {
+      void once(cube, async () => {
+        while (turns.length) {
+          const m = turns.pop()!;
+          o.sfx("click");
+          await turn(cubies, { ...m, dir: -m.dir }, 170);
+        }
+      });
+    }, 4000);
+  }
+
   // ── clicks ─────────────────────────────────────────────────────────────────────────
   function click(t: Target) {
     const { object, spot } = t;
@@ -488,6 +530,10 @@ export function createInteractions(o: {
         return;
       case "flash":
         void once(object, () => camera35(object));
+        return;
+      case "twist":
+        o.sfx("click");
+        void once(object, () => twist(object));
         return;
     }
     const motions: Record<string, (x: Object3D) => Promise<unknown>> = { spin, hop: (x) => hop(x), bounce, wiggle: (x) => wiggle(x), swing, flip };
