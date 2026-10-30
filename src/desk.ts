@@ -53,7 +53,7 @@ import { display, findFile } from "./fs";
 import type { Cue } from "./audio";
 import { createInteractions, type Drive } from "./interact";
 import { addProps, type Disk } from "./props";
-import { buildRoom, loadRoom } from "./room";
+import { buildRoom, loadRoom, type Time } from "./room";
 
 /** The tube's shape (4:3). In the monitor the terminal keeps the window's text size, see `fitTube`. */
 const SCREEN_W = 800;
@@ -332,7 +332,8 @@ export async function createDesk(opts: {
   pmrem.dispose();
 
   // Just enough fill that the shadowed faces still read: cool from above (the night), warm from the desk.
-  scene.add(new HemisphereLight("#6a7aa6", "#1a120b", 0.06));
+  const fill = new HemisphereLight("#6a7aa6", "#1a120b", 0.06);
+  scene.add(fill);
   // The desk lamp's light. Off until the lamp model arrives and puts it on its bulb (props.ts);
   // without the model, it comes on here, over the desk.
   const lamp = new SpotLight("#ffb36b", 0, 6, 0.55, 0.6, 2);
@@ -360,6 +361,19 @@ export async function createDesk(opts: {
   const { root, screen } = loaded ?? standIn();
   scene.add(root);
   const room = buildRoom(scene, await roomAssets, new Box3().setFromObject(root));
+  /** Dusk (the default: warm, everything reads) or the middle of the night (the window toggles it). */
+  let time: Time = "dusk";
+  const setTime = (next: Time) => {
+    time = next;
+    room.setTime(next);
+    const dusk = next === "dusk";
+    fill.color.set(dusk ? "#e3d2bd" : "#6a7aa6");
+    fill.groundColor.set(dusk ? "#2a1a10" : "#1a120b");
+    fill.intensity = dusk ? 0.16 : 0.06;
+    scene.environmentIntensity = dusk ? 0.09 : 0.04;
+    renderer.toneMappingExposure = dusk ? 0.92 : 0.85;
+  };
+  setTime(time);
 
   const glass = glassMaterial(screen, room.windowCenter.clone().sub(screen.center).normalize());
   if (loaded) {
@@ -393,16 +407,17 @@ export async function createDesk(opts: {
   // Props flank the computer and the wall has things on it, so the wide shot frames the desk, not just the machine.
   size.x += 0.62;
   size.y += 0.12;
-  // Aimed a little above the computer and from nearly eye level, so the wall gets as much of the frame as the desk.
-  const target = new Vector3(0, size.y * 0.5 + 0.1, 0);
+  // Looking down at the desk from just above head height, nearly straight on, with the computer in
+  // the middle: the desk fills the frame and the wall with its map sits right behind it.
+  const target = new Vector3(0.12, 0.22, -0.05);
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
   controls.enablePan = false;
-  controls.minAzimuthAngle = -0.6;
-  controls.maxAzimuthAngle = 0.6;
-  controls.minPolarAngle = 0.95;
-  controls.maxPolarAngle = 1.45;
+  controls.minAzimuthAngle = -0.5;
+  controls.maxAzimuthAngle = 0.5;
+  controls.minPolarAngle = 0.85;
+  controls.maxPolarAngle = 1.32;
   controls.zoomSpeed = 0.6;
   controls.enabled = false;
 
@@ -460,15 +475,15 @@ export async function createDesk(opts: {
     };
   };
 
-  /** Three-quarter view from the lamp side, far enough back to see the whole machine and some desk. */
+  /** Far enough back to frame the desk's width (about 1.85 m of it). */
   function wideDistance() {
     const tan = Math.tan((FOV * Math.PI) / 360);
     // On tall screens let the outer props crop rather than shrinking the computer to a speck.
-    const fit = Math.max(size.y, (size.x * (camera.aspect < 1 ? 0.45 : 1)) / camera.aspect, size.z * 0.6);
-    return (fit / (2 * tan)) * 1.75;
+    const fit = Math.max(size.y, (1.85 * (camera.aspect < 1 ? 0.5 : 1)) / camera.aspect);
+    return fit / (2 * tan);
   }
   const widePose = () => {
-    const dir = new Vector3(-0.42, 0.24, 1).normalize();
+    const dir = new Vector3(-0.01, 0.42, 0.91).normalize();
     return { position: target.clone().addScaledVector(dir, wideDistance()), target: target.clone() };
   };
 
@@ -749,6 +764,11 @@ export async function createDesk(opts: {
     sfx: (cue) => opts.sound?.play(cue as Cue),
     music: (on) => void opts.sound?.music(on),
     muted: () => opts.sound?.muted() ?? null,
+    time: () => time,
+    setTime: (next) => {
+      setTime(next);
+      relight();
+    },
     setMuted: (m) => opts.sound?.setMuted(m),
     sitDownAndRun: async (command) => {
       await api.sitDown();
@@ -842,7 +862,7 @@ export async function createDesk(opts: {
       const m = x as Mesh;
       if (m.isMesh && m !== loaded?.tube) parts.push(new Box3().setFromObject(m));
     });
-    touch.setTargets(props.values(), parts);
+    touch.setTargets([...props.values(), room.windowFrame], parts);
   });
   void propsReady.then(() => {
     if (lamp.intensity) return;

@@ -71,6 +71,7 @@ const BY_NAME: Record<string, Hotspot> = {
   spectacles: { kind: "wiggle", label: "my glasses" },
   pens: { kind: "wiggle", label: "pen cup" },
   clock: { kind: "swing", label: "the clock", hint: "it's late" },
+  worldmap: { kind: "swing", label: "the world map", hint: "the one from my room" },
   plant: { kind: "wiggle", label: "the plant" },
   chair: { kind: "wiggle", label: "my chair" },
 };
@@ -105,6 +106,8 @@ export function createInteractions(o: {
   /** The sound switch, for the headphones (null when there's no sound layer). */
   muted: () => boolean | null;
   setMuted: (m: boolean) => void;
+  time: () => "dusk" | "night";
+  setTime: (time: "dusk" | "night") => void;
 }) {
   const { scene, camera } = o;
   const targets: Object3D[] = [];
@@ -232,6 +235,7 @@ export function createInteractions(o: {
     const { spot } = t;
     if (spot.kind === "lamp") return [spot.label, lampOn ? "switch it off" : "switch it on"];
     if (spot.kind === "headphones") return [spot.label, o.muted() ? "sound on" : "sound off"];
+    if (spot.kind === "time") return [spot.label, o.time() === "dusk" ? "wait for night" : "back to dusk"];
     if (spot.kind === "walkman") return [spot.label, tapeIn ? (playing ? "pause" : "play") : "no tape in it"];
     if (spot.kind === "tape") return [spot.label, tapeIn ? "take it out" : spot.hint];
     if (spot.kind === "disk" && t.object === inDrive) return [spot.label, "it's in the drive: open it"];
@@ -529,6 +533,10 @@ export function createInteractions(o: {
           await wiggle(object, 0.06);
           await o.sitDownAndRun("contact");
         });
+        return;
+      case "time":
+        o.sfx("lidClose"); // the blinds
+        o.setTime(o.time() === "dusk" ? "night" : "dusk");
         return;
       case "answering":
         o.sfx("click");

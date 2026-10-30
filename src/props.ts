@@ -31,6 +31,7 @@ import {
   Shape,
   ShapeGeometry,
   SphereGeometry,
+  TextureLoader,
   PointLight,
   SpotLight,
   TorusGeometry,
@@ -293,6 +294,79 @@ function rubik(): Group {
   cubies.position.y = 1.5 * step;
   const g = new Group();
   g.add(cubies);
+  return g;
+}
+
+/** A teal self-healing cutting mat: a 1 cm grid, inch rules on two edges, 45° guides. */
+function cuttingMat(x0: number, x1: number, z0: number, z1: number): Mesh {
+  const w = x1 - x0;
+  const d = z1 - z0;
+  const px = 1600;
+  const art = canvas(px, Math.round((px * d) / w), (c) => {
+    const W = c.canvas.width;
+    const H = c.canvas.height;
+    const cm = W / (w * 100);
+    c.fillStyle = "#2f6f6b";
+    c.fillRect(0, 0, W, H);
+    for (let i = 0; i * cm <= W; i++) {
+      c.fillStyle = i % 5 ? "rgba(225,240,230,0.22)" : "rgba(225,240,230,0.45)";
+      c.fillRect(i * cm, 0, i % 5 ? 1 : 2, H);
+    }
+    for (let i = 0; i * cm <= H; i++) {
+      c.fillStyle = i % 5 ? "rgba(225,240,230,0.22)" : "rgba(225,240,230,0.45)";
+      c.fillRect(0, i * cm, W, i % 5 ? 1 : 2);
+    }
+    c.strokeStyle = "rgba(225,240,230,0.3)";
+    c.lineWidth = 2;
+    for (const k of [-1, 1]) {
+      c.beginPath();
+      c.moveTo(W / 2 - (k * H) / 2, 0);
+      c.lineTo(W / 2 + (k * H) / 2, H);
+      c.stroke();
+    }
+    c.fillStyle = "rgba(240,248,240,0.75)";
+    c.font = `${Math.round(cm * 0.9)}px Helvetica, Arial, sans-serif`;
+    for (let i = 1; i * cm * 2.54 < W - cm; i++) c.fillText(String(i), i * cm * 2.54 - cm * 0.25, cm * 1.1);
+    for (let i = 1; i * cm * 2.54 < H - cm; i++) c.fillText(String(i), cm * 0.25, i * cm * 2.54 + cm * 0.3);
+  });
+  const mat = new Mesh(new PlaneGeometry(w, d), new MeshStandardMaterial({ map: art, roughness: 0.85, ...decal }));
+  mat.rotation.x = -Math.PI / 2;
+  mat.position.set((x0 + x1) / 2, 0.0012, (z0 + z1) / 2);
+  mat.receiveShadow = true;
+  return mat;
+}
+
+/**
+ * The big laminated world map from my room: drawn from public-domain Natural Earth data into
+ * public/textures/world-map.webp (scripts/world-map.mjs). Pinned at the corners, a little sheen.
+ */
+function wallMap(onReady: () => void): Group {
+  const g = new Group();
+  const W = 0.9;
+  const H = 0.45;
+  const material = new MeshStandardMaterial({ color: "#a9c6d6", roughness: 0.32 });
+  new TextureLoader().load(
+    "/textures/world-map.webp",
+    (t) => {
+      t.colorSpace = SRGBColorSpace;
+      t.anisotropy = 8;
+      material.map = t;
+      material.color.set("#ffffff");
+      material.needsUpdate = true;
+      onReady();
+    },
+    undefined,
+    () => {}, // no map yet: a plain sheet
+  );
+  const sheet = new Mesh(new PlaneGeometry(W, H), material);
+  sheet.position.z = 0.002;
+  const pin = new MeshStandardMaterial({ color: "#b8412c", roughness: 0.4 });
+  for (const [x, y] of [[-1, 1], [1, 1], [-1, -1], [1, -1]]) {
+    const p = new Mesh(new SphereGeometry(0.006, 12, 8), pin);
+    p.position.set(x * (W / 2 - 0.015), y * (H / 2 - 0.015), 0.008);
+    g.add(p);
+  }
+  g.add(sheet);
   return g;
 }
 
@@ -842,11 +916,17 @@ export async function addProps(
   put("floppies", place(diskBox(disks), min.x - 0.14, max.z - 0.02, { width: Math.max(0.152, 0.06 + disks.length * 0.016), rotY: 0.25 }));
   put("notebook", place(notebook(), min.x + 0.02, max.z + 0.17, { width: 0.31, rotY: 0.12 }));
   put("card", place(card(), max.x + 0.42, max.z - 0.14, { width: 0.11, rotY: -0.55 }));
-  put("racquet", place(racquet(), max.x + 0.52, front - 0.2, { width: 0.4, rotY: 1.9 }));
-  put("ball", place(tennisBall(), max.x + 0.3, front - 0.1, { height: 0.067 }));
+  // The racquet leans against the wall in the back right corner, the ball at its foot.
+  const bat = racquet();
+  bat.rotation.x = -1.2;
+  put("racquet", place(bat, room.desk.maxX - 0.12, back + 0.06, { height: 0.42, rotY: -0.35 }));
+  put("ball", place(tennisBall(), room.desk.maxX - 0.26, back + 0.1, { height: 0.067 }));
+  // The cutting mat under the computer, and the big world map behind it, like the one in my room.
+  scene.add(cuttingMat(min.x - 0.12, max.x + 0.16, back + 0.03, max.z + 0.05));
+  put("worldmap", hang(wallMap(onChange), (min.x + max.x) / 2, 0.5, wall, 0.45));
   put("cube", place(rubik(), min.x - 0.25, max.z + 0.2, { height: 0.057, rotY: 0.5 }));
   put("bitcoin", place(bitcoin(), max.x + 0.16, max.z + 0.03, { width: 0.04 }));
-  put("pennant", hang(pennant(), max.x + 0.05, 0.6, wall, 0.14));
+  put("pennant", hang(pennant(), min.x - 0.36, 0.8, wall, 0.14));
   put("diploma", onWall(diploma(), room.desk.minX + 0.33, 0.87, 0.15));
   const portrait = pixelPortrait();
   portrait.rotation.x = -0.12; // leaning back against the glass
@@ -930,12 +1010,12 @@ export async function addProps(
     if (pencil) put("pencil", place(pencil, min.x - 0.08, max.z + 0.33, { width: 0.094, rotY: -0.3 }));
   }
   add("camera", (o) => place(o, max.x + 0.2, max.z + 0.1, { width: 0.15, rotY: -0.7 }));
-  add("plant", (o) => place(o, room.desk.maxX - 0.13, back + 0.13, { height: 0.24 }));
+  add("plant", (o) => onSill(o, sill.x1 - 0.42, { height: 0.2 }));
   add("clock", (o) => hang(o, room.desk.minX + 0.02, 0.86, wall, 0.17));
-  add("clapper", (o) => place(o, max.x + 0.62, back + 0.1, { width: 0.24, rotY: -0.3 }));
-  add("longhorn", (o) => {
+  add("clapper", (o) => place(o, min.x - 0.14, back + 0.1, { width: 0.22, rotY: 1.35 })); // imagination side, by the globe
+  add("longhorn", (o) => { // above the map
     o.rotation.set(Math.PI / 2, 0, -Math.PI / 2, "ZYX"); // face out from the wall, nose down
-    return hang(o, mid + 0.1, 0.8, wall, 0.24); // a steer skull over the computer, DFW style
+    return hang(o, mid, 0.92, wall, 0.22); // a steer skull over the computer, DFW style
   });
   add("biplane", (o) => onSill(o, sill.x0 + 0.18, { width: 0.24, rotY: 0.5 }));
   add("rugby", (o) => place(o, room.desk.minX - 0.45, wall + 0.75, { width: 0.28, rotY: -0.4, y: floor, shadow: true }));
@@ -944,15 +1024,15 @@ export async function addProps(
   add("suitcase", (o) => place(o, room.desk.minX - 0.3, wall + 0.3, { width: 0.6, rotY: 0.15, y: floor, shadow: true }));
   add("skateboard", (o) => place(o, room.desk.minX - 0.12, wall + 0.2, { height: 0.7, y: floor, shadow: true }));
   // The implementation side: a breadboard mid-build, the meter on it, the joystick by the keys.
-  add("breadboard", (o) => place(o, max.x + 0.72, front - 0.12, { width: 0.15, rotY: -0.25 }));
-  add("multimeter", (o) => place(o, max.x + 0.8, front - 0.3, { height: 0.12, rotY: -0.7 }));
+  add("breadboard", (o) => place(o, max.x + 0.58, back + 0.36, { width: 0.15, rotY: -0.3 }));
+  add("multimeter", (o) => place(o, max.x + 0.64, back + 0.56, { height: 0.12, rotY: -0.6 }));
   add("joystick", (o) => place(o, max.x + 0.12, max.z + 0.18, { height: 0.11, rotY: -0.3 }));
   if (byName.headphones) {
     // Only the headphones from the Walkman kit, lying on the desk by the player.
     const cans = piece(byName.headphones, "headset_Material_0", true);
     if (cans) {
       cans.rotation.x = -Math.PI / 2;
-      put("headphones", place(cans, max.x + 0.56, front - 0.16, { width: 0.15, rotY: 0.4 }));
+      put("headphones", place(cans, max.x + 0.62, front - 0.28, { width: 0.14, rotY: 0.4 }));
     }
   }
   if (byName.frame) {
@@ -967,7 +1047,7 @@ export async function addProps(
       }
       if (mat.name.includes("glass")) mesh.visible = false; // its tint hid the print
     });
-    put("frame", hang(byName.frame, min.x - 0.02, 0.66, wall, 0.36));
+    put("frame", hang(byName.frame, min.x - 0.36, 0.47, wall, 0.28));
   }
   await prepare(arrivals);
   for (const o of [...arrivals.children]) scene.add(o);

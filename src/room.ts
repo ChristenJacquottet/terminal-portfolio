@@ -38,7 +38,13 @@ export type Room = {
   window: { x0: number; x1: number; y0: number; y1: number };
   /** Desk top extents in world space. */
   desk: { minX: number; maxX: number; backZ: number; frontZ: number };
+  /** The window and its blinds (a hotspot). */
+  windowFrame: Object3D;
+  /** Golden hour or the middle of the night: the sky outside and the light it lets in. */
+  setTime(time: Time): void;
 };
+
+export type Time = "dusk" | "night";
 
 const PAINT = "#e8e0cc";
 
@@ -154,11 +160,14 @@ export function buildRoom(scene: Scene, assets: RoomAssets, computer: Box3): Roo
     dummy.updateMatrix();
     slats.setMatrixAt(i, dummy.matrix);
   }
-  scene.add(
+  frame.add(
     slats,
     box(slatW + 0.01, 0.03, 0.035, slatMat, cx, win.y1 - 0.02, wallZ - 0.035), // headrail
     box(slatW, 0.012, 0.03, slatMat, cx, bottom - pitch, wallZ - 0.035), // bottom rail
   );
+  // Clicking the window turns the time (interact.ts): dusk or the middle of the night.
+  frame.name = "window";
+  frame.userData.hotspot = { kind: "time", label: "the window" };
   const cord = new MeshStandardMaterial({ color: "#d8ceb6", roughness: 0.9 });
   for (const x of [cx - slatW * 0.3, cx + slatW * 0.3]) scene.add(box(0.002, win.y1 - bottom, 0.002, cord, x, (win.y1 + bottom) / 2 - 0.02, wallZ - 0.022));
   scene.add(box(0.003, 0.42, 0.003, cord, win.x1 - 0.06, win.y1 - 0.25, wallZ - 0.02)); // pull cord
@@ -166,11 +175,12 @@ export function buildRoom(scene: Scene, assets: RoomAssets, computer: Box3): Roo
   // ── outside: Dallas, 2 AM ───────────────────────────────────────────────────────────────
   // A high floor, looking out and a little down: the painted horizon (55% down the canvas) sits in
   // the lower half of the window, and the city spreads out below it.
-  const view = new Mesh(new PlaneGeometry(5.5, 4.3), new MeshBasicMaterial({ map: skyline(), fog: false, toneMapped: false }));
+  const skies: Record<Time, CanvasTexture> = { dusk: duskSky(), night: nightSky() };
+  const view = new Mesh(new PlaneGeometry(5.5, 4.3), new MeshBasicMaterial({ map: skies.dusk, fog: false, toneMapped: false }));
   view.position.set(cx + 0.2, win.y0 - 0.28 + 4.3 * 0.05, wallZ - 2.2);
   scene.add(view);
 
-  // The night outside: a cool, dim wash from the moon and the city, through the window only. The
+  // The light through the window only (setTime picks the sun at dusk or the moon at night). The
   // wall casts a shadow, so it lands as a window-shaped patch on the desk, striped by the blinds.
   // Its shadow map is drawn once (and again when something moves), never per frame; see desk.ts.
   const sun = new DirectionalLight("#6f8fc7", 0.55);
@@ -204,7 +214,19 @@ export function buildRoom(scene: Scene, assets: RoomAssets, computer: Box3): Roo
     wallZ,
     floorY,
     window: win,
+    windowFrame: frame,
     desk: { minX: deskBox.min.x, maxX: deskBox.max.x, backZ: deskBox.min.z, frontZ: deskBox.max.z },
+    setTime(time) {
+      // Dusk: the low sun through the blinds, warm. Night: the moon and the city, cool and dim.
+      const look = time === "dusk" ? { sun: ["#ffb46e", 2.6], bounce: ["#ffb780", 0.45], tint: "#d8d0c8" } : { sun: ["#6f8fc7", 0.55], bounce: ["#7d8fc4", 0.18], tint: "#ffffff" };
+      sun.color.set(look.sun[0] as string);
+      sun.intensity = look.sun[1] as number;
+      bounce.color.set(look.bounce[0] as string);
+      bounce.intensity = look.bounce[1] as number;
+      const material = view.material as MeshBasicMaterial;
+      material.map = skies[time];
+      material.color.set(look.tint);
+    },
   };
 }
 
@@ -241,7 +263,7 @@ function wallpaper(): CanvasTexture {
 }
 
 /** A 1980s Dallas skyline at 2 AM, painted once into a canvas. Seeded so it never changes. */
-function skyline(): CanvasTexture {
+function nightSky(): CanvasTexture {
   const W = 2048;
   const H = 1600;
   const c = document.createElement("canvas");
@@ -425,6 +447,177 @@ function skyline(): CanvasTexture {
     g.stroke();
   }
   g.setLineDash([]);
+
+  const t = new CanvasTexture(c);
+  t.colorSpace = SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
+
+/** A 1980s Dallas skyline at golden hour, painted once into a canvas. Seeded so it never changes. */
+function duskSky(): CanvasTexture {
+  const W = 2048;
+  const H = 1600;
+  const c = document.createElement("canvas");
+  c.width = W;
+  c.height = H;
+  const g = c.getContext("2d")!;
+  let seed = 7;
+  const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const horizon = H * 0.55;
+
+  const sky = g.createLinearGradient(0, 0, 0, horizon);
+  sky.addColorStop(0, "#40507a");
+  sky.addColorStop(0.45, "#9a7a8e");
+  sky.addColorStop(0.78, "#eaa06a");
+  sky.addColorStop(1, "#f8c88a");
+  g.fillStyle = sky;
+  g.fillRect(0, 0, W, H);
+  const sun = g.createRadialGradient(W * 0.74, horizon - 40, 10, W * 0.74, horizon - 40, W * 0.32);
+  sun.addColorStop(0, "rgba(255,236,190,0.95)");
+  sun.addColorStop(0.12, "rgba(255,214,150,0.55)");
+  sun.addColorStop(1, "rgba(255,190,120,0)");
+  g.fillStyle = sun;
+  g.fillRect(0, 0, W, H);
+  // a few long clouds
+  for (let i = 0; i < 7; i++) {
+    g.fillStyle = `rgba(255,${180 + rand() * 40},${150 + rand() * 40},${0.12 + rand() * 0.12})`;
+    g.beginPath();
+    g.ellipse(rand() * W, horizon * (0.25 + rand() * 0.45), 160 + rand() * 260, 6 + rand() * 10, 0, 0, Math.PI * 2);
+    g.fill();
+  }
+
+  const lit = (x: number, y: number, w: number, h: number, density: number) => {
+    for (let yy = y + 8; yy < y + h - 4; yy += 9) {
+      for (let xx = x + 4; xx < x + w - 4; xx += 7) {
+        if (rand() < density) {
+          g.fillStyle = `rgba(255,${200 + rand() * 40},${120 + rand() * 60},${0.55 + rand() * 0.4})`;
+          g.fillRect(xx, yy, 3, 4);
+        }
+      }
+    }
+  };
+
+  // The skyline is a few miles off: draw it smaller, standing on the horizon.
+  g.save();
+  const sx = 0.72;
+  const sy = 0.5;
+  g.translate(W * 0.55 * (1 - sx), horizon * (1 - sy));
+  g.scale(sx, sy);
+  // far haze
+  for (let x = -W * 0.4; x < W * 1.4; ) {
+    const bw = 30 + rand() * 70;
+    const bh = 30 + rand() * 110;
+    g.fillStyle = "rgba(150,110,120,0.55)";
+    g.fillRect(x, horizon - bh, bw, bh + 4);
+    x += bw + rand() * 10;
+  }
+
+  const ink = "#4a3a44";
+  const tower = (x: number, w: number, h: number, top?: (x: number, y: number) => void) => {
+    g.fillStyle = ink;
+    g.fillRect(x, horizon - h, w, h);
+    lit(x, horizon - h, w, h, 0.14);
+    top?.(x, horizon - h);
+  };
+  // fillers
+  for (let i = 0; i < 40; i++) tower(-W * 0.2 + rand() * W * 1.4, 40 + rand() * 60, 80 + rand() * 180);
+  // Renaissance Tower: the X bracing
+  tower(W * 0.47, 88, 430, (x, y) => {
+    g.strokeStyle = "rgba(255,210,160,0.35)";
+    g.lineWidth = 2;
+    for (let yy = y + 20; yy < horizon - 60; yy += 60) {
+      g.beginPath();
+      g.moveTo(x + 4, yy); g.lineTo(x + 84, yy + 60);
+      g.moveTo(x + 84, yy); g.lineTo(x + 4, yy + 60);
+      g.stroke();
+    }
+    g.fillStyle = ink;
+    g.fillRect(x + 40, y - 70, 8, 70);
+  });
+  // Bank of America Plaza, with its green outline
+  tower(W * 0.57, 96, 520, (x, y) => {
+    g.strokeStyle = "rgba(90,255,140,0.75)";
+    g.lineWidth = 3;
+    g.strokeRect(x + 2, y + 2, 92, 516);
+  });
+  // Fountain Place: a prism
+  g.fillStyle = ink;
+  g.beginPath();
+  g.moveTo(W * 0.66, horizon); g.lineTo(W * 0.66, horizon - 380); g.lineTo(W * 0.66 + 50, horizon - 470); g.lineTo(W * 0.66 + 100, horizon - 330); g.lineTo(W * 0.66 + 100, horizon);
+  g.fill();
+  lit(W * 0.66, horizon - 330, 100, 330, 0.12);
+  tower(W * 0.73, 76, 400); // Thanksgiving Tower
+  // the Magnolia building and its red Pegasus
+  tower(W * 0.4, 62, 270, (x, y) => {
+    g.fillStyle = ink;
+    g.fillRect(x + 28, y - 40, 6, 40);
+    g.fillStyle = "#ff3b30";
+    g.shadowColor = "#ff3b30";
+    g.shadowBlur = 14;
+    g.beginPath();
+    g.moveTo(x + 10, y - 44); g.lineTo(x + 40, y - 54); g.lineTo(x + 54, y - 70); g.lineTo(x + 50, y - 50); g.lineTo(x + 30, y - 42);
+    g.fill();
+    g.shadowBlur = 0;
+  });
+  // Reunion Tower: a shaft and a lit ball
+  const rx = W * 0.3;
+  g.fillStyle = ink;
+  g.fillRect(rx - 10, horizon - 330, 20, 330);
+  g.beginPath();
+  g.arc(rx, horizon - 360, 44, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = "rgba(255,236,190,0.9)";
+  for (let a = 0; a < Math.PI * 2; a += Math.PI / 9) {
+    for (let r = 12; r < 42; r += 10) g.fillRect(rx + Math.cos(a) * r - 1.5, horizon - 360 + Math.sin(a) * r * 0.9 - 1.5, 3, 3);
+  }
+
+  g.restore();
+
+  // Below the horizon, the city spreads out towards the window: rows of low buildings getting
+  // bigger and darker as they come closer, with lit windows, and trees between them.
+  const ground = g.createLinearGradient(0, horizon, 0, H);
+  ground.addColorStop(0, "#9a7476");
+  ground.addColorStop(1, "#3a2c30");
+  g.fillStyle = ground;
+  g.fillRect(0, horizon, W, H - horizon);
+  for (let row = 0; row < 9; row++) {
+    const t = row / 8;
+    const y = horizon + 10 + t * t * (H - horizon - 40);
+    const scale = 0.4 + t * 2.2;
+    const shade = Math.round(140 - t * 85);
+    for (let x = -20; x < W; ) {
+      const bw = (30 + rand() * 50) * scale;
+      const bh = (14 + rand() * 30) * scale;
+      g.fillStyle = `rgb(${shade + 14},${shade - 6},${shade + 4})`;
+      g.fillRect(x, y - bh, bw, bh + 6 * scale);
+      g.fillStyle = `rgb(${shade + 30},${shade + 8},${shade + 10})`; // sunlit roof edge
+      g.fillRect(x, y - bh, bw, Math.max(1, 1.5 * scale));
+      for (let k = 0; k < bw * bh * 0.002; k++) {
+        if (rand() < 0.6) {
+          g.fillStyle = `rgba(255,${200 + rand() * 40},${120 + rand() * 60},0.8)`;
+          g.fillRect(x + rand() * (bw - 3 * scale), y - bh + 3 * scale + rand() * (bh - 6 * scale), 2 * scale, 2.5 * scale);
+        }
+      }
+      if (rand() < 0.35) {
+        // a tree: a cluster of dark leaf blobs
+        g.fillStyle = `rgb(${shade - 20},${shade - 28},${shade - 26})`;
+        const r = (6 + rand() * 6) * scale;
+        for (let k = 0; k < 4; k++) {
+          g.beginPath();
+          g.arc(x + bw + r * (0.4 + rand()), y - r * (0.6 + rand() * 0.8), r * (0.6 + rand() * 0.4), 0, Math.PI * 2);
+          g.fill();
+        }
+      }
+      x += bw + rand() * 14 * scale;
+    }
+  }
+  g.strokeStyle = "rgba(20,14,12,0.7)";
+  g.lineWidth = 2;
+  g.beginPath();
+  g.moveTo(0, horizon - 220);
+  g.quadraticCurveTo(W * 0.5, horizon - 140, W, horizon - 240);
+  g.stroke();
 
   const t = new CanvasTexture(c);
   t.colorSpace = SRGBColorSpace;
