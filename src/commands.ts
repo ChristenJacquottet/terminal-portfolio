@@ -2,7 +2,7 @@ import { EMPLOYER, FOLDERS, HOST, SOCIAL, STACK, USER, art, endYear, fileName, p
 import { HOME, display, findFile, lookup, resolve, type DirNode, type Node } from "./fs";
 import { isBlock, link, pad, run, s, swatch, text, type Line, type Span } from "./output";
 import { THEMES, crtOn, currentTheme, isTheme, nextTheme, setCrt, setTheme } from "./themes";
-import { MODEL_CREDIT } from "./credit";
+import { MODEL_CREDIT, PROP_CREDITS } from "./credit";
 
 export interface TermApi {
   clear(): void;
@@ -380,7 +380,9 @@ export const COMMANDS: Record<string, Command> = {
     run: () => [
       [s("code, copy and case studies  ", "dim"), s(profile.name)],
       [s("3d model                     ", "dim"), link(`“${MODEL_CREDIT.title}”`, MODEL_CREDIT.url), s(` by ${MODEL_CREDIT.author}, `), link(MODEL_CREDIT.license, MODEL_CREDIT.licenseUrl)],
-      [s("desk props                   ", "dim"), link("Poly Haven", "https://polyhaven.com/models"), s(" (CC0): lamp, cassette player, notepads, pens, spectacles, duck")],
+      ...PROP_CREDITS.map((c, i): Line => [s(i ? "                             " : "desk props                   ", "dim"), link(`“${c.title}”`, c.url), s(` by ${c.author}, `), link(MODEL_CREDIT.license, MODEL_CREDIT.licenseUrl)]),
+      [s("                             ", "dim"), link("Poly Haven", "https://polyhaven.com"), s(" (CC0): the desk, wall, floor, lamp, cassette player, camera, plant, clock, frame, pens, spectacles, duck")],
+      [s("                             ", "dim"), s("made in code: the room, the Dallas skyline, the racquet, notebook, floppies, mug, card and pennant")],
       [s("fonts                        ", "dim"), s("IBM Plex Mono, VT323 (SIL Open Font License)")],
       [s("first version                ", "dim"), link("WebShell", "https://github.com/nasan016/webshell"), s(" by Nathaniel Macapinlac (MIT)")],
     ],

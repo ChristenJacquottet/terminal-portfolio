@@ -22,7 +22,6 @@ function stepBack() {
       host: $("desk"),
       screenEl: $("screen"),
       glow: currentScheme().fg,
-      glass: currentScheme().bg,
       onProgress: () => {},
       onSitDown: () => {
         term.print([[s(`Last login: ${stamp(new Date())} on ttys000`, "dim")]]);
@@ -39,7 +38,7 @@ function stepBack() {
 }
 
 onDisplayChange(() => {
-  void desk?.then((d) => d.setGlow(currentScheme().fg, currentScheme().bg));
+  void desk?.then((d) => d.setGlow(currentScheme().fg));
 });
 
 const term = new Terminal($("term"), $("output"), $("prompt-line"), $("prompt"), $("mirror"), $<HTMLInputElement>("input"), stepBack);

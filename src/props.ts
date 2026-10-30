@@ -1,8 +1,15 @@
-// Things on the desk around the computer. Loaded after the computer so `exit` never waits on them.
-// Models: Poly Haven (CC0), merged into public/models/props.glb, one glTF scene per prop in this order.
+// Things on the desk and the wall. Loaded after the computer so `exit` never waits on them.
+// Models are merged into public/models/props.glb (scripts/build-props.sh), one glTF scene per prop
+// in ORDER: Poly Haven (CC0) and Sketchfab (CC BY, see credit.ts). The rest is made here in code.
+//
+// What's here is true to Christen: tennis (college team), Réunion and French Guiana (the globe and
+// the print), photography and filmmaking (the cameras), computer science (the notebook), and the
+// video call where the microphone died and everyone held up paper (the card by the phone).
 import {
   Box3,
+  BoxGeometry,
   CanvasTexture,
+  CatmullRomCurve3,
   CylinderGeometry,
   DoubleSide,
   Group,
@@ -12,36 +19,57 @@ import {
   MeshStandardMaterial,
   PlaneGeometry,
   SRGBColorSpace,
+  Shape,
+  ShapeGeometry,
+  SphereGeometry,
   SpotLight,
   TorusGeometry,
+  TubeGeometry,
   Vector2,
   Vector3,
   type Object3D,
   type Scene,
 } from "three";
 import type { GLTF, GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import type { Room } from "./room";
 
 const PROPS_URL = "/models/props.glb";
-const ORDER = ["lamp", "cassette", "notepads", "pens", "spectacles", "duck"] as const;
+const ORDER = ["lamp", "cassette", "pens", "spectacles", "duck", "camera", "plant", "clock", "frame", "globe", "super8", "cube", "phone"] as const;
+
+/** Decals (shadows, labels, paper) sit a hair above what they're on and win the depth test. */
+const decal = { polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 };
+
+function canvas(w: number, h: number, draw: (g: CanvasRenderingContext2D) => void, flipY = true) {
+  const c = document.createElement("canvas");
+  c.width = w;
+  c.height = h;
+  draw(c.getContext("2d")!);
+  const t = new CanvasTexture(c);
+  t.colorSpace = SRGBColorSpace;
+  t.anisotropy = 4;
+  t.flipY = flipY;
+  return t;
+}
 
 /** Soft blob shadow under a prop (no realtime shadows anywhere). */
 function blob(width: number, depth: number, strength = 0.6): Mesh {
-  const c = document.createElement("canvas");
-  c.width = c.height = 64;
-  const g = c.getContext("2d")!;
-  const grad = g.createRadialGradient(32, 32, 2, 32, 32, 32);
-  grad.addColorStop(0, `rgba(0,0,0,${strength})`);
-  grad.addColorStop(1, "rgba(0,0,0,0)");
-  g.fillStyle = grad;
-  g.fillRect(0, 0, 64, 64);
-  const m = new Mesh(new PlaneGeometry(width, depth), new MeshBasicMaterial({ map: new CanvasTexture(c), transparent: true, depthWrite: false }));
+  const map = canvas(64, 64, (g) => {
+    const grad = g.createRadialGradient(32, 32, 2, 32, 32, 32);
+    grad.addColorStop(0, `rgba(0,0,0,${strength})`);
+    grad.addColorStop(1, "rgba(0,0,0,0)");
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 64, 64);
+  });
+  const m = new Mesh(new PlaneGeometry(width, depth), new MeshBasicMaterial({ map, transparent: true, depthWrite: false, ...decal }));
   m.rotation.x = -Math.PI / 2;
-  m.position.y = 0.0015;
+  m.position.y = 0.0006;
   return m;
 }
 
-/** Sits `object` on the desk at (x, z), scaled so its height (or width) is `size` metres. */
-function place(object: Object3D, x: number, z: number, opts: { height?: number; width?: number; rotY?: number; y?: number } = {}) {
+type PlaceOpts = { height?: number; width?: number; rotY?: number; y?: number; shadow?: boolean };
+
+/** Sits `object` on the desk at (x, z), scaled so its height (or largest footprint side) is `size` metres. */
+function place(object: Object3D, x: number, z: number, opts: PlaceOpts = {}) {
   const holder = new Group();
   holder.add(object);
   const box = new Box3().setFromObject(object);
@@ -54,9 +82,26 @@ function place(object: Object3D, x: number, z: number, opts: { height?: number; 
   holder.position.set(x, opts.y ?? 0, z);
   holder.rotation.y = opts.rotY ?? 0;
   const footprint = new Box3().setFromObject(object).getSize(new Vector3());
-  if (!opts.y) holder.add(blob(footprint.x * 1.3, footprint.z * 1.3));
+  if (opts.shadow ?? !opts.y) holder.add(blob(footprint.x * 1.3, footprint.z * 1.3));
   return holder;
 }
+
+/** Hangs `object` flat on the wall, centred at (x, y), facing the room. */
+function hang(object: Object3D, x: number, y: number, wallZ: number, height: number, turn = 0) {
+  const holder = new Group();
+  holder.add(object);
+  object.rotation.y += turn;
+  const box = new Box3().setFromObject(object);
+  const size = box.getSize(new Vector3());
+  object.scale.multiplyScalar(height / size.y);
+  box.setFromObject(object);
+  const c = box.getCenter(new Vector3());
+  object.position.sub(new Vector3(c.x, c.y, box.min.z));
+  holder.position.set(x, y, wallZ + 0.002);
+  return holder;
+}
+
+// ── made in code ──────────────────────────────────────────────────────────────────────────
 
 function mug(): Group {
   const g = new Group();
@@ -74,51 +119,267 @@ function mug(): Group {
   return g;
 }
 
-/** A small stack of 5¼" floppies with hand-written labels. */
+/** A small stack of 5¼" floppies with hand-written labels. Real thickness, so nothing is coplanar. */
 function floppies(labels: string[]): Group {
   const g = new Group();
   const sleeve = new MeshStandardMaterial({ color: "#0a0a0a", roughness: 0.85 });
+  const hubMat = new MeshStandardMaterial({ color: "#3b3022", roughness: 0.9 });
   labels.forEach((text, i) => {
-    const c = document.createElement("canvas");
-    c.width = 256;
-    c.height = 96;
-    const ctx = c.getContext("2d")!;
-    ctx.fillStyle = "#f2ead2";
-    ctx.fillRect(0, 0, 256, 96);
-    ctx.fillStyle = "#c8432b";
-    ctx.fillRect(0, 0, 256, 10);
-    ctx.fillStyle = "#1d2a6b";
-    ctx.font = "italic 34px 'Comic Sans MS', 'Marker Felt', cursive";
-    ctx.fillText(text, 14, 62);
-    const label = new CanvasTexture(c);
-    label.colorSpace = SRGBColorSpace;
-    const disk = new Mesh(new PlaneGeometry(0.133, 0.133), sleeve);
-    disk.rotation.x = -Math.PI / 2;
-    const sticker = new Mesh(new PlaneGeometry(0.09, 0.034), new MeshStandardMaterial({ map: label, roughness: 0.8, side: DoubleSide }));
-    sticker.rotation.x = -Math.PI / 2;
-    sticker.position.set(0, 0.0006, -0.038);
-    const hub = new Mesh(new CylinderGeometry(0.016, 0.016, 0.0004, 24), new MeshStandardMaterial({ color: "#3b3022", roughness: 0.9 }));
-    hub.position.y = 0.0003;
+    const label = canvas(256, 96, (ctx) => {
+      ctx.fillStyle = "#f2ead2";
+      ctx.fillRect(0, 0, 256, 96);
+      ctx.fillStyle = "#c8432b";
+      ctx.fillRect(0, 0, 256, 10);
+      ctx.fillStyle = "#1d2a6b";
+      ctx.font = "italic 34px 'Comic Sans MS', 'Marker Felt', cursive";
+      ctx.fillText(text, 14, 62);
+    });
     const layer = new Group();
+    const disk = new Mesh(new BoxGeometry(0.133, 0.0016, 0.133), sleeve);
+    const sticker = new Mesh(new PlaneGeometry(0.09, 0.034), new MeshStandardMaterial({ map: label, roughness: 0.8, ...decal }));
+    sticker.rotation.x = -Math.PI / 2;
+    sticker.position.set(0, 0.0009, -0.038);
+    const hub = new Mesh(new CylinderGeometry(0.016, 0.016, 0.0004, 24), hubMat);
+    hub.position.y = 0.0009;
     layer.add(disk, sticker, hub);
-    layer.position.y = 0.0022 * i + 0.001;
+    layer.position.y = 0.0008 + 0.0019 * i;
     layer.rotation.y = (i - 1) * 0.18;
     g.add(layer);
   });
   return g;
 }
 
+/** An open graph-paper notebook with a BASIC doodle, and a pencil. */
+function notebook(): Group {
+  const g = new Group();
+  const page = canvas(512, 704, (ctx) => {
+    ctx.fillStyle = "#f4f0e2";
+    ctx.fillRect(0, 0, 512, 704);
+    ctx.strokeStyle = "rgba(80,140,170,0.35)";
+    ctx.lineWidth = 1;
+    for (let x = 0; x <= 512; x += 16) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 704); ctx.stroke(); }
+    for (let y = 0; y <= 704; y += 16) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(512, y); ctx.stroke(); }
+    ctx.fillStyle = "rgba(40,40,50,0.85)";
+    ctx.font = "26px 'Bradley Hand', 'Segoe Print', 'Comic Sans MS', cursive";
+    const lines = ["10 REM imagination", "20 REM  -> implementation", "30 PRINT \"HELLO, WORLD\"", "40 GOTO 30", "", "RUN"];
+    lines.forEach((l, i) => ctx.fillText(l, 36, 80 + i * 48));
+    ctx.strokeStyle = "rgba(40,40,50,0.7)";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(300, 420, 160, 120); // a little screen sketch
+    ctx.beginPath(); ctx.moveTo(320, 560); ctx.lineTo(440, 560); ctx.stroke();
+  });
+  const cover = new MeshStandardMaterial({ color: "#2f4a3a", roughness: 0.8 });
+  const base = new Mesh(new BoxGeometry(0.31, 0.006, 0.21), cover);
+  base.position.y = 0.003;
+  const paperMat = new MeshStandardMaterial({ map: page, roughness: 0.9, ...decal });
+  const left = new Mesh(new BoxGeometry(0.15, 0.004, 0.205), new MeshStandardMaterial({ color: "#f1ecdd", roughness: 0.9 }));
+  left.position.set(-0.077, 0.008, 0);
+  const right = new Mesh(new PlaneGeometry(0.15, 0.205), paperMat);
+  right.rotation.x = -Math.PI / 2;
+  right.position.set(0.077, 0.0062, 0);
+  const rightBlock = new Mesh(new BoxGeometry(0.15, 0.0005, 0.205), new MeshStandardMaterial({ color: "#f1ecdd", roughness: 0.9 }));
+  rightBlock.position.set(0.077, 0.0059, 0);
+  g.add(base, left, rightBlock, right);
+  // the pencil
+  const pencil = new Group();
+  const wood = new Mesh(new CylinderGeometry(0.0038, 0.0038, 0.16, 6), new MeshStandardMaterial({ color: "#e8b923", roughness: 0.5 }));
+  const tip = new Mesh(new CylinderGeometry(0.0038, 0.0004, 0.018, 6), new MeshStandardMaterial({ color: "#e3c9a0", roughness: 0.8 }));
+  tip.position.y = -0.089;
+  const eraser = new Mesh(new CylinderGeometry(0.0038, 0.0038, 0.012, 12), new MeshStandardMaterial({ color: "#d77a7a", roughness: 0.9 }));
+  eraser.position.y = 0.086;
+  pencil.add(wood, tip, eraser);
+  pencil.rotation.set(0, 0.4, Math.PI / 2);
+  pencil.position.set(0.05, 0.0105, 0.07);
+  g.add(pencil);
+  return g;
+}
+
+/** A folded paper card: “CAN YOU HEAR ME?”, in pencil. */
+function card(): Group {
+  const g = new Group();
+  const map = canvas(512, 256, (ctx) => {
+    ctx.fillStyle = "#f7f3e8";
+    ctx.fillRect(0, 0, 512, 256);
+    ctx.fillStyle = "rgba(50,50,60,0.85)";
+    ctx.font = "bold 58px 'Marker Felt', 'Comic Sans MS', cursive";
+    ctx.textAlign = "center";
+    ctx.fillText("CAN YOU", 256, 110);
+    ctx.fillText("HEAR ME?", 256, 180);
+  });
+  const face = new MeshStandardMaterial({ map, roughness: 0.9, side: DoubleSide });
+  const back = new MeshStandardMaterial({ color: "#f1ecdf", roughness: 0.9, side: DoubleSide });
+  const w = 0.11;
+  const h = 0.06;
+  const tilt = 0.32;
+  for (const [mat, dir] of [[face, 1], [back, -1]] as const) {
+    const panel = new Mesh(new PlaneGeometry(w, h), mat);
+    panel.position.set(0, (h / 2) * Math.cos(tilt), (dir * h * Math.sin(tilt)) / 2);
+    panel.rotation.x = -dir * tilt;
+    if (dir < 0) panel.rotation.y = Math.PI;
+    g.add(panel);
+  }
+  return g;
+}
+
+/** A 1980s wooden tennis racquet, lying on the desk. */
+function racquet(): Group {
+  const g = new Group();
+  const wood = new MeshStandardMaterial({ color: "#a8743f", roughness: 0.45 });
+  const headA = 0.115; // half-length of the oval head
+  const headB = 0.0875; // half-width
+  const pts = Array.from({ length: 48 }, (_, i) => {
+    const a = (i / 48) * Math.PI * 2;
+    return new Vector3(Math.sin(a) * headB, 0, -Math.cos(a) * headA - headA);
+  });
+  g.add(new Mesh(new TubeGeometry(new CatmullRomCurve3(pts, true), 96, 0.007, 8, true), wood));
+  // strings
+  const strings = canvas(256, 320, (ctx) => {
+    ctx.strokeStyle = "rgba(236,230,210,0.95)";
+    ctx.lineWidth = 2;
+    for (let x = 8; x < 256; x += 14) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 320); ctx.stroke(); }
+    for (let y = 8; y < 320; y += 14) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(256, y); ctx.stroke(); }
+  });
+  const bed = new Mesh(
+    new ShapeGeometry(new Shape().absellipse(0, 0, headB - 0.004, headA - 0.004, 0, Math.PI * 2, false, 0)),
+    new MeshBasicMaterial({ map: strings, transparent: true, alphaTest: 0.3, side: DoubleSide, color: "#bdb6a2" }),
+  );
+  // ShapeGeometry UVs are in metres; stretch them to 0..1 across the bed.
+  const uv = bed.geometry.getAttribute("uv");
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) / (headB * 2) + 0.5, uv.getY(i) / (headA * 2) + 0.5);
+  bed.rotation.x = -Math.PI / 2;
+  bed.position.z = -headA;
+  g.add(bed);
+  // throat and handle
+  for (const side of [-1, 1]) {
+    const throat = new CatmullRomCurve3([new Vector3(side * headB * 0.55, 0, -0.012), new Vector3(side * 0.02, 0, 0.05), new Vector3(side * 0.012, 0, 0.09)]);
+    g.add(new Mesh(new TubeGeometry(throat, 12, 0.006, 6), wood));
+  }
+  const shaft = new Mesh(new CylinderGeometry(0.014, 0.014, 0.06, 8), wood);
+  shaft.rotation.x = Math.PI / 2;
+  shaft.position.z = 0.1;
+  const grip = new Mesh(new CylinderGeometry(0.016, 0.017, 0.17, 8), new MeshStandardMaterial({ color: "#5a3a22", roughness: 0.7 }));
+  grip.rotation.x = Math.PI / 2;
+  grip.position.z = 0.215;
+  g.add(shaft, grip);
+  return g;
+}
+
+function tennisBall(): Mesh {
+  const map = canvas(256, 128, (ctx) => {
+    ctx.fillStyle = "#cfdc48";
+    ctx.fillRect(0, 0, 256, 128);
+    for (let i = 0; i < 900; i++) {
+      ctx.fillStyle = `rgba(${Math.random() < 0.5 ? "255,255,200" : "120,130,30"},0.12)`;
+      ctx.fillRect(Math.random() * 256, Math.random() * 128, 2, 2);
+    }
+    ctx.strokeStyle = "#f3f1e6";
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    for (let x = 0; x <= 256; x += 4) {
+      const y = 64 + Math.sin((x / 256) * Math.PI * 4) * 30;
+      if (x === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  });
+  return new Mesh(new SphereGeometry(0.0335, 24, 16), new MeshStandardMaterial({ map, roughness: 0.95 }));
+}
+
+/** A felt pennant from college tennis. */
+function pennant(): Mesh {
+  const map = canvas(512, 192, (ctx) => {
+    ctx.fillStyle = "#4b2a6e";
+    ctx.fillRect(0, 0, 512, 192);
+    ctx.fillStyle = "#f0f0f0";
+    ctx.fillRect(0, 0, 44, 192);
+    ctx.fillStyle = "#e9b84a";
+    ctx.font = "bold 54px Georgia, 'Times New Roman', serif";
+    ctx.fillText("TAYLOR", 70, 92);
+    ctx.font = "bold 30px Georgia, serif";
+    ctx.fillText("TENNIS", 74, 136);
+  });
+  const shape = new Shape().moveTo(0, 0.07).lineTo(0.42, 0).lineTo(0, -0.07).closePath();
+  const geo = new ShapeGeometry(shape);
+  const uv = geo.getAttribute("uv");
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) / 0.42, uv.getY(i) / 0.14 + 0.5);
+  const m = new Mesh(geo, new MeshStandardMaterial({ map, roughness: 1, side: DoubleSide }));
+  m.rotation.z = -0.08;
+  return m;
+}
+
+/** The print in the frame: Réunion's peaks over the Indian Ocean, as a screen-print. */
+function reunionPrint() {
+  return canvas(
+    384,
+    512,
+    (g) => {
+      const sky = g.createLinearGradient(0, 0, 0, 300);
+      sky.addColorStop(0, "#f2c9a0");
+      sky.addColorStop(1, "#f6e3c4");
+      g.fillStyle = sky;
+      g.fillRect(0, 0, 384, 512);
+      g.fillStyle = "#f7d27a";
+      g.beginPath();
+      g.arc(250, 170, 46, 0, Math.PI * 2);
+      g.fill();
+      const ridge = (color: string, base: number, peaks: [number, number][]) => {
+        g.fillStyle = color;
+        g.beginPath();
+        g.moveTo(0, 512);
+        g.lineTo(0, base);
+        for (const [x, y] of peaks) g.lineTo(x, y);
+        g.lineTo(384, base);
+        g.lineTo(384, 512);
+        g.fill();
+      };
+      ridge("#b98a7a", 300, [[60, 230], [120, 180], [170, 205], [220, 140], [270, 200], [330, 230]]);
+      ridge("#6f6a5a", 340, [[40, 300], [110, 250], [160, 290], [230, 230], [300, 280], [360, 300]]);
+      ridge("#3f5a48", 380, [[80, 350], [150, 330], [240, 360], [320, 340]]);
+      g.fillStyle = "#2f6f8a";
+      g.fillRect(0, 400, 384, 112);
+      g.fillStyle = "rgba(255,255,255,0.35)";
+      for (let y = 412; y < 512; y += 14) g.fillRect(20 + ((y * 7) % 60), y, 120, 2);
+      // a palm on the left
+      g.strokeStyle = "#243326";
+      g.lineWidth = 6;
+      g.beginPath();
+      g.moveTo(70, 512);
+      g.quadraticCurveTo(80, 420, 60, 330);
+      g.stroke();
+      g.fillStyle = "#243326";
+      for (let a = -2.6; a < 0.4; a += 0.5) {
+        g.beginPath();
+        g.ellipse(60 + Math.cos(a) * 34, 330 + Math.sin(a) * 18, 40, 7, a, 0, Math.PI * 2);
+        g.fill();
+      }
+      // paper border
+      g.strokeStyle = "#f4ecd8";
+      g.lineWidth = 26;
+      g.strokeRect(0, 0, 384, 512);
+    },
+    false, // glTF UVs
+  );
+}
+
 /**
  * Loads and arranges the desk props around the computer. `bounds` is the computer's world box;
  * the lamp's light is moved onto the lamp head. Calls `onChange` whenever the scene needs a frame.
  */
-export async function addProps(scene: Scene, loader: GLTFLoader, bounds: Box3, light: SpotLight, onChange: () => void) {
+export async function addProps(scene: Scene, loader: GLTFLoader, bounds: Box3, room: Room, light: SpotLight, onChange: () => void) {
   const { min, max } = bounds;
-  const front = max.z;
+  const back = room.desk.backZ;
+  const front = room.desk.frontZ;
 
   // The code-made props first: they cost nothing to load.
-  scene.add(place(mug(), max.x + 0.07, front - 0.02, { height: 0.095 }));
-  scene.add(place(floppies(["PORTFOLIO", "CRASHERS", "DISK 3"]), min.x - 0.05, front + 0.02, { width: 0.135, rotY: 0.25 }));
+  scene.add(
+    place(mug(), max.x + 0.06, max.z - 0.06, { height: 0.095 }),
+    place(floppies(["PORTFOLIO", "CRASHERS", "DISK 3"]), min.x - 0.14, max.z - 0.02, { width: 0.135, rotY: 0.25 }),
+    place(notebook(), min.x + 0.02, max.z + 0.17, { width: 0.31, rotY: 0.12 }),
+    place(card(), max.x + 0.42, max.z - 0.14, { width: 0.11, rotY: -0.55 }),
+    place(racquet(), max.x + 0.52, front - 0.2, { width: 0.4, rotY: 1.9 }),
+    place(tennisBall(), max.x + 0.3, front - 0.1, { height: 0.067 }),
+    hang(pennant(), max.x + 0.05, 0.7, room.wallZ, 0.14),
+  );
   onChange();
 
   let gltf: GLTF;
@@ -128,23 +389,47 @@ export async function addProps(scene: Scene, loader: GLTFLoader, bounds: Box3, l
     return; // the scene is complete without them
   }
   const byName = Object.fromEntries(ORDER.map((name, i) => [name, gltf.scenes[i]])) as Record<(typeof ORDER)[number], Group | undefined>;
+  const add = (name: (typeof ORDER)[number], fn: (o: Group) => Object3D) => {
+    const o = byName[name];
+    if (o) scene.add(fn(o));
+  };
 
   if (byName.lamp) {
-    const lamp = place(byName.lamp, min.x - 0.13, min.z + 0.02, { height: 0.5, rotY: 0.85 });
+    // A clamp lamp, clamped to the back edge, reaching over the keyboard.
+    const lamp = place(byName.lamp, min.x - 0.16, back + 0.025, { height: 0.5, rotY: 0.85, y: -0.045 });
     scene.add(lamp);
-    // The shade is at the top front of the model; aim the lamp's light from there at the keyboard.
     lamp.updateMatrixWorld(true);
     const head = new Box3().setFromObject(lamp);
     light.position.set(head.max.x - 0.04, head.max.y - 0.06, head.max.z - 0.02);
-    light.target.position.set((min.x + max.x) / 2, 0.05, front - 0.05);
+    light.target.position.set((min.x + max.x) / 2, 0.05, max.z);
     light.angle = 0.75;
     light.distance = 3;
     light.intensity = 3.2; // much closer to the desk than the default lamp position
   }
-  if (byName.cassette) scene.add(place(byName.cassette, max.x + 0.16, front - 0.22, { width: 0.16, rotY: -0.5 }));
-  if (byName.notepads) scene.add(place(byName.notepads, max.x + 0.12, front + 0.1, { width: 0.2, rotY: -0.2 }));
-  if (byName.pens) scene.add(place(byName.pens, max.x + 0.13, front + 0.1, { width: 0.15, rotY: 0.9, y: 0.006 }));
-  if (byName.spectacles) scene.add(place(byName.spectacles, min.x + 0.06, front + 0.09, { width: 0.13, rotY: 0.35 }));
-  if (byName.duck) scene.add(place(byName.duck, min.x - 0.1, front - 0.08, { height: 0.065, rotY: 0.6 }));
+  add("globe", (o) => place(o, min.x - 0.42, back + 0.2, { height: 0.32, rotY: 2.4 }));
+  add("super8", (o) => place(o, min.x - 0.42, max.z + 0.06, { height: 0.17, rotY: 0.9 }));
+  add("spectacles", (o) => place(o, min.x + 0.1, max.z + 0.14, { width: 0.13, rotY: 0.35, y: 0.0115 }));
+  add("duck", (o) => place(o, min.x - 0.08, max.z - 0.17, { height: 0.065, rotY: 0.6 }));
+  add("cassette", (o) => place(o, max.x + 0.12, back + 0.14, { width: 0.16, rotY: -0.5 }));
+  add("phone", (o) => place(o, max.x + 0.36, back + 0.24, { height: 0.11, rotY: -0.45 }));
+  add("pens", (o) => place(o, max.x + 0.08, back + 0.36, { width: 0.15, rotY: 0.9 }));
+  add("camera", (o) => place(o, max.x + 0.2, max.z + 0.1, { width: 0.15, rotY: -0.7 }));
+  add("cube", (o) => place(o, min.x - 0.25, max.z + 0.2, { height: 0.057, rotY: 0.5 }));
+  add("plant", (o) => place(o, room.desk.maxX - 0.13, back + 0.13, { height: 0.24 }));
+  add("clock", (o) => hang(o, min.x - 0.5, 0.86, room.wallZ, 0.24));
+  if (byName.frame) {
+    byName.frame.traverse((o) => {
+      const mesh = o as Mesh;
+      const mat = mesh.material as MeshStandardMaterial | undefined;
+      if (!mesh.isMesh || !mat) return;
+      if (mat.name.includes("artwork")) {
+        mat.map = reunionPrint();
+        mat.color.set("#ffffff");
+        mat.needsUpdate = true;
+      }
+      if (mat.name.includes("glass")) mesh.visible = false; // its tint hid the print
+    });
+    scene.add(hang(byName.frame, min.x - 0.02, 0.66, room.wallZ, 0.36));
+  }
   onChange();
 }

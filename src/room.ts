@@ -1,0 +1,382 @@
+// The room around the computer: a steel desk, a plaster wall with a window onto a 1980s Dallas
+// skyline at golden hour, venetian blinds, a floor. Loaded alongside the computer.
+// Desk model and textures: Poly Haven (CC0). The skyline is drawn here, in code.
+import {
+  Box3,
+  BoxGeometry,
+  CanvasTexture,
+  DirectionalLight,
+  Group,
+  InstancedMesh,
+  Mesh,
+  MeshBasicMaterial,
+  MeshStandardMaterial,
+  Object3D,
+  Path,
+  PlaneGeometry,
+  RepeatWrapping,
+  SRGBColorSpace,
+  Shape,
+  ShapeGeometry,
+  TextureLoader,
+  Vector3,
+  type Scene,
+  type Texture,
+} from "three";
+import type { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+
+export type RoomAssets = { desk: Group | null; floor: Texture | null };
+
+/** What the props need to know about the room. Desk top is y = 0; the wall faces +z. */
+export type Room = {
+  windowCenter: Vector3;
+  wallZ: number;
+  /** Desk top extents in world space. */
+  desk: { minX: number; maxX: number; backZ: number; frontZ: number };
+};
+
+const PAINT = "#e8e0cc";
+
+export async function loadRoom(loader: GLTFLoader): Promise<RoomAssets> {
+  const tex = new TextureLoader();
+  const get = (url: string) => tex.loadAsync(url).catch(() => null);
+  const [desk, floor] = await Promise.all([
+    loader.loadAsync("/models/desk.glb").then((g) => g.scene, () => null),
+    get("/textures/floor_diff.webp"),
+  ]);
+  return { desk, floor };
+}
+
+function tile(t: Texture | null, x: number, y: number, srgb = true) {
+  if (!t) return null;
+  t.wrapS = t.wrapT = RepeatWrapping;
+  t.repeat.set(x, y);
+  t.anisotropy = 4;
+  if (srgb) t.colorSpace = SRGBColorSpace;
+  return t;
+}
+
+const box = (w: number, h: number, d: number, mat: MeshStandardMaterial, x: number, y: number, z: number) => {
+  const m = new Mesh(new BoxGeometry(w, h, d), mat);
+  m.position.set(x, y, z);
+  return m;
+};
+
+export function buildRoom(scene: Scene, assets: RoomAssets, computer: Box3): Room {
+  // ── the desk: a 2 m steel tanker desk, top at y = 0, the computer towards its left ─────────
+  let deskBox: Box3;
+  if (assets.desk) {
+    const desk = assets.desk;
+    desk.traverse((o) => {
+      const mesh = o as Mesh;
+      if (mesh.isMesh) (mesh.material as MeshStandardMaterial).color.set("#d9ccb0"); // putty-coloured steel
+    });
+    const b = new Box3().setFromObject(desk);
+    desk.position.set(0.12 - (b.min.x + b.max.x) / 2, -b.max.y, computer.min.z - 0.1 - b.min.z);
+    scene.add(desk);
+    deskBox = new Box3().setFromObject(desk);
+  } else {
+    const top = box(2, 0.04, 0.95, new MeshStandardMaterial({ color: "#7a6a55", roughness: 0.6 }), 0.12, -0.02, computer.min.z - 0.1 + 0.475);
+    scene.add(top);
+    deskBox = new Box3().setFromObject(top);
+    deskBox.min.y = -0.79;
+  }
+  const floorY = deskBox.min.y;
+  const wallZ = deskBox.min.z - 0.03;
+
+  // ── floor ───────────────────────────────────────────────────────────────────────────────
+  const floor = new Mesh(
+    new PlaneGeometry(7, 5),
+    new MeshStandardMaterial({ map: tile(assets.floor, 3.5, 2.5), color: "#8a7560", roughness: 0.75 }),
+  );
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.set(0, floorY, wallZ + 2.5);
+  scene.add(floor);
+
+  // ── wall with a window hole ─────────────────────────────────────────────────────────────
+  const win = { x0: 0.5, x1: 1.4, y0: 0.2, y1: 1.2 };
+  const wallShape = new Shape().moveTo(-3.5, floorY).lineTo(3.5, floorY).lineTo(3.5, floorY + 2.8).lineTo(-3.5, floorY + 2.8).closePath();
+  wallShape.holes.push(new Path().moveTo(win.x0, win.y0).lineTo(win.x0, win.y1).lineTo(win.x1, win.y1).lineTo(win.x1, win.y0).closePath());
+  const wall = new Mesh(
+    new ShapeGeometry(wallShape),
+    new MeshStandardMaterial({ map: tile(wallpaper(), 1 / 0.6, 1 / 0.6), roughness: 0.92 }),
+  );
+  wall.position.z = wallZ;
+  const skirting = box(7, 0.1, 0.015, new MeshStandardMaterial({ color: "#4a3626", roughness: 0.6 }), 0, floorY + 0.05, wallZ + 0.0075);
+  scene.add(wall, skirting);
+
+  // ── window: painted casing, deep jambs, a sill, a meeting rail, blinds ─────────────────
+  const paint = new MeshStandardMaterial({ color: PAINT, roughness: 0.55 });
+  const w = win.x1 - win.x0;
+  const h = win.y1 - win.y0;
+  const cx = (win.x0 + win.x1) / 2;
+  const cy = (win.y0 + win.y1) / 2;
+  const depth = 0.16; // wall thickness, seen in the reveal
+  const casing = 0.06;
+  const frame = new Group();
+  frame.add(
+    // casing on the wall face
+    box(w + casing * 2, casing, 0.02, paint, cx, win.y1 + casing / 2, wallZ + 0.01),
+    box(casing, h, 0.02, paint, win.x0 - casing / 2, cy, wallZ + 0.01),
+    box(casing, h, 0.02, paint, win.x1 + casing / 2, cy, wallZ + 0.01),
+    // jambs, so the wall has thickness
+    box(w, 0.01, depth, paint, cx, win.y1 - 0.005, wallZ - depth / 2),
+    box(0.01, h, depth, paint, win.x0 + 0.005, cy, wallZ - depth / 2),
+    box(0.01, h, depth, paint, win.x1 - 0.005, cy, wallZ - depth / 2),
+    box(w, 0.01, depth, paint, cx, win.y0 + 0.005, wallZ - depth / 2),
+    // the sash: a meeting rail and a frame at the glass line
+    box(w, 0.035, 0.03, paint, cx, cy, wallZ - depth + 0.03),
+    box(w, 0.03, 0.03, paint, cx, win.y1 - 0.025, wallZ - depth + 0.03),
+    box(w, 0.03, 0.03, paint, cx, win.y0 + 0.025, wallZ - depth + 0.03),
+    box(0.03, h, 0.03, paint, win.x0 + 0.025, cy, wallZ - depth + 0.03),
+    box(0.03, h, 0.03, paint, win.x1 - 0.025, cy, wallZ - depth + 0.03),
+    // sill
+    box(w + 0.16, 0.025, 0.07, paint, cx, win.y0 - 0.0125, wallZ + 0.03),
+  );
+  scene.add(frame);
+
+  // Venetian blinds, raised a little past halfway, slats tilted open.
+  const slatMat = new MeshStandardMaterial({ color: "#efe7d4", roughness: 0.5, metalness: 0.15 });
+  const slatW = w - 0.03;
+  const bottom = win.y0 + h * 0.42;
+  const pitch = 0.021;
+  const count = Math.floor((win.y1 - 0.05 - bottom) / pitch);
+  const slats = new InstancedMesh(new BoxGeometry(slatW, 0.0012, 0.024), slatMat, count);
+  const dummy = new Object3D();
+  for (let i = 0; i < count; i++) {
+    dummy.position.set(cx, win.y1 - 0.05 - i * pitch, wallZ - 0.035);
+    dummy.rotation.set(0.6, 0, 0);
+    dummy.updateMatrix();
+    slats.setMatrixAt(i, dummy.matrix);
+  }
+  scene.add(
+    slats,
+    box(slatW + 0.01, 0.03, 0.035, slatMat, cx, win.y1 - 0.02, wallZ - 0.035), // headrail
+    box(slatW, 0.012, 0.03, slatMat, cx, bottom - pitch, wallZ - 0.035), // bottom rail
+  );
+  const cord = new MeshStandardMaterial({ color: "#d8ceb6", roughness: 0.9 });
+  for (const x of [cx - slatW * 0.3, cx + slatW * 0.3]) scene.add(box(0.002, win.y1 - bottom, 0.002, cord, x, (win.y1 + bottom) / 2 - 0.02, wallZ - 0.022));
+  scene.add(box(0.003, 0.42, 0.003, cord, win.x1 - 0.06, win.y1 - 0.25, wallZ - 0.02)); // pull cord
+
+  // ── outside: Dallas, golden hour ────────────────────────────────────────────────────────
+  // A high floor, looking out and a little down: the painted horizon (55% down the canvas) sits in
+  // the lower half of the window, and the city spreads out below it.
+  const view = new Mesh(new PlaneGeometry(5.5, 4.3), new MeshBasicMaterial({ map: skyline(), fog: false, toneMapped: false, color: "#d8d0c8" }));
+  view.position.set(cx + 0.2, win.y0 - 0.28 + 4.3 * 0.05, wallZ - 2.2);
+  scene.add(view);
+
+  // Late sun through the window: a warm key from behind, which rims the computer and the props.
+  const sun = new DirectionalLight("#ffc48a", 0.9);
+  sun.position.set(cx + 0.6, cy + 1.2, wallZ - 2);
+  sun.target.position.set(0, 0, computer.max.z);
+  scene.add(sun, sun.target);
+
+  return {
+    windowCenter: new Vector3(cx, cy, wallZ - depth),
+    wallZ,
+    desk: { minX: deskBox.min.x, maxX: deskBox.max.x, backZ: deskBox.min.z, frontZ: deskBox.max.z },
+  };
+}
+
+/** Early-80s wallpaper: warm beige with a faint pinstripe and a tiny diamond, 60 cm repeat. */
+function wallpaper(): CanvasTexture {
+  const c = document.createElement("canvas");
+  c.width = c.height = 512;
+  const g = c.getContext("2d")!;
+  g.fillStyle = "#b7a587";
+  g.fillRect(0, 0, 512, 512);
+  let seed = 3;
+  const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < 9000; i++) {
+    g.fillStyle = `rgba(${rand() < 0.5 ? "255,245,225" : "90,70,50"},0.05)`;
+    g.fillRect(rand() * 512, rand() * 512, 2, 2);
+  }
+  for (let x = 0; x < 512; x += 64) {
+    g.fillStyle = "rgba(120,96,70,0.18)";
+    g.fillRect(x, 0, 3, 512);
+    g.fillStyle = "rgba(255,240,215,0.12)";
+    g.fillRect(x + 5, 0, 1, 512);
+  }
+  g.fillStyle = "rgba(120,92,66,0.22)";
+  for (let x = 32; x < 512; x += 64) {
+    for (let y = 16; y < 512; y += 64) {
+      g.beginPath();
+      g.moveTo(x, y - 5); g.lineTo(x + 4, y); g.lineTo(x, y + 5); g.lineTo(x - 4, y);
+      g.fill();
+    }
+  }
+  const t = new CanvasTexture(c);
+  t.colorSpace = SRGBColorSpace;
+  return t;
+}
+
+/** A 1980s Dallas skyline at golden hour, painted once into a canvas. Seeded so it never changes. */
+function skyline(): CanvasTexture {
+  const W = 2048;
+  const H = 1600;
+  const c = document.createElement("canvas");
+  c.width = W;
+  c.height = H;
+  const g = c.getContext("2d")!;
+  let seed = 7;
+  const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const horizon = H * 0.55;
+
+  const sky = g.createLinearGradient(0, 0, 0, horizon);
+  sky.addColorStop(0, "#40507a");
+  sky.addColorStop(0.45, "#9a7a8e");
+  sky.addColorStop(0.78, "#eaa06a");
+  sky.addColorStop(1, "#f8c88a");
+  g.fillStyle = sky;
+  g.fillRect(0, 0, W, H);
+  const sun = g.createRadialGradient(W * 0.74, horizon - 40, 10, W * 0.74, horizon - 40, W * 0.32);
+  sun.addColorStop(0, "rgba(255,236,190,0.95)");
+  sun.addColorStop(0.12, "rgba(255,214,150,0.55)");
+  sun.addColorStop(1, "rgba(255,190,120,0)");
+  g.fillStyle = sun;
+  g.fillRect(0, 0, W, H);
+  // a few long clouds
+  for (let i = 0; i < 7; i++) {
+    g.fillStyle = `rgba(255,${180 + rand() * 40},${150 + rand() * 40},${0.12 + rand() * 0.12})`;
+    g.beginPath();
+    g.ellipse(rand() * W, horizon * (0.25 + rand() * 0.45), 160 + rand() * 260, 6 + rand() * 10, 0, 0, Math.PI * 2);
+    g.fill();
+  }
+
+  const lit = (x: number, y: number, w: number, h: number, density: number) => {
+    for (let yy = y + 8; yy < y + h - 4; yy += 9) {
+      for (let xx = x + 4; xx < x + w - 4; xx += 7) {
+        if (rand() < density) {
+          g.fillStyle = `rgba(255,${200 + rand() * 40},${120 + rand() * 60},${0.55 + rand() * 0.4})`;
+          g.fillRect(xx, yy, 3, 4);
+        }
+      }
+    }
+  };
+
+  // The skyline is a few miles off: draw it smaller, standing on the horizon.
+  g.save();
+  const sx = 0.72;
+  const sy = 0.5;
+  g.translate(W * 0.55 * (1 - sx), horizon * (1 - sy));
+  g.scale(sx, sy);
+  // far haze
+  for (let x = -W * 0.4; x < W * 1.4; ) {
+    const bw = 30 + rand() * 70;
+    const bh = 30 + rand() * 110;
+    g.fillStyle = "rgba(150,110,120,0.55)";
+    g.fillRect(x, horizon - bh, bw, bh + 4);
+    x += bw + rand() * 10;
+  }
+
+  const ink = "#4a3a44";
+  const tower = (x: number, w: number, h: number, top?: (x: number, y: number) => void) => {
+    g.fillStyle = ink;
+    g.fillRect(x, horizon - h, w, h);
+    lit(x, horizon - h, w, h, 0.14);
+    top?.(x, horizon - h);
+  };
+  // fillers
+  for (let i = 0; i < 40; i++) tower(-W * 0.2 + rand() * W * 1.4, 40 + rand() * 60, 80 + rand() * 180);
+  // Renaissance Tower: the X bracing
+  tower(W * 0.47, 88, 430, (x, y) => {
+    g.strokeStyle = "rgba(255,210,160,0.35)";
+    g.lineWidth = 2;
+    for (let yy = y + 20; yy < horizon - 60; yy += 60) {
+      g.beginPath();
+      g.moveTo(x + 4, yy); g.lineTo(x + 84, yy + 60);
+      g.moveTo(x + 84, yy); g.lineTo(x + 4, yy + 60);
+      g.stroke();
+    }
+    g.fillStyle = ink;
+    g.fillRect(x + 40, y - 70, 8, 70);
+  });
+  // Bank of America Plaza, with its green outline
+  tower(W * 0.57, 96, 520, (x, y) => {
+    g.strokeStyle = "rgba(90,255,140,0.75)";
+    g.lineWidth = 3;
+    g.strokeRect(x + 2, y + 2, 92, 516);
+  });
+  // Fountain Place: a prism
+  g.fillStyle = ink;
+  g.beginPath();
+  g.moveTo(W * 0.66, horizon); g.lineTo(W * 0.66, horizon - 380); g.lineTo(W * 0.66 + 50, horizon - 470); g.lineTo(W * 0.66 + 100, horizon - 330); g.lineTo(W * 0.66 + 100, horizon);
+  g.fill();
+  lit(W * 0.66, horizon - 330, 100, 330, 0.12);
+  tower(W * 0.73, 76, 400); // Thanksgiving Tower
+  // the Magnolia building and its red Pegasus
+  tower(W * 0.4, 62, 270, (x, y) => {
+    g.fillStyle = ink;
+    g.fillRect(x + 28, y - 40, 6, 40);
+    g.fillStyle = "#ff3b30";
+    g.shadowColor = "#ff3b30";
+    g.shadowBlur = 14;
+    g.beginPath();
+    g.moveTo(x + 10, y - 44); g.lineTo(x + 40, y - 54); g.lineTo(x + 54, y - 70); g.lineTo(x + 50, y - 50); g.lineTo(x + 30, y - 42);
+    g.fill();
+    g.shadowBlur = 0;
+  });
+  // Reunion Tower: a shaft and a lit ball
+  const rx = W * 0.3;
+  g.fillStyle = ink;
+  g.fillRect(rx - 10, horizon - 330, 20, 330);
+  g.beginPath();
+  g.arc(rx, horizon - 360, 44, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = "rgba(255,236,190,0.9)";
+  for (let a = 0; a < Math.PI * 2; a += Math.PI / 9) {
+    for (let r = 12; r < 42; r += 10) g.fillRect(rx + Math.cos(a) * r - 1.5, horizon - 360 + Math.sin(a) * r * 0.9 - 1.5, 3, 3);
+  }
+
+  g.restore();
+
+  // Below the horizon, the city spreads out towards the window: rows of low buildings getting
+  // bigger and darker as they come closer, with lit windows, and trees between them.
+  const ground = g.createLinearGradient(0, horizon, 0, H);
+  ground.addColorStop(0, "#9a7476");
+  ground.addColorStop(1, "#3a2c30");
+  g.fillStyle = ground;
+  g.fillRect(0, horizon, W, H - horizon);
+  for (let row = 0; row < 9; row++) {
+    const t = row / 8;
+    const y = horizon + 10 + t * t * (H - horizon - 40);
+    const scale = 0.4 + t * 2.2;
+    const shade = Math.round(140 - t * 85);
+    for (let x = -20; x < W; ) {
+      const bw = (30 + rand() * 50) * scale;
+      const bh = (14 + rand() * 30) * scale;
+      g.fillStyle = `rgb(${shade + 14},${shade - 6},${shade + 4})`;
+      g.fillRect(x, y - bh, bw, bh + 6 * scale);
+      g.fillStyle = `rgb(${shade + 30},${shade + 8},${shade + 10})`; // sunlit roof edge
+      g.fillRect(x, y - bh, bw, Math.max(1, 1.5 * scale));
+      for (let k = 0; k < bw * bh * 0.002; k++) {
+        if (rand() < 0.6) {
+          g.fillStyle = `rgba(255,${200 + rand() * 40},${120 + rand() * 60},0.8)`;
+          g.fillRect(x + rand() * (bw - 3 * scale), y - bh + 3 * scale + rand() * (bh - 6 * scale), 2 * scale, 2.5 * scale);
+        }
+      }
+      if (rand() < 0.35) {
+        // a tree: a cluster of dark leaf blobs
+        g.fillStyle = `rgb(${shade - 20},${shade - 28},${shade - 26})`;
+        const r = (6 + rand() * 6) * scale;
+        for (let k = 0; k < 4; k++) {
+          g.beginPath();
+          g.arc(x + bw + r * (0.4 + rand()), y - r * (0.6 + rand() * 0.8), r * (0.6 + rand() * 0.4), 0, Math.PI * 2);
+          g.fill();
+        }
+      }
+      x += bw + rand() * 14 * scale;
+    }
+  }
+  g.strokeStyle = "rgba(20,14,12,0.7)";
+  g.lineWidth = 2;
+  g.beginPath();
+  g.moveTo(0, horizon - 220);
+  g.quadraticCurveTo(W * 0.5, horizon - 140, W, horizon - 240);
+  g.stroke();
+
+  const t = new CanvasTexture(c);
+  t.colorSpace = SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}

@@ -1,28 +1,34 @@
-// The desk scene: the computer, a desk and a lamp, with the live terminal mounted on the monitor.
+// The desk scene: the computer on a desk in a room, with the live terminal mounted on the monitor.
 // Loaded on demand by `exit`, so the terminal itself never pays for three.js.
 //
 // Performance rules: render only while something moves (camera tween or orbit damping), cap the
-// pixel ratio, no realtime shadows (a baked contact shadow instead), one PMREM environment built
+// pixel ratio, no realtime shadows (baked blob shadows instead), one PMREM environment built
 // once, and the terminal stays DOM (CSS3D), so text is never re-uploaded as a texture.
+//
+// The CSS3D layer sits *under* the WebGL canvas. The tube is drawn as a transparent hole, so the
+// terminal shows through exactly where the curved glass is: the bezel crops it, and the glass
+// shader darkens the edges and reflects the window on top, which makes the flat page read as curved.
 import {
   ACESFilmicToneMapping,
   BoxGeometry,
   CanvasTexture,
   Color,
-  Fog,
   Group,
   HemisphereLight,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
+  NoBlending,
   PerspectiveCamera,
   PlaneGeometry,
   PMREMGenerator,
   PointLight,
-  RepeatWrapping,
+  Raycaster,
   SRGBColorSpace,
   Scene,
+  ShaderMaterial,
   SpotLight,
+  Vector2,
   Vector3,
   WebGLRenderer,
   Box3,
@@ -36,6 +42,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { MODEL_CREDIT } from "./credit";
 import { addProps } from "./props";
+import { buildRoom, loadRoom } from "./room";
 
 /** CSS size of the terminal while it sits in the monitor (a 4:3 tube). */
 const SCREEN_W = 800;
@@ -53,8 +60,8 @@ export const MODEL = {
   /** The tube's width in metres sets the scale: a 12" monitor shows about 24 cm. */
   screenWidth: 0.24,
   screenMaterial: /monitor_screen/i,
-  /** Fraction of the glass the terminal covers, so it sits inside the bezel. */
-  inset: 0.95,
+  /** Fraction of the glass the terminal covers; the rest is theme background under the glass. */
+  inset: 0.93,
 };
 
 type Screen = { center: Vector3; normal: Vector3; up: Vector3; width: number; height: number };
@@ -62,7 +69,7 @@ type Screen = { center: Vector3; normal: Vector3; up: Vector3; width: number; he
 export type Desk = {
   stepBack(): Promise<void>;
   sitDown(): Promise<void>;
-  setGlow(fg: string, bg: string): void;
+  setGlow(fg: string): void;
   hasModel: boolean;
 };
 
@@ -70,30 +77,6 @@ const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2
 const reduced = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r(null)));
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-function woodTexture(): CanvasTexture {
-  const c = document.createElement("canvas");
-  c.width = 512;
-  c.height = 128;
-  const g = c.getContext("2d")!;
-  g.fillStyle = "#4a2f1c";
-  g.fillRect(0, 0, c.width, c.height);
-  for (let i = 0; i < 90; i++) {
-    const y = Math.random() * c.height;
-    g.strokeStyle = `rgba(${Math.random() < 0.5 ? "20,10,4" : "110,70,40"},${0.08 + Math.random() * 0.12})`;
-    g.lineWidth = 0.5 + Math.random() * 2;
-    g.beginPath();
-    g.moveTo(0, y);
-    for (let x = 0; x <= c.width; x += 32) g.lineTo(x, y + Math.sin(x / 70 + i) * 2.5);
-    g.stroke();
-  }
-  const t = new CanvasTexture(c);
-  t.colorSpace = SRGBColorSpace;
-  t.wrapS = t.wrapT = RepeatWrapping;
-  t.repeat.set(2, 3);
-  t.anisotropy = 4;
-  return t;
-}
 
 function contactShadow(): Mesh {
   const c = document.createElement("canvas");
@@ -107,10 +90,10 @@ function contactShadow(): Mesh {
   g.fillRect(0, 0, 128, 128);
   const mesh = new Mesh(
     new PlaneGeometry(0.75, 0.65),
-    new MeshBasicMaterial({ map: new CanvasTexture(c), transparent: true, depthWrite: false }),
+    new MeshBasicMaterial({ map: new CanvasTexture(c), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }),
   );
   mesh.rotation.x = -Math.PI / 2;
-  mesh.position.y = 0.001;
+  mesh.position.y = 0.0005;
   return mesh;
 }
 
@@ -216,29 +199,77 @@ function measureTube(mesh: Mesh): Screen {
   return { center, normal, up, width: maxR - minR, height: maxU - minU };
 }
 
+/**
+ * The tube: a hole in the canvas (so the terminal underneath shows through), darkened towards its
+ * rounded edges like a real CRT, with a soft reflection of the window. Written premultiplied with
+ * no blending, so its alpha is how much of the terminal it covers.
+ */
+function glassMaterial(screen: Screen, windowDir: Vector3) {
+  const right = new Vector3().crossVectors(screen.up, screen.normal);
+  return new ShaderMaterial({
+    blending: NoBlending,
+    uniforms: {
+      uCenter: { value: screen.center },
+      uRight: { value: right },
+      uUp: { value: screen.up },
+      uHalf: { value: new Vector2(screen.width / 2 / MODEL.inset, screen.height / 2 / MODEL.inset) },
+      uWindow: { value: windowDir },
+      uStrength: { value: 0 },
+    },
+    vertexShader: /* glsl */ `
+      varying vec3 vWorld;
+      varying vec3 vNormal;
+      void main() {
+        vec4 world = modelMatrix * vec4(position, 1.0);
+        vWorld = world.xyz;
+        vNormal = normalize(mat3(modelMatrix) * normal);
+        gl_Position = projectionMatrix * viewMatrix * world;
+      }`,
+    fragmentShader: /* glsl */ `
+      uniform vec3 uCenter, uRight, uUp, uWindow;
+      uniform vec2 uHalf;
+      uniform float uStrength;
+      varying vec3 vWorld;
+      varying vec3 vNormal;
+      void main() {
+        vec3 p = vWorld - uCenter;
+        vec2 uv = vec2(dot(p, uRight), dot(p, uUp)) / uHalf;
+        // Rounded-rectangle distance: 0 in the middle, 1 at the glass edge.
+        vec2 q = max(abs(uv) - 0.72, 0.0) / 0.28;
+        float edge = clamp(length(q), 0.0, 1.0);
+        float shade = 0.62 * pow(edge, 1.6);
+        vec3 n = normalize(vNormal);
+        vec3 v = normalize(cameraPosition - vWorld);
+        float fresnel = pow(1.0 - max(dot(n, v), 0.0), 3.0) * 0.25;
+        vec3 r = reflect(-v, n);
+        float window = smoothstep(0.86, 0.99, dot(r, uWindow)) * 0.16;
+        float sheen = 0.035 + fresnel + window;
+        float a = clamp(shade + sheen, 0.0, 1.0) * uStrength;
+        gl_FragColor = vec4(vec3(1.0, 0.97, 0.92) * sheen * uStrength, a);
+      }`,
+  });
+}
+
 export async function createDesk(opts: {
   host: HTMLElement;
   screenEl: HTMLElement;
   glow: string;
-  /** Theme background, for the glass around the terminal. */
-  glass: string;
   onSitDown: () => void;
   onProgress: (fraction: number) => void;
 }): Promise<Desk> {
   const { host, screenEl } = opts;
 
-  const renderer = new WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+  const renderer = new WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
   renderer.outputColorSpace = SRGBColorSpace;
   renderer.toneMapping = ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
   const css = new CSS3DRenderer();
   css.domElement.className = "desk-css";
-  host.append(renderer.domElement, css.domElement);
+  host.append(css.domElement, renderer.domElement);
 
   const scene = new Scene();
-  scene.background = new Color("#070605");
-  scene.fog = new Fog("#070605", 2.2, 6);
+  scene.background = new Color("#0b0907");
   const pmrem = new PMREMGenerator(renderer);
   scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
   scene.environmentIntensity = 0.28;
@@ -248,21 +279,22 @@ export async function createDesk(opts: {
   const lamp = new SpotLight("#ffd29a", 14, 6, 0.55, 0.75, 2);
   lamp.position.set(-0.9, 1.5, 0.7);
   lamp.target.position.set(0, 0.15, 0);
-  scene.add(lamp, lamp.target);
+  scene.add(lamp, lamp.target, contactShadow());
 
-  const desk = new Mesh(new BoxGeometry(2.6, 0.04, 1.3), new MeshStandardMaterial({ map: woodTexture(), roughness: 0.55, metalness: 0 }));
-  desk.position.set(0, -0.02, 0.05);
-  const wall = new Mesh(new PlaneGeometry(8, 4), new MeshStandardMaterial({ color: "#1b1713", roughness: 1 }));
-  wall.position.set(0, 1.2, -0.75);
-  scene.add(desk, wall, contactShadow());
-
+  // The computer and the room load together, so the first wide shot is never an empty void.
+  const roomLoader = new GLTFLoader();
+  roomLoader.setMeshoptDecoder(MeshoptDecoder);
+  const roomAssets = loadRoom(roomLoader);
   const loaded = await loadModel(opts.onProgress);
   const { root, screen } = loaded ?? standIn();
   scene.add(root);
+  const room = buildRoom(scene, await roomAssets, new Box3().setFromObject(root));
 
-  // The tube's own texture is a pale grey; dark glossy glass in the theme colour reads as a lit CRT.
-  const glass = new MeshStandardMaterial({ color: opts.glass, roughness: 0.12, metalness: 0, emissive: opts.glow, emissiveIntensity: 0.04 });
-  if (loaded) loaded.tube.material = glass;
+  const glass = glassMaterial(screen, room.windowCenter.clone().sub(screen.center).normalize());
+  if (loaded) {
+    loaded.tube.material = glass;
+    loaded.tube.renderOrder = 1;
+  }
 
   const glow = new PointLight(opts.glow, 0.06, 0.6, 2);
   glow.position.copy(screen.center).addScaledVector(screen.normal, 0.18);
@@ -282,22 +314,23 @@ export async function createDesk(opts: {
   const worldW = SCREEN_W * scale;
   const worldH = SCREEN_H * scale;
 
-  const camera = new PerspectiveCamera(FOV, 1, 0.01, 20);
+  // A near plane of 5 cm (the close-up is ~30 cm away) keeps depth precision for the flat props.
+  const camera = new PerspectiveCamera(FOV, 1, 0.05, 30);
   const bounds = new Box3().setFromObject(root);
   const size = bounds.getSize(new Vector3());
-  // Props flank the computer, so the wide shot frames a little more than the machine.
-  size.x += 0.35;
+  // Props flank the computer and the wall has things on it, so the wide shot frames the desk, not just the machine.
+  size.x += 0.62;
+  size.y += 0.12;
   const target = new Vector3(0, size.y * 0.5, 0);
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
   controls.enablePan = false;
-  controls.minDistance = Math.max(size.x, size.y) * 0.9;
-  controls.maxDistance = Math.max(size.x, size.y) * 8;
-  controls.minAzimuthAngle = -0.65;
-  controls.maxAzimuthAngle = 0.65;
+  controls.minAzimuthAngle = -0.6;
+  controls.maxAzimuthAngle = 0.6;
   controls.minPolarAngle = 0.95;
-  controls.maxPolarAngle = 1.52;
+  controls.maxPolarAngle = 1.45;
+  controls.zoomSpeed = 0.6;
   controls.enabled = false;
 
   let vw = 0;
@@ -311,10 +344,9 @@ export async function createDesk(opts: {
     camera.updateProjectionMatrix();
     renderer.setSize(vw, vh);
     css.setSize(vw, vh);
-    // Fog starts just behind the computer at any framing distance.
-    const fog = scene.fog as Fog;
-    fog.near = wideDistance() * 1.05;
-    fog.far = wideDistance() * 3.2;
+    // A little closer or further than the wide shot, never into the keys or out of the room.
+    controls.minDistance = wideDistance() * 0.62;
+    controls.maxDistance = wideDistance() * 1.12;
     // At the desk, keep the viewing angle but re-frame for the new window shape.
     if (!seated && !transitioning) {
       const dir = camera.position.clone().sub(controls.target).normalize();
@@ -341,7 +373,7 @@ export async function createDesk(opts: {
   function wideDistance() {
     const tan = Math.tan((FOV * Math.PI) / 360);
     // On tall screens let the outer props crop rather than shrinking the computer to a speck.
-    const fit = Math.max(size.y, (size.x * (camera.aspect < 1 ? 0.62 : 1)) / camera.aspect, size.z * 0.6);
+    const fit = Math.max(size.y, (size.x * (camera.aspect < 1 ? 0.45 : 1)) / camera.aspect, size.z * 0.6);
     return (fit / (2 * tan)) * 1.75;
   }
   const widePose = () => {
@@ -371,8 +403,9 @@ export async function createDesk(opts: {
     if (!host.hidden) resize();
   });
 
-  const fly = (to: { position: Vector3; target: Vector3 }, ms: number) =>
+  const fly = (to: { position: Vector3; target: Vector3 }, ms: number, glassTo = glass.uniforms.uStrength.value as number) =>
     new Promise<void>((done) => {
+      const glassFrom = glass.uniforms.uStrength.value as number;
       const fromPos = camera.position.clone();
       const fromTarget = controls.target.clone();
       const start = performance.now();
@@ -383,6 +416,9 @@ export async function createDesk(opts: {
         camera.position.lerpVectors(fromPos, to.position, e);
         controls.target.lerpVectors(fromTarget, to.target, e);
         camera.lookAt(controls.target);
+        // The glass comes in over the first third of the flight out, and goes in the last third back.
+        const g = glassTo > glassFrom ? Math.min(1, t * 3) : Math.max(0, (t - 2 / 3) * 3);
+        glass.uniforms.uStrength.value = glassFrom + (glassTo - glassFrom) * g;
         if (t >= 1) {
           done();
           return false;
@@ -424,19 +460,36 @@ export async function createDesk(opts: {
   const credit = document.getElementById("credit");
   if (credit && loaded) {
     const c = MODEL_CREDIT;
-    credit.innerHTML = `<a href="${c.url}" target="_blank" rel="noopener noreferrer">“${c.title}”</a> by ${c.author} · <a href="${c.licenseUrl}" target="_blank" rel="noopener noreferrer">${c.license}</a>`;
+    const a = (href: string, text: string) => `<a href="${href}" target="_blank" rel="noopener noreferrer">${text}</a>`;
+    credit.innerHTML = `${a(c.url, `“${c.title}”`)} by ${c.author} · ${a(c.licenseUrl, c.license)} · globe, super 8, cube and phone: <code>credits</code>`;
   }
 
-  holder.addEventListener("click", () => {
-    if (!seated) void api.sitDown();
+  // The canvas is on top, so clicks on the glass are found by ray: a click (not a drag) sits you down.
+  const ray = new Raycaster();
+  const pointer = new Vector2();
+  const onGlass = (e: PointerEvent) => {
+    if (!loaded) return true;
+    pointer.set((e.clientX / vw) * 2 - 1, -(e.clientY / vh) * 2 + 1);
+    ray.setFromCamera(pointer, camera);
+    return ray.intersectObject(root, true)[0]?.object === loaded.tube;
+  };
+  let down: { x: number; y: number } | null = null;
+  const canvas = renderer.domElement;
+  canvas.addEventListener("pointerdown", (e) => (down = { x: e.clientX, y: e.clientY }));
+  canvas.addEventListener("pointerup", (e) => {
+    const click = down && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 6;
+    down = null;
+    if (click && !seated && !transitioning && onGlass(e)) void api.sitDown();
+  });
+  canvas.addEventListener("pointermove", (e) => {
+    if (e.buttons || seated) return;
+    canvas.style.cursor = onGlass(e) ? "zoom-in" : "grab";
   });
 
   const api: Desk = {
     hasModel: Boolean(loaded),
-    setGlow(fg, bg) {
+    setGlow(fg) {
       glow.color.set(fg);
-      glass.color.set(bg);
-      glass.emissive.set(fg);
       request();
     },
 
@@ -463,7 +516,7 @@ export async function createDesk(opts: {
       request();
       await nextFrame();
 
-      await fly(widePose(), 1500);
+      await fly(widePose(), 1500, 1);
       controls.enabled = true;
       if (hint) hint.hidden = false;
       if (credit && loaded) credit.hidden = false;
@@ -477,7 +530,7 @@ export async function createDesk(opts: {
       if (hint) hint.hidden = true;
       if (credit) credit.hidden = true;
       const close = closeUp();
-      await fly(close, 1100);
+      await fly(close, 1100, 0);
 
       // Back out of CSS3D onto the same rect, then grow to fill the window.
       document.body.append(screenEl);
@@ -493,12 +546,11 @@ export async function createDesk(opts: {
   };
 
   // The rest of the desk streams in after the computer; each piece just asks for a frame.
-  if (loaded) {
-    const propLoader = new GLTFLoader();
-    propLoader.setMeshoptDecoder(MeshoptDecoder);
-    void addProps(scene, propLoader, bounds, lamp, request);
-  }
+  if (loaded) void addProps(scene, roomLoader, bounds, room, lamp, request);
 
   resize();
+  // Compile every shader now, behind the fullscreen terminal, so the flight out never hitches.
+  place(closeUp());
+  await renderer.compileAsync(scene, camera);
   return api;
 }

@@ -222,22 +222,30 @@ body {
   display: none;
 }
 
+/* The canvas is on top and transparent only where the tube is; the terminal shows through there. */
 .desk canvas {
+  position: relative;
+  z-index: 1;
   display: block;
   touch-action: none;
+  cursor: grab;
 }
 
+.desk canvas:active {
+  cursor: grabbing;
+}
+
+/* Under the glass, around the terminal, is the theme background. */
 .desk-css {
   position: absolute;
   inset: 0;
+  background: var(--bg);
   pointer-events: none;
 }
 
 .desk-css .screen {
   position: absolute;
   inset: 0;
-  pointer-events: auto;
-  cursor: zoom-in;
 }
 
 .desk-hint,
@@ -245,9 +253,17 @@ body {
   position: fixed;
   z-index: 3;
   margin: 0;
+  padding: 3px 8px;
+  border-radius: 4px;
   font: 12px / 1.4 "IBM Plex Mono", ui-monospace, Menlo, monospace;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(255, 255, 255, 0.72);
+  background: rgba(0, 0, 0, 0.45);
   pointer-events: none;
+}
+
+.credit code {
+  font: inherit;
+  color: #fff;
 }
 
 .desk-hint {
@@ -260,6 +276,9 @@ body {
 .credit {
   right: 12px;
   top: 10px;
+  max-width: min(68ch, calc(100% - 24px));
+  font-size: 11px;
+  text-align: right;
   pointer-events: auto;
 }
 
