@@ -3,6 +3,8 @@
 #   scripts/build-props.sh path/to/downloads
 # Poly Haven (CC0): <dir>/<id>/<id>_1k.gltf (https://polyhaven.com/a/<id>).
 # Sketchfab (CC BY, credited in src/credit.ts): <dir>/sketchfab/<name>.glb, the 1k-texture glb download.
+# longhorn-up.glb is the 830k-face scan decimated in Blender first (Decimate 0.03 per mesh, ~30k faces), then
+# joined and turned to face +z along its principal axes.
 # The order matters: src/props.ts reads the merged scenes in this order.
 set -euo pipefail
 src="${1:?usage: scripts/build-props.sh path/to/downloads}"
@@ -21,6 +23,14 @@ props=(
   "super8|sketchfab/super8.glb|512"
   "cube|sketchfab/rubik.glb|256"
   "phone|sketchfab/phone.glb|512"
+  "longhorn|sketchfab/longhorn-up.glb|256"
+  "rugby|sketchfab/rugby.glb|512"
+  "skateboard|sketchfab/skateboard.glb|512"
+  "clapper|sketchfab/clapper.glb|256"
+  "biplane|sketchfab/biplane.glb|512"
+  "studiolight|sketchfab/studiolight.glb|256"
+  "chair|sketchfab/chair.glb|512"
+  "suitcase|vintage_suitcase/vintage_suitcase_1k.gltf|512"
 )
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT

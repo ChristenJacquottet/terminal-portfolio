@@ -34,6 +34,7 @@ import {
   Box3,
   Matrix3,
   Matrix4,
+  type Object3D,
 } from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
@@ -41,6 +42,7 @@ import { CSS3DObject, CSS3DRenderer } from "three/examples/jsm/renderers/CSS3DRe
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { MODEL_CREDIT } from "./credit";
+import { editing } from "./layout";
 import { addProps } from "./props";
 import { buildRoom, loadRoom } from "./room";
 
@@ -321,7 +323,8 @@ export async function createDesk(opts: {
   // Props flank the computer and the wall has things on it, so the wide shot frames the desk, not just the machine.
   size.x += 0.62;
   size.y += 0.12;
-  const target = new Vector3(0, size.y * 0.5, 0);
+  // Aimed a little above the computer and from nearly eye level, so the wall gets as much of the frame as the desk.
+  const target = new Vector3(0, size.y * 0.5 + 0.1, 0);
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
@@ -345,10 +348,13 @@ export async function createDesk(opts: {
     renderer.setSize(vw, vh);
     css.setSize(vw, vh);
     // A little closer or further than the wide shot, never into the keys or out of the room.
-    controls.minDistance = wideDistance() * 0.62;
-    controls.maxDistance = wideDistance() * 1.12;
+    // (The layout editor frees the camera and sets its own limits.)
+    if (!editing) {
+      controls.minDistance = wideDistance() * 0.62;
+      controls.maxDistance = wideDistance() * 1.12;
+    }
     // At the desk, keep the viewing angle but re-frame for the new window shape.
-    if (!seated && !transitioning) {
+    if (!seated && !transitioning && !editing) {
       const dir = camera.position.clone().sub(controls.target).normalize();
       camera.position.copy(controls.target).addScaledVector(dir, wideDistance());
     }
@@ -377,7 +383,7 @@ export async function createDesk(opts: {
     return (fit / (2 * tan)) * 1.75;
   }
   const widePose = () => {
-    const dir = new Vector3(-0.42, 0.34, 1).normalize();
+    const dir = new Vector3(-0.42, 0.24, 1).normalize();
     return { position: target.clone().addScaledVector(dir, wideDistance()), target: target.clone() };
   };
 
@@ -461,7 +467,7 @@ export async function createDesk(opts: {
   if (credit && loaded) {
     const c = MODEL_CREDIT;
     const a = (href: string, text: string) => `<a href="${href}" target="_blank" rel="noopener noreferrer">${text}</a>`;
-    credit.innerHTML = `${a(c.url, `“${c.title}”`)} by ${c.author} · ${a(c.licenseUrl, c.license)} · globe, super 8, cube and phone: <code>credits</code>`;
+    credit.innerHTML = `${a(c.url, `“${c.title}”`)} by ${c.author} · ${a(c.licenseUrl, c.license)} · the other models: <code>credits</code>`;
   }
 
   // The canvas is on top, so clicks on the glass are found by ray: a click (not a drag) sits you down.
@@ -479,10 +485,10 @@ export async function createDesk(opts: {
   canvas.addEventListener("pointerup", (e) => {
     const click = down && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 6;
     down = null;
-    if (click && !seated && !transitioning && onGlass(e)) void api.sitDown();
+    if (click && !seated && !transitioning && !editing && onGlass(e)) void api.sitDown();
   });
   canvas.addEventListener("pointermove", (e) => {
-    if (e.buttons || seated) return;
+    if (e.buttons || seated || editing) return;
     canvas.style.cursor = onGlass(e) ? "zoom-in" : "grab";
   });
 
@@ -518,7 +524,7 @@ export async function createDesk(opts: {
 
       await fly(widePose(), 1500, 1);
       controls.enabled = true;
-      if (hint) hint.hidden = false;
+      if (hint) hint.hidden = editing; // the editor panel has its own help
       if (credit && loaded) credit.hidden = false;
       transitioning = false;
     },
@@ -546,7 +552,14 @@ export async function createDesk(opts: {
   };
 
   // The rest of the desk streams in after the computer; each piece just asks for a frame.
-  if (loaded) void addProps(scene, roomLoader, bounds, room, lamp, request);
+  const props = new Map<string, Object3D>();
+  const propsReady = loaded ? addProps(scene, roomLoader, bounds, room, lamp, props, request) : Promise.resolve();
+  // `?edit`: the layout editor, for arranging the props (never loaded otherwise).
+  if (editing && loaded) {
+    void Promise.all([import("./editor"), propsReady]).then(([{ startEditor }]) =>
+      startEditor({ scene, camera, canvas, controls, props, request, sitDown: () => api.sitDown() }),
+    );
+  }
 
   resize();
   // Compile every shader now, behind the fullscreen terminal, so the flight out never hitches.

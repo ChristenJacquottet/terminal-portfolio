@@ -3,8 +3,14 @@
 // in ORDER: Poly Haven (CC0) and Sketchfab (CC BY, see credit.ts). The rest is made here in code.
 //
 // What's here is true to Christen: tennis (college team), Réunion and French Guiana (the globe and
-// the print), photography and filmmaking (the cameras), computer science (the notebook), and the
-// video call where the microphone died and everyone held up paper (the card by the phone).
+// the print), photography and filmmaking (the cameras, the slate, the studio light), computer
+// science (the notebook), the video call where the microphone died and everyone held up paper (the
+// card by the phone), and the rest of the "what's on your fridge" timeline: the moves from Réunion
+// to French Guiana, Normandy, Indiana, the UK and Dallas (the cork board, the suitcase, the plane),
+// longhorns in DFW, rugby, skateboards built for friends, the first bitcoin, the baccalauréat and
+// graduating from Taylor, and collecting digital art (the pixel portrait).
+//
+// Every prop has a name; src/layout.json can move, turn, scale or hide it (see layout.ts).
 import {
   Box3,
   BoxGeometry,
@@ -12,11 +18,13 @@ import {
   CatmullRomCurve3,
   CylinderGeometry,
   DoubleSide,
+  FrontSide,
   Group,
   LatheGeometry,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
+  NearestFilter,
   PlaneGeometry,
   SRGBColorSpace,
   Shape,
@@ -31,10 +39,14 @@ import {
   type Scene,
 } from "three";
 import type { GLTF, GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { applyPose, currentLayout, poseOf } from "./layout";
 import type { Room } from "./room";
 
 const PROPS_URL = "/models/props.glb";
-const ORDER = ["lamp", "cassette", "pens", "spectacles", "duck", "camera", "plant", "clock", "frame", "globe", "super8", "cube", "phone"] as const;
+const ORDER = [
+  "lamp", "cassette", "pens", "spectacles", "duck", "camera", "plant", "clock", "frame", "globe", "super8", "cube", "phone",
+  "longhorn", "rugby", "skateboard", "clapper", "biplane", "studiolight", "chair", "suitcase",
+] as const;
 
 /** Decals (shadows, labels, paper) sit a hair above what they're on and win the depth test. */
 const decal = { polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 };
@@ -361,25 +373,268 @@ function reunionPrint() {
   );
 }
 
+/** A brass physical bitcoin, the kind people bought in 2016. */
+function bitcoin(): Group {
+  const face = canvas(256, 256, (g) => {
+    const grad = g.createRadialGradient(110, 100, 10, 128, 128, 128);
+    grad.addColorStop(0, "#f6d77a");
+    grad.addColorStop(1, "#b8862e");
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 256, 256);
+    g.strokeStyle = "rgba(90,60,10,0.55)";
+    g.lineWidth = 6;
+    g.beginPath();
+    g.arc(128, 128, 112, 0, Math.PI * 2);
+    g.stroke();
+    g.fillStyle = "rgba(90,60,10,0.75)";
+    g.font = "bold 120px Georgia, serif";
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.fillText("₿", 128, 132);
+    g.font = "bold 20px Georgia, serif";
+    g.fillText("BITCOIN", 128, 46);
+    g.fillText("1 BTC", 128, 214);
+  });
+  const edge = new MeshStandardMaterial({ color: "#c89a3c", metalness: 0.9, roughness: 0.35 });
+  const top = new MeshStandardMaterial({ map: face, metalness: 0.85, roughness: 0.35 });
+  const coin = new Mesh(new CylinderGeometry(0.02, 0.02, 0.0032, 40), [edge, top, top]);
+  coin.position.y = 0.0016;
+  const g = new Group();
+  g.add(coin);
+  return g;
+}
+
+/** A graduation cap with a purple-and-gold tassel (Taylor's colours). */
+function mortarboard(): Group {
+  const g = new Group();
+  const cloth = new MeshStandardMaterial({ color: "#151417", roughness: 0.9 });
+  const skull = new Mesh(new CylinderGeometry(0.085, 0.09, 0.07, 28, 1, true), new MeshStandardMaterial({ color: "#151417", roughness: 0.9, side: DoubleSide }));
+  skull.position.y = 0.035;
+  const board = new Mesh(new BoxGeometry(0.25, 0.006, 0.25), cloth);
+  board.position.y = 0.073;
+  board.rotation.y = Math.PI / 4;
+  const button = new Mesh(new CylinderGeometry(0.008, 0.008, 0.006, 12), new MeshStandardMaterial({ color: "#e0b44a", roughness: 0.5 }));
+  button.position.y = 0.079;
+  const gold = new MeshStandardMaterial({ color: "#e0b44a", roughness: 0.7 });
+  const cord = new Mesh(new TubeGeometry(new CatmullRomCurve3([new Vector3(0, 0.08, 0), new Vector3(0.09, 0.078, 0.02), new Vector3(0.155, 0.074, 0.04), new Vector3(0.16, 0.03, 0.045)]), 16, 0.0018, 5), gold);
+  const tassel = new Mesh(new CylinderGeometry(0.004, 0.008, 0.045, 10), new MeshStandardMaterial({ color: "#5b2d86", roughness: 0.85 }));
+  tassel.position.set(0.16, 0.01, 0.045);
+  g.add(skull, board, button, cord, tassel);
+  return g;
+}
+
+/** A picture frame around `art`: dark wood, a cream mat, the art. Faces +z, back at z = 0. */
+function framed(art: CanvasTexture, w: number, h: number, wood = "#3a2a1e", mat = 0.025): Group {
+  const g = new Group();
+  const border = 0.018;
+  const woodMat = new MeshStandardMaterial({ color: wood, roughness: 0.55 });
+  const W = w + 2 * (mat + border);
+  const H = h + 2 * (mat + border);
+  for (const [bw, bh, x, y] of [[W, border, 0, (H - border) / 2], [W, border, 0, -(H - border) / 2], [border, H, -(W - border) / 2, 0], [border, H, (W - border) / 2, 0]]) {
+    const b = new Mesh(new BoxGeometry(bw, bh, 0.02), woodMat);
+    b.position.set(x, y, 0.01);
+    g.add(b);
+  }
+  const back = new Mesh(new PlaneGeometry(W - border, H - border), new MeshStandardMaterial({ color: "#efe8d6", roughness: 0.9 }));
+  back.position.z = 0.006;
+  const pic = new Mesh(new PlaneGeometry(w, h), new MeshStandardMaterial({ map: art, roughness: 0.8, ...decal }));
+  pic.position.z = 0.007;
+  g.add(back, pic);
+  return g;
+}
+
+/** The baccalauréat, framed. No name, just the document's look. */
+function diploma(): Group {
+  const art = canvas(420, 300, (g) => {
+    g.fillStyle = "#efe3c4";
+    g.fillRect(0, 0, 420, 300);
+    g.strokeStyle = "#9a7b4a";
+    g.lineWidth = 3;
+    g.strokeRect(12, 12, 396, 276);
+    g.lineWidth = 1;
+    g.strokeRect(18, 18, 384, 264);
+    g.fillStyle = "#3a3024";
+    g.textAlign = "center";
+    g.font = "11px Georgia, serif";
+    g.fillText("RÉPUBLIQUE FRANÇAISE", 210, 44);
+    g.font = "bold 26px Georgia, serif";
+    g.fillText("DIPLÔME", 210, 86);
+    g.font = "bold 17px Georgia, serif";
+    g.fillText("DU BACCALAURÉAT GÉNÉRAL", 210, 112);
+    g.fillStyle = "rgba(58,48,36,0.35)";
+    for (let i = 0; i < 6; i++) g.fillRect(60, 140 + i * 16, i % 3 === 2 ? 180 : 300, 4);
+    g.strokeStyle = "rgba(120,60,40,0.6)";
+    g.lineWidth = 2;
+    g.beginPath();
+    g.arc(90, 245, 26, 0, Math.PI * 2);
+    g.stroke();
+    g.beginPath();
+    g.moveTo(270, 252);
+    g.bezierCurveTo(290, 230, 310, 262, 340, 240);
+    g.stroke();
+  });
+  return framed(art, 0.3, 0.214, "#2d2219", 0.02);
+}
+
+/** Pixel art from the digital-art-collector years: a small portrait in a hoodie and shades. */
+function pixelPortrait(): Group {
+  const rows = [
+    "................",
+    ".....hhhhhh.....",
+    "....hhhhhhhh....",
+    "...hhssssssh....",
+    "...hssssssssh...",
+    "...hkkkkskkkh...",
+    "...hkkkkskkkh...",
+    "...hssssssssh...",
+    "...hsssmmsssh...",
+    "....hssssssh....",
+    "...ooosssssooo..",
+    "..oooooooooooo..",
+    "..oooo3ooooooo..",
+    "..oooooooooooo..",
+    "..oooooooooooo..",
+    "................",
+  ];
+  const colors: Record<string, string> = { ".": "#7cc6b8", h: "#3a2618", s: "#e6b48c", k: "#101014", m: "#a8564a", o: "#e5533d", "3": "#f4f0e6" };
+  const art = canvas(16, 16, (g) => {
+    rows.forEach((row, y) => [...row].forEach((c, x) => {
+      g.fillStyle = colors[c];
+      g.fillRect(x, y, 1, 1);
+    }));
+  });
+  art.magFilter = NearestFilter;
+  art.minFilter = NearestFilter;
+  art.generateMipmaps = false;
+  return framed(art, 0.15, 0.15, "#111", 0.02);
+}
+
+/** The cork board: postcards of every place home has been, joined by red string, like the fridge timeline. */
+function corkboard(): Group {
+  const W = 1024;
+  const H = 720;
+  const art = canvas(W, H, (g) => {
+    g.fillStyle = "#b98a5a";
+    g.fillRect(0, 0, W, H);
+    for (let i = 0; i < 9000; i++) {
+      g.fillStyle = `rgba(${Math.random() < 0.5 ? "90,55,25" : "235,200,150"},${0.12 + Math.random() * 0.18})`;
+      g.fillRect(Math.random() * W, Math.random() * H, 2 + Math.random() * 3, 2 + Math.random() * 3);
+    }
+    type Card = { x: number; y: number; rot: number; place: string; paint: (g: CanvasRenderingContext2D) => void };
+    const cards: Card[] = [
+      { x: 150, y: 520, rot: -0.06, place: "LA RÉUNION", paint: (c) => {
+        c.fillStyle = "#8ccbe0"; c.fillRect(0, 0, 220, 100);
+        c.fillStyle = "#4c6b43"; c.beginPath(); c.moveTo(0, 100); c.lineTo(70, 30); c.lineTo(110, 55); c.lineTo(150, 20); c.lineTo(220, 100); c.fill();
+        c.fillStyle = "#2b6f95"; c.fillRect(0, 100, 220, 40);
+      } },
+      { x: 410, y: 560, rot: 0.05, place: "GUYANE", paint: (c) => {
+        c.fillStyle = "#cfe8d0"; c.fillRect(0, 0, 220, 140);
+        c.fillStyle = "#2f6b3a"; for (let i = 0; i < 14; i++) { c.beginPath(); c.arc(10 + i * 16, 110 - (i % 3) * 8, 22, 0, Math.PI * 2); c.fill(); }
+        c.fillStyle = "#f2f2f2"; c.fillRect(150, 20, 12, 70); c.beginPath(); c.moveTo(150, 20); c.lineTo(156, 4); c.lineTo(162, 20); c.fill();
+      } },
+      { x: 180, y: 250, rot: 0.04, place: "NORMANDIE", paint: (c) => {
+        c.fillStyle = "#c7d6e2"; c.fillRect(0, 0, 220, 140);
+        c.fillStyle = "#e8e4d6"; c.beginPath(); c.moveTo(0, 30); c.lineTo(120, 40); c.lineTo(140, 100); c.lineTo(110, 100); c.lineTo(100, 70); c.lineTo(80, 140); c.lineTo(0, 140); c.fill();
+        c.fillStyle = "#5f8aa3"; c.fillRect(0, 115, 220, 25);
+      } },
+      { x: 520, y: 170, rot: -0.04, place: "INDIANA", paint: (c) => {
+        c.fillStyle = "#bcdcf0"; c.fillRect(0, 0, 220, 140);
+        c.fillStyle = "#d8b24a"; c.fillRect(0, 80, 220, 60);
+        c.fillStyle = "#a83a2c"; c.fillRect(120, 45, 60, 45); c.beginPath(); c.moveTo(115, 45); c.lineTo(150, 20); c.lineTo(185, 45); c.fill();
+      } },
+      { x: 790, y: 300, rot: 0.06, place: "LONDON", paint: (c) => {
+        c.fillStyle = "#cfd4d8"; c.fillRect(0, 0, 220, 140);
+        c.fillStyle = "#7a6a52"; c.fillRect(95, 20, 30, 120); c.beginPath(); c.moveTo(95, 20); c.lineTo(110, 0); c.lineTo(125, 20); c.fill();
+        c.fillStyle = "#f2efe4"; c.beginPath(); c.arc(110, 45, 10, 0, Math.PI * 2); c.fill();
+        c.fillStyle = "#c8312a"; c.fillRect(20, 105, 60, 30);
+      } },
+      { x: 760, y: 560, rot: -0.05, place: "DALLAS", paint: (c) => {
+        const sky = c.createLinearGradient(0, 0, 0, 140); sky.addColorStop(0, "#f3a65f"); sky.addColorStop(1, "#f7dca0");
+        c.fillStyle = sky; c.fillRect(0, 0, 220, 140);
+        c.fillStyle = "#2d2a35"; [[20, 60], [50, 40], [80, 75], [130, 50], [165, 30], [195, 65]].forEach(([x, top]) => c.fillRect(x, top, 24, 140 - top));
+        c.fillRect(108, 30, 5, 110); c.beginPath(); c.arc(110, 28, 12, 0, Math.PI * 2); c.fill();
+      } },
+    ];
+    // The string first, so the cards and pins sit on top of it.
+    g.strokeStyle = "#b3241c";
+    g.lineWidth = 3;
+    g.beginPath();
+    cards.forEach((c, i) => (i ? g.lineTo(c.x, c.y - 70) : g.moveTo(c.x, c.y - 70)));
+    g.stroke();
+    for (const c of cards) {
+      g.save();
+      g.translate(c.x, c.y);
+      g.rotate(c.rot);
+      g.fillStyle = "rgba(0,0,0,0.25)";
+      g.fillRect(-116, -76, 240, 180);
+      g.fillStyle = "#f6f1e4";
+      g.fillRect(-120, -80, 240, 180);
+      g.save();
+      g.translate(-110, -70);
+      g.beginPath();
+      g.rect(0, 0, 220, 140);
+      g.clip();
+      c.paint(g);
+      g.restore();
+      g.fillStyle = "#2c2a30";
+      g.font = "bold 20px Georgia, serif";
+      g.textAlign = "center";
+      g.fillText(c.place, 0, 92);
+      g.restore();
+      g.fillStyle = "#d8342a";
+      g.beginPath();
+      g.arc(c.x, c.y - 70, 9, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = "rgba(255,255,255,0.6)";
+      g.beginPath();
+      g.arc(c.x - 3, c.y - 73, 3, 0, Math.PI * 2);
+      g.fill();
+    }
+  });
+  return framed(art, 0.6, 0.42, "#8a6440", 0);
+}
+
 /**
  * Loads and arranges the desk props around the computer. `bounds` is the computer's world box;
- * the lamp's light is moved onto the lamp head. Calls `onChange` whenever the scene needs a frame.
+ * the lamp's light is moved onto the lamp head. Every prop is registered in `props` by name and
+ * then posed from the layout. Calls `onChange` whenever the scene needs a frame.
  */
-export async function addProps(scene: Scene, loader: GLTFLoader, bounds: Box3, room: Room, light: SpotLight, onChange: () => void) {
+export async function addProps(scene: Scene, loader: GLTFLoader, bounds: Box3, room: Room, light: SpotLight, props: Map<string, Object3D>, onChange: () => void) {
   const { min, max } = bounds;
   const back = room.desk.backZ;
   const front = room.desk.frontZ;
+  const floor = room.floorY;
+  const wall = room.wallZ;
+  const layout = currentLayout();
+  const put = (name: string, o: Object3D) => {
+    o.name = name;
+    o.userData.home = poseOf(o); // where the code put it, for the editor's reset
+    applyPose(o, layout[name]);
+    props.set(name, o);
+    scene.add(o);
+    return o;
+  };
+  const onWall = (o: Object3D, x: number, y: number, height: number) => hang(o, x, y, wall, height);
+  // The window sill: things stand on it inside the reveal, against the glass.
+  const sill = room.window;
+  const onSill = (o: Object3D, x: number, opts: PlaceOpts) => place(o, x, wall - 0.07, { ...opts, y: sill.y0 + 0.01, shadow: true });
+  const mid = (min.x + max.x) / 2;
 
   // The code-made props first: they cost nothing to load.
-  scene.add(
-    place(mug(), max.x + 0.06, max.z - 0.06, { height: 0.095 }),
-    place(floppies(["PORTFOLIO", "CRASHERS", "DISK 3"]), min.x - 0.14, max.z - 0.02, { width: 0.135, rotY: 0.25 }),
-    place(notebook(), min.x + 0.02, max.z + 0.17, { width: 0.31, rotY: 0.12 }),
-    place(card(), max.x + 0.42, max.z - 0.14, { width: 0.11, rotY: -0.55 }),
-    place(racquet(), max.x + 0.52, front - 0.2, { width: 0.4, rotY: 1.9 }),
-    place(tennisBall(), max.x + 0.3, front - 0.1, { height: 0.067 }),
-    hang(pennant(), max.x + 0.05, 0.7, room.wallZ, 0.14),
-  );
+  put("mug", place(mug(), max.x + 0.06, max.z - 0.06, { height: 0.095 }));
+  put("floppies", place(floppies(["PORTFOLIO", "CRASHERS", "DISK 3"]), min.x - 0.14, max.z - 0.02, { width: 0.135, rotY: 0.25 }));
+  put("notebook", place(notebook(), min.x + 0.02, max.z + 0.17, { width: 0.31, rotY: 0.12 }));
+  put("card", place(card(), max.x + 0.42, max.z - 0.14, { width: 0.11, rotY: -0.55 }));
+  put("racquet", place(racquet(), max.x + 0.52, front - 0.2, { width: 0.4, rotY: 1.9 }));
+  put("ball", place(tennisBall(), max.x + 0.3, front - 0.1, { height: 0.067 }));
+  put("bitcoin", place(bitcoin(), max.x + 0.16, max.z + 0.03, { width: 0.04 }));
+  put("pennant", hang(pennant(), max.x + 0.05, 0.6, wall, 0.14));
+  put("diploma", onWall(diploma(), room.desk.minX + 0.33, 0.87, 0.15));
+  const portrait = pixelPortrait();
+  portrait.rotation.x = -0.12; // leaning back against the glass
+  put("pixelart", onSill(portrait, sill.x0 + 0.42, { height: 0.15 }));
+  put("corkboard", onWall(corkboard(), room.desk.minX + 0.18, 0.5, 0.4));
+  put("mortarboard", onSill(mortarboard(), sill.x1 - 0.2, { width: 0.2, rotY: 0.3 }));
   onChange();
 
   let gltf: GLTF;
@@ -391,13 +646,12 @@ export async function addProps(scene: Scene, loader: GLTFLoader, bounds: Box3, r
   const byName = Object.fromEntries(ORDER.map((name, i) => [name, gltf.scenes[i]])) as Record<(typeof ORDER)[number], Group | undefined>;
   const add = (name: (typeof ORDER)[number], fn: (o: Group) => Object3D) => {
     const o = byName[name];
-    if (o) scene.add(fn(o));
+    if (o) put(name, fn(o));
   };
 
   if (byName.lamp) {
     // A clamp lamp, clamped to the back edge, reaching over the keyboard.
-    const lamp = place(byName.lamp, min.x - 0.16, back + 0.025, { height: 0.5, rotY: 0.85, y: -0.045 });
-    scene.add(lamp);
+    const lamp = put("lamp", place(byName.lamp, min.x - 0.16, back + 0.025, { height: 0.5, rotY: 0.85, y: -0.045 }));
     lamp.updateMatrixWorld(true);
     const head = new Box3().setFromObject(lamp);
     light.position.set(head.max.x - 0.04, head.max.y - 0.06, head.max.z - 0.02);
@@ -416,7 +670,29 @@ export async function addProps(scene: Scene, loader: GLTFLoader, bounds: Box3, r
   add("camera", (o) => place(o, max.x + 0.2, max.z + 0.1, { width: 0.15, rotY: -0.7 }));
   add("cube", (o) => place(o, min.x - 0.25, max.z + 0.2, { height: 0.057, rotY: 0.5 }));
   add("plant", (o) => place(o, room.desk.maxX - 0.13, back + 0.13, { height: 0.24 }));
-  add("clock", (o) => hang(o, min.x - 0.5, 0.86, room.wallZ, 0.24));
+  add("clock", (o) => hang(o, room.desk.minX + 0.02, 0.86, wall, 0.17));
+  add("clapper", (o) => place(o, max.x + 0.62, back + 0.1, { width: 0.24, rotY: -0.3 }));
+  add("longhorn", (o) => {
+    o.rotation.z = 0.3; // level the horns
+    o.traverse((m) => {
+      const mesh = m as Mesh;
+      if (!mesh.isMesh) return;
+      // Normals were made consistent in Blender, so one side is enough (double-sided lit the inside).
+      Object.assign(mesh.material as MeshStandardMaterial, { roughness: 0.85, metalness: 0, side: FrontSide }).color.set("#e3d6bc"); // sun-bleached bone
+    });
+    return hang(o, mid + 0.1, 0.8, wall, 0.3); // over the computer, DFW style
+  });
+  add("biplane", (o) => onSill(o, sill.x0 + 0.18, { width: 0.24, rotY: 0.5 }));
+  add("rugby", (o) => place(o, room.desk.minX - 0.45, wall + 0.75, { width: 0.28, rotY: -0.4, y: floor, shadow: true }));
+  add("chair", (o) => place(o, min.x - 0.62, front + 0.32, { height: 0.85, rotY: 0.9, y: floor, shadow: true }));
+  add("studiolight", (o) => place(o, room.desk.maxX + 0.45, wall + 0.55, { height: 1.75, rotY: -0.6, y: floor, shadow: true }));
+  add("suitcase", (o) => place(o, room.desk.minX - 0.3, wall + 0.3, { width: 0.55, rotY: 0.15, y: floor, shadow: true }));
+  if (byName.skateboard) {
+    // Leaning against the wall at the left end of the desk, wheels out.
+    const deck = byName.skateboard;
+    deck.rotation.x = -1.3;
+    put("skateboard", place(deck, room.desk.minX - 0.12, wall + 0.12, { height: 0.78, y: floor, shadow: true }));
+  }
   if (byName.frame) {
     byName.frame.traverse((o) => {
       const mesh = o as Mesh;
@@ -429,7 +705,7 @@ export async function addProps(scene: Scene, loader: GLTFLoader, bounds: Box3, r
       }
       if (mat.name.includes("glass")) mesh.visible = false; // its tint hid the print
     });
-    scene.add(hang(byName.frame, min.x - 0.02, 0.66, room.wallZ, 0.36));
+    put("frame", hang(byName.frame, min.x - 0.02, 0.66, wall, 0.36));
   }
   onChange();
 }

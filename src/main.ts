@@ -80,6 +80,8 @@ async function boot() {
   // Shareable links: /#cat ~/shipped/world-cup-host
   const fromHash = decodeURIComponent(location.hash.slice(1)).trim();
   if (fromHash) await term.type(fromHash, 10);
+  // `?edit` opens the desk's layout editor (editor.ts), so go straight to the desk.
+  if (new URLSearchParams(location.search).has("edit")) await term.type("exit", 10);
   term.focus();
 }
 

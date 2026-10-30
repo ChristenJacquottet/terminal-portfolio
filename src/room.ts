@@ -31,6 +31,9 @@ export type RoomAssets = { desk: Group | null; floor: Texture | null };
 export type Room = {
   windowCenter: Vector3;
   wallZ: number;
+  floorY: number;
+  /** The window opening in the wall, in world x/y. */
+  window: { x0: number; x1: number; y0: number; y1: number };
   /** Desk top extents in world space. */
   desk: { minX: number; maxX: number; backZ: number; frontZ: number };
 };
@@ -174,6 +177,8 @@ export function buildRoom(scene: Scene, assets: RoomAssets, computer: Box3): Roo
   return {
     windowCenter: new Vector3(cx, cy, wallZ - depth),
     wallZ,
+    floorY,
+    window: win,
     desk: { minX: deskBox.min.x, maxX: deskBox.max.x, backZ: deskBox.min.z, frontZ: deskBox.max.z },
   };
 }

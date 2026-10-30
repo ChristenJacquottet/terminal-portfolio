@@ -13,4 +13,11 @@ export const PROP_CREDITS = [
   { title: "Super 8 Camera (Canon 310XL)", author: "meesvanhout", url: "https://sketchfab.com/3d-models/super-8-camera-canon-310xl-7218feba753b4b4bbdac135af36ac4a3" },
   { title: "rubik's cube", author: "Shivansh Singh", url: "https://sketchfab.com/3d-models/rubiks-cube-155420e09a124ec3a3bcca0852280672" },
   { title: "SFM Telephone", author: "G=", url: "https://sketchfab.com/3d-models/sfm-telephone-90ea20bab1aa41c9a537f80c5b9ea287" },
+  { title: "Longhorn Skull_1", author: "The Aurochs Foundation", url: "https://sketchfab.com/3d-models/longhorn-skull-1-f456325f5fce42f7b66bc1ee6c839e8b" },
+  { title: "Old rugby ball", author: "alban", url: "https://sketchfab.com/3d-models/old-rugby-ball-806e841289804bffba1c89757582f0ca" },
+  { title: "Skateboard_01", author: "CrazyScans", url: "https://sketchfab.com/3d-models/skateboard-01-bc02544579d34003a703962d7b930e7b" },
+  { title: "Black film slate or clapperboard", author: "Bendar Multimedia", url: "https://sketchfab.com/3d-models/black-film-slate-or-clapperboard-f971698c983d4256a269424e88b17872" },
+  { title: "Vintage Toy Airplane 2", author: "berilbasak", url: "https://sketchfab.com/3d-models/vintage-toy-airplane-2-b40dc984692746b3a5132adffc3a14ad" },
+  { title: "Simple Studio Light", author: "AleixoAlonso", url: "https://sketchfab.com/3d-models/simple-studio-light-771d351d2329444fab348909ebfd160b" },
+  { title: "Old Computer Chair", author: "Slava Izvekov", url: "https://sketchfab.com/3d-models/old-computer-chair-a311529b1ec349c48f789bf4e1f99e89" },
 ];
