@@ -925,7 +925,9 @@ export async function addProps(
       const mesh = m as Mesh;
       if (!mesh.isMesh) return;
       const soft = (mesh.material as MeshStandardMaterial).transparent;
-      mesh.castShadow = name !== "lamp" && !soft;
+      // The lamp's shade casts (so its light only leaves through the opening), its bulb doesn't.
+      const bulb = (mesh.material as MeshStandardMaterial).name?.endsWith("_light");
+      mesh.castShadow = !soft && !bulb;
       mesh.receiveShadow = !soft;
     });
     applyPose(o, layout[name]);

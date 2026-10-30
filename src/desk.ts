@@ -348,7 +348,7 @@ export async function createDesk(opts: {
   lamp.target.position.set(0, 0.15, 0);
   // The bulb's glow inside the shade, and a camera flash: made now, at 0, so the number of lights
   // (and with it every shader) never changes later.
-  const spill = new PointLight("#ffb36b", 0, 1.4, 2);
+  const spill = new PointLight("#ffb36b", 0, 0.16, 2); // reaches the inside of the shade, not the wall
   lamp.userData.spill = spill;
   const flash = new PointLight("#f4f6ff", 0, 1.2, 2);
   scene.add(lamp, lamp.target, spill, flash, contactShadow());
