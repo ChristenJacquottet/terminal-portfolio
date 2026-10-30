@@ -34,6 +34,8 @@ import {
   WebGLRenderTarget,
   type Texture,
   Box3,
+  CircleGeometry,
+  Quaternion,
   Matrix3,
   Matrix4,
   PCFShadowMap,
@@ -46,7 +48,10 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { MODEL_CREDIT } from "./credit";
 import { editing } from "./layout";
-import { addProps } from "./props";
+import { fileName, projects } from "./content";
+import { display, findFile } from "./fs";
+import { createInteractions, type Drive } from "./interact";
+import { addProps, type Disk } from "./props";
 import { buildRoom, loadRoom } from "./room";
 
 /** The tube's shape (4:3). In the monitor the terminal keeps the window's text size, see `fitTube`. */
@@ -79,6 +84,17 @@ export type Desk = {
   setGlow(fg: string): void;
   hasModel: boolean;
 };
+
+/** One floppy per featured project, in the portfolio's order; loading one cats its file. */
+function featuredDisks(): Disk[] {
+  return projects
+    .filter((p) => p.featured && !p.archived)
+    .slice(0, 8)
+    .flatMap((p) => {
+      const file = findFile(fileName(p));
+      return file ? [{ label: fileName(p).replace(/-/g, " ").toUpperCase(), title: p.title, command: `cat ${display(file.path)}` }] : [];
+    });
+}
 
 /** Every texture on the materials under `root`, to upload before they are first drawn. */
 function textures(root: Object3D) {
@@ -277,6 +293,10 @@ export async function createDesk(opts: {
   glow: string;
   onSitDown: () => void;
   onProgress: (fraction: number) => void;
+  /** Types a command into the terminal (a floppy opens its project, the phone runs contact). */
+  run: (command: string) => void;
+  sfx?: (cue: string) => void;
+  music?: (on: boolean) => void;
 }): Promise<Desk> {
   const { host, screenEl } = opts;
 
@@ -284,7 +304,7 @@ export async function createDesk(opts: {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
   renderer.outputColorSpace = SRGBColorSpace;
   renderer.toneMapping = ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 0.95;
+  renderer.toneMappingExposure = 0.85;
   // Real shadows from the window and the lamp, but drawn only when something moves (see `relight`):
   // between those, orbiting and idling cost the same as without them.
   renderer.shadowMap.enabled = true;
@@ -295,16 +315,18 @@ export async function createDesk(opts: {
   host.append(css.domElement, renderer.domElement);
 
   const scene = new Scene();
-  scene.background = new Color("#0b0907");
+
+  scene.background = new Color("#05060a");
   const pmrem = new PMREMGenerator(renderer);
   scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-  scene.environmentIntensity = 0.1; // a dim room: the window and the lamp do the lighting
+  scene.environmentIntensity = 0.04; // a dark room: the lamp, the screen and the window do the lighting
   pmrem.dispose();
 
-  scene.add(new HemisphereLight("#d9c9b8", "#120c08", 0.1));
+  // Just enough fill that the shadowed faces still read: cool from above (the night), warm from the desk.
+  scene.add(new HemisphereLight("#6a7aa6", "#1a120b", 0.06));
   // The desk lamp's light. Off until the lamp model arrives and puts it on its bulb (props.ts);
   // without the model, it comes on here, over the desk.
-  const lamp = new SpotLight("#ffcf8f", 0, 6, 0.55, 0.6, 2);
+  const lamp = new SpotLight("#ffb36b", 0, 6, 0.55, 0.6, 2);
   lamp.castShadow = true;
   lamp.shadow.mapSize.set(1024, 1024);
   lamp.shadow.camera.near = 0.05;
@@ -313,7 +335,12 @@ export async function createDesk(opts: {
   lamp.shadow.radius = 4;
   lamp.position.set(-0.9, 1.5, 0.7);
   lamp.target.position.set(0, 0.15, 0);
-  scene.add(lamp, lamp.target, contactShadow());
+  // The bulb's glow inside the shade, and a camera flash: made now, at 0, so the number of lights
+  // (and with it every shader) never changes later.
+  const spill = new PointLight("#ffb36b", 0, 1.4, 2);
+  lamp.userData.spill = spill;
+  const flash = new PointLight("#f4f6ff", 0, 1.2, 2);
+  scene.add(lamp, lamp.target, spill, flash, contactShadow());
 
   // The computer and the room load together, so the first wide shot is never an empty void.
   const roomLoader = new GLTFLoader();
@@ -331,8 +358,9 @@ export async function createDesk(opts: {
     loaded.tube.renderOrder = 1;
   }
 
-  const glow = new PointLight(opts.glow, 0.06, 0.6, 2);
-  glow.position.copy(screen.center).addScaledVector(screen.normal, 0.18);
+  // The screen lights the room in the theme's colour: the keys, the desk in front, the drives.
+  const glow = new PointLight(opts.glow, 0.8, 1.6, 2);
+  glow.position.copy(screen.center).addScaledVector(screen.normal, 0.12);
   scene.add(glow);
 
   // The terminal, as DOM, on the tube.
@@ -438,15 +466,32 @@ export async function createDesk(opts: {
   // Render on demand only.
   let running = false;
   let tween: ((now: number) => boolean) | null = null;
+  /** Props in motion (interact.ts): each returns false when it's done. */
+  const motions = new Set<(now: number) => boolean>();
   const frame = (now: number) => {
     const tweening = tween ? tween(now) : false;
     if (!tweening) tween = null;
+    for (const m of motions) if (!m(now)) motions.delete(m);
+    if (motions.size) renderer.shadowMap.needsUpdate = true; // moving things move their shadows
     const moving = controls.enabled ? controls.update() : false;
     renderer.render(scene, camera);
     css.render(scene, camera);
-    if (tweening || moving) requestAnimationFrame(frame);
+    if (tweening || moving || motions.size) requestAnimationFrame(frame);
     else running = false;
   };
+  const animate = (ms: number, step: (t: number) => void) =>
+    new Promise<void>((done) => {
+      const start = performance.now();
+      const duration = reduced() ? Math.min(ms, 1) : ms;
+      motions.add((now) => {
+        const t = Math.min(1, (now - start) / duration);
+        step(t);
+        if (t < 1) return true;
+        done();
+        return false;
+      });
+      request();
+    });
   function request() {
     if (running) return;
     running = true;
@@ -630,11 +675,74 @@ export async function createDesk(opts: {
   canvas.addEventListener("pointerup", (e) => {
     const click = down && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 6;
     down = null;
-    if (click && !seated && !transitioning && !editing && onGlass(e)) void api.sitDown();
+    if (!click || seated || transitioning || editing) return;
+    const target = touch.pick(e, vw, vh);
+    if (target) touch.click(target);
+    else if (onGlass(e)) void api.sitDown();
   });
+  // Hover: one raycast per frame at most, however fast the pointer moves.
+  let hoverEvent: PointerEvent | null = null;
   canvas.addEventListener("pointermove", (e) => {
-    if (e.buttons || seated || editing) return;
-    canvas.style.cursor = onGlass(e) ? "zoom-in" : "grab";
+    if (seated || editing) return;
+    if (e.buttons) {
+      touch.leave();
+      return;
+    }
+    if (!hoverEvent) {
+      requestAnimationFrame(() => {
+        const ev = hoverEvent!;
+        hoverEvent = null;
+        if (seated || transitioning) return touch.leave();
+        const target = touch.pick(ev, vw, vh);
+        touch.hover(target, ev);
+        canvas.style.cursor = target ? "pointer" : onGlass(ev) ? "zoom-in" : "grab";
+        request();
+      });
+    }
+    hoverEvent = e;
+  });
+  canvas.addEventListener("pointerleave", () => {
+    touch.leave();
+    request();
+  });
+
+  // The Disk II: its slot from the drive's own mesh. Two drives are stacked; disks go in the top one.
+  const drive = ((): Drive | null => {
+    let mesh: Mesh | undefined;
+    root.traverse((x) => {
+      const m = x as Mesh;
+      if (m.isMesh && /diskII/i.test((m.material as MeshStandardMaterial).name ?? "")) mesh = m;
+    });
+    if (!mesh) return null;
+    const b = new Box3().setFromObject(mesh);
+    const out = new Vector3(0, 0, 1).transformDirection(root.matrixWorld);
+    const slot = new Vector3((b.min.x + b.max.x) / 2, b.min.y + (b.max.y - b.min.y) * 0.8, b.max.z - 0.07);
+    // A disk lies flat in it, label up, label end towards you (see the disk's face in props.ts).
+    const quaternion = root.getWorldQuaternion(new Quaternion()).multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 1, 1).normalize(), Math.PI));
+    const led = new Mesh(new CircleGeometry(0.0025, 16), new MeshBasicMaterial({ color: "#ff3b2a", toneMapped: false }));
+    led.position.set(b.min.x + (b.max.x - b.min.x) * 0.1, b.min.y + (b.max.y - b.min.y) * 0.56, b.max.z + 0.0008);
+    led.lookAt(led.position.clone().add(out));
+    led.visible = false;
+    scene.add(led);
+    return { slot, out, quaternion, led };
+  })();
+
+  if (import.meta.env.DEV) Object.assign(window, { __desk: { scene, renderer, camera } }); // for poking at it from devtools
+  const touch = createInteractions({
+    scene,
+    camera,
+    host,
+    animate,
+    relight,
+    lamp,
+    flash,
+    drive,
+    sfx: (cue) => opts.sfx?.(cue),
+    music: (on) => opts.music?.(on),
+    sitDownAndRun: async (command) => {
+      await api.sitDown();
+      opts.run(command);
+    },
   });
 
   const api: Desk = {
@@ -711,7 +819,8 @@ export async function createDesk(opts: {
       await nextFrame();
     }
   };
-  const propsReady = loaded ? addProps(scene, roomLoader, bounds, room, lamp, props, prepare, relight) : Promise.resolve();
+  const propsReady = loaded ? addProps(scene, roomLoader, bounds, room, lamp, props, prepare, relight, featuredDisks()) : Promise.resolve();
+  void propsReady.then(() => touch.setTargets(props.values(), [root]));
   void propsReady.then(() => {
     if (lamp.intensity) return;
     lamp.intensity = 14;

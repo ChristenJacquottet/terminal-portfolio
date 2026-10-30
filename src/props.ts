@@ -30,6 +30,7 @@ import {
   Shape,
   ShapeGeometry,
   SphereGeometry,
+  PointLight,
   SpotLight,
   TorusGeometry,
   TubeGeometry,
@@ -178,32 +179,72 @@ function mug(): Group {
   return g;
 }
 
-/** A small stack of 5¼" floppies with hand-written labels. Real thickness, so nothing is coplanar. */
-function floppies(labels: string[]): Group {
+/** One floppy per featured project: what the label says, what the hover says, what loading it runs. */
+export type Disk = { label: string; title: string; command: string };
+
+/**
+ * The work: a beige floppy box with a 5¼" disk for each project, fanned back so every label shows
+ * above the one in front. Each disk is its own group (userData.hotspot), so it can be lifted out and
+ * loaded into the Disk II; its place in the box is kept in userData.slot to put it back.
+ */
+function diskBox(disks: Disk[]): Group {
   const g = new Group();
-  const sleeve = new MeshStandardMaterial({ color: "#0a0a0a", roughness: 0.85 });
-  const hubMat = new MeshStandardMaterial({ color: "#3b3022", roughness: 0.9 });
-  labels.forEach((text, i) => {
-    const label = canvas(256, 96, (ctx) => {
-      ctx.fillStyle = "#f2ead2";
-      ctx.fillRect(0, 0, 256, 96);
-      ctx.fillStyle = "#c8432b";
-      ctx.fillRect(0, 0, 256, 10);
-      ctx.fillStyle = "#1d2a6b";
-      ctx.font = "italic 34px 'Comic Sans MS', 'Marker Felt', cursive";
-      ctx.fillText(text, 14, 62);
+  const W = 0.152;
+  const D = 0.06 + disks.length * 0.016;
+  const plastic = new MeshStandardMaterial({ color: "#d6c9ab", roughness: 0.5 });
+  const wall = (w: number, h: number, d: number, x: number, z: number) => {
+    const m = new Mesh(new BoxGeometry(w, h, d), plastic);
+    m.position.set(x, h / 2, z);
+    g.add(m);
+  };
+  wall(W, 0.004, D, 0, 0); // floor
+  wall(W, 0.03, 0.004, 0, D / 2); // low front, so the labels show
+  wall(W, 0.07, 0.004, 0, -D / 2); // tall back
+  for (const x of [-W / 2, W / 2]) wall(0.004, 0.05, D, x, 0);
+
+  const sleeve = new MeshStandardMaterial({ color: "#1f1d1b", roughness: 0.6 });
+  const tabs = ["#b8412c", "#d39b32", "#2f6f6b", "#ece2cc", "#9d968a", "#b8412c", "#d39b32", "#2f6f6b"];
+  disks.forEach((disk, i) => {
+    // The front of the sleeve: the hub ring, the read window, the write-protect notch and a label.
+    const face = canvas(256, 256, (c) => {
+      c.fillStyle = "#1f1d1b";
+      c.fillRect(0, 0, 256, 256);
+      c.strokeStyle = "#3a3633";
+      c.lineWidth = 10;
+      c.beginPath();
+      c.arc(128, 150, 34, 0, Math.PI * 2);
+      c.stroke();
+      c.fillStyle = "#0c0b0a";
+      c.beginPath();
+      c.arc(128, 150, 22, 0, Math.PI * 2);
+      c.fill();
+      c.beginPath();
+      c.roundRect(116, 196, 24, 54, 12);
+      c.fill();
+      c.fillRect(250, 70, 6, 22);
+      // the label, across the top, with a coloured tab
+      c.fillStyle = "#ece2cc";
+      c.fillRect(14, 10, 228, 62);
+      c.fillStyle = tabs[i % tabs.length];
+      c.fillRect(14, 10, 228, 12);
+      c.fillStyle = "#1d2a6b";
+      c.font = "italic bold 25px 'Marker Felt', 'Comic Sans MS', cursive";
+      c.textBaseline = "middle";
+      const text = disk.label.length > 17 ? `${disk.label.slice(0, 16)}…` : disk.label;
+      c.fillText(text, 22, 48, 212);
     });
-    const layer = new Group();
-    const disk = new Mesh(new BoxGeometry(0.133, 0.0016, 0.133), sleeve);
-    const sticker = new Mesh(new PlaneGeometry(0.09, 0.034), new MeshStandardMaterial({ map: label, roughness: 0.8, ...decal }));
-    sticker.rotation.x = -Math.PI / 2;
-    sticker.position.set(0, 0.0009, -0.038);
-    const hub = new Mesh(new CylinderGeometry(0.016, 0.016, 0.0004, 24), hubMat);
-    hub.position.y = 0.0009;
-    layer.add(disk, sticker, hub);
-    layer.position.y = 0.0008 + 0.0019 * i;
-    layer.rotation.y = (i - 1) * 0.18;
-    g.add(layer);
+    const front = new MeshStandardMaterial({ map: face, roughness: 0.6 });
+    const sheet = new Mesh(new BoxGeometry(0.133, 0.133, 0.0018), [sleeve, sleeve, sleeve, sleeve, front, sleeve]);
+    const holder = new Group();
+    holder.add(sheet);
+    // Standing on edge, leaning back, each one further back and a little higher than the last.
+    const z = D / 2 - 0.022 - i * 0.016;
+    holder.position.set(0, 0.0665 + 0.004 + i * 0.006, z);
+    holder.rotation.x = -0.28;
+    holder.userData.slot = { position: holder.position.clone(), rotation: holder.rotation.clone() };
+    holder.userData.hotspot = { kind: "disk", label: disk.title, hint: "load it", nav: true, command: disk.command };
+    holder.name = `disk:${disk.label.toLowerCase()}`;
+    g.add(holder);
   });
   return g;
 }
@@ -560,6 +601,7 @@ function pixelPortrait(): Group {
 function corkboard(): Group {
   const W = 1024;
   const H = 720;
+  const areas: { x: number; y: number; w: number; h: number; place: string }[] = [];
   const art = canvas(W, H, (g) => {
     g.fillStyle = "#b98a5a";
     g.fillRect(0, 0, W, H);
@@ -602,6 +644,7 @@ function corkboard(): Group {
         c.fillRect(108, 30, 5, 110); c.beginPath(); c.arc(110, 28, 12, 0, Math.PI * 2); c.fill();
       } },
     ];
+    areas.push(...cards.map((c) => ({ x: c.x - 120, y: c.y - 80, w: 240, h: 180, place: c.place })));
     // The string first, so the cards and pins sit on top of it.
     g.strokeStyle = "#b3241c";
     g.lineWidth = 3;
@@ -638,7 +681,10 @@ function corkboard(): Group {
       g.fill();
     }
   });
-  return framed(art, 0.6, 0.42, "#8a6440", 0);
+  const board = framed(art, 0.6, 0.42, "#8a6440", 0);
+  // Hovering a postcard names the place: interact.ts maps the hit's uv into these canvas rects.
+  board.userData.hotspot = { kind: "places", label: "every place home has been", areas, size: [W, H] };
+  return board;
 }
 
 /**
@@ -683,11 +729,16 @@ function fitBulb(lamp: Object3D, light: SpotLight): boolean {
   const glass = bulb.material as MeshStandardMaterial;
   glass.emissive.set("#ffd9a0");
   glass.emissiveIntensity = 2.5;
+  // The cone lights the desk; the spill light (made in desk.ts, so the light count never changes)
+  // sits just inside the shade and lights it and the wall around it, the way a real bulb does.
+  const inShade = lamp.worldToLocal(center.clone().addScaledVector(axis, -0.03));
+  light.userData.bulb = glass;
   const sync = () => {
     lamp.updateMatrixWorld(true);
     light.position.copy(lamp.localToWorld(at.clone()));
     light.target.position.copy(lamp.localToWorld(aim.clone()));
     light.target.updateMatrixWorld();
+    (light.userData.spill as PointLight | undefined)?.position.copy(lamp.localToWorld(inShade.clone()));
   };
   light.userData.sync = sync; // starts once the lamp is in the scene (see addProps)
   return true;
@@ -709,6 +760,7 @@ export async function addProps(
   props: Map<string, Object3D>,
   prepare: (arrivals: Object3D) => Promise<void>,
   onChange: () => void,
+  disks: Disk[],
 ) {
   const { min, max } = bounds;
   const back = room.desk.backZ;
@@ -740,7 +792,7 @@ export async function addProps(
 
   // The code-made props first: they cost nothing to load.
   put("mug", place(mug(), max.x + 0.06, max.z - 0.06, { height: 0.095 }));
-  put("floppies", place(floppies(["PORTFOLIO", "CRASHERS", "DISK 3"]), min.x - 0.14, max.z - 0.02, { width: 0.135, rotY: 0.25 }));
+  put("floppies", place(diskBox(disks), min.x - 0.14, max.z - 0.02, { width: Math.max(0.152, 0.06 + disks.length * 0.016), rotY: 0.25 }));
   put("notebook", place(notebook(), min.x + 0.02, max.z + 0.17, { width: 0.31, rotY: 0.12 }));
   put("card", place(card(), max.x + 0.42, max.z - 0.14, { width: 0.11, rotY: -0.55 }));
   put("racquet", place(racquet(), max.x + 0.52, front - 0.2, { width: 0.4, rotY: 1.9 }));
@@ -786,6 +838,10 @@ export async function addProps(
   if (byName.cassette) {
     // The Walkman on its back, lid up, with its tape out on the desk beside it.
     const kit = byName.cassette;
+    // Where the tape sits inside the player, in the player's own space, so it can go back in.
+    kit.updateMatrixWorld(true);
+    const inside = kit.getObjectByName("portable_cassette_player_casette");
+    const bay = inside ? new Box3().setFromObject(inside).getCenter(new Vector3()) : null;
     const tape = piece(kit, "portable_cassette_player_casette", true);
     const body = new Group();
     for (const name of ["portable_cassette_player", "portable_cassette_player_lid"]) {
@@ -796,6 +852,9 @@ export async function addProps(
     player.rotation.x = -Math.PI / 2;
     put("cassette", place(player, max.x + 0.3, front - 0.14, { width: 0.13, rotY: -0.5 }));
     if (tape && player === body) {
+      body.userData.bay = bay;
+      body.userData.hotspot = { kind: "walkman", label: "Walkman" };
+      tape.userData.hotspot = { kind: "tape", label: "a mixtape", hint: "put it in the Walkman" };
       tape.rotation.x = -Math.PI / 2;
       put("tape", place(tape, max.x + 0.43, front - 0.2, { width: 0.1, rotY: 0.35 }));
     }
@@ -854,6 +913,10 @@ export async function addProps(
   for (const o of [...arrivals.children]) scene.add(o);
   // The lamp switches on once it's on the desk, at its bulb (desk.ts keeps it off until then).
   (light.userData.sync as (() => void) | undefined)?.();
-  if (light.userData.on) light.intensity = light.userData.on as number;
+  if (light.userData.on) {
+    light.intensity = light.userData.on as number;
+    const spill = light.userData.spill as PointLight | undefined;
+    if (spill) spill.intensity = 0.35;
+  }
   onChange();
 }

@@ -291,6 +291,44 @@ body {
   display: none;
 }
 
+/* What's under the pointer at the desk (interact.ts): a name, and what a click does. */
+.prop-label {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 3;
+  display: grid;
+  gap: 1px;
+  padding: 4px 9px 5px;
+  border-radius: 4px;
+  font: 12px / 1.35 "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  color: rgba(255, 255, 255, 0.92);
+  background: rgba(8, 8, 10, 0.72);
+  border-left: 2px solid rgba(255, 232, 194, 0.55);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.prop-label b {
+  font-weight: 600;
+}
+
+.prop-label span {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.prop-label.nav {
+  border-left-color: #7ee787;
+}
+
+.prop-label.nav span {
+  color: #7ee787;
+}
+
+.prop-label[hidden] {
+  display: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .prompt-line.focused .cursor,
   .art.drawn {

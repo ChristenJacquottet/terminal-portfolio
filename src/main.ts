@@ -23,6 +23,7 @@ function stepBack() {
       screenEl: $("screen"),
       glow: currentScheme().fg,
       onProgress: () => {},
+      run: (command) => void term.type(command, 12),
       onSitDown: () => {
         term.print([[s(`Last login: ${stamp(new Date())} on ttys000`, "dim")]]);
         term.focus();

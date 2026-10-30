@@ -1,5 +1,5 @@
 // The room around the computer: a steel desk, a plaster wall with a window onto a 1980s Dallas
-// skyline at golden hour, venetian blinds, a floor. Loaded alongside the computer.
+// skyline at night, venetian blinds, a floor. Loaded alongside the computer.
 // Desk model and textures: Poly Haven (CC0). The skyline is drawn here, in code.
 import {
   Box3,
@@ -140,8 +140,8 @@ export function buildRoom(scene: Scene, assets: RoomAssets, computer: Box3): Roo
   );
   scene.add(frame);
 
-  // Venetian blinds, mostly down with the slats tilted open: the low sun comes through in stripes.
-  const slatMat = new MeshStandardMaterial({ color: "#efe7d4", roughness: 0.5, metalness: 0.15 });
+  // Venetian blinds, mostly down with the slats tilted open: the city's light comes through in stripes.
+  const slatMat = new MeshStandardMaterial({ color: "#d9d0bd", roughness: 0.6, metalness: 0 });
   const slatW = w - 0.03;
   const bottom = win.y0 + h * 0.2;
   const pitch = 0.021;
@@ -163,17 +163,17 @@ export function buildRoom(scene: Scene, assets: RoomAssets, computer: Box3): Roo
   for (const x of [cx - slatW * 0.3, cx + slatW * 0.3]) scene.add(box(0.002, win.y1 - bottom, 0.002, cord, x, (win.y1 + bottom) / 2 - 0.02, wallZ - 0.022));
   scene.add(box(0.003, 0.42, 0.003, cord, win.x1 - 0.06, win.y1 - 0.25, wallZ - 0.02)); // pull cord
 
-  // ── outside: Dallas, golden hour ────────────────────────────────────────────────────────
+  // ── outside: Dallas, 2 AM ───────────────────────────────────────────────────────────────
   // A high floor, looking out and a little down: the painted horizon (55% down the canvas) sits in
   // the lower half of the window, and the city spreads out below it.
-  const view = new Mesh(new PlaneGeometry(5.5, 4.3), new MeshBasicMaterial({ map: skyline(), fog: false, toneMapped: false, color: "#d8d0c8" }));
+  const view = new Mesh(new PlaneGeometry(5.5, 4.3), new MeshBasicMaterial({ map: skyline(), fog: false, toneMapped: false }));
   view.position.set(cx + 0.2, win.y0 - 0.28 + 4.3 * 0.05, wallZ - 2.2);
   scene.add(view);
 
-  // Late sun, low and from the right, through the window only: the wall casts a shadow, so the
-  // light lands as a window-shaped patch across the desk and the computer, striped by the blinds.
+  // The night outside: a cool, dim wash from the moon and the city, through the window only. The
+  // wall casts a shadow, so it lands as a window-shaped patch on the desk, striped by the blinds.
   // Its shadow map is drawn once (and again when something moves), never per frame; see desk.ts.
-  const sun = new DirectionalLight("#ffb46e", 3.2);
+  const sun = new DirectionalLight("#6f8fc7", 0.55);
   sun.position.set(cx + 1.5, cy + 0.75, wallZ - 2.2);
   sun.target.position.set(-0.2, 0, computer.max.z);
   sun.castShadow = true;
@@ -183,9 +183,9 @@ export function buildRoom(scene: Scene, assets: RoomAssets, computer: Box3): Roo
   sun.shadow.normalBias = 0.015;
   sun.shadow.radius = 3;
   scene.add(sun, sun.target);
-  // The sun bouncing off the sill and the desk: a soft warm wash on the wall by the window, so the
-  // far side of the room falls off into shadow instead of being evenly lit.
-  const bounce = new PointLight("#ffb780", 0.5, 2.4, 1.6);
+  // The city glow on the wall around the window, so the far side of the room falls off into blue
+  // shadow instead of black.
+  const bounce = new PointLight("#7d8fc4", 0.18, 2.4, 1.6);
   bounce.position.set(cx - 0.2, win.y0 + 0.1, wallZ + 0.45);
   scene.add(bounce);
 
@@ -240,7 +240,7 @@ function wallpaper(): CanvasTexture {
   return t;
 }
 
-/** A 1980s Dallas skyline at golden hour, painted once into a canvas. Seeded so it never changes. */
+/** A 1980s Dallas skyline at 2 AM, painted once into a canvas. Seeded so it never changes. */
 function skyline(): CanvasTexture {
   const W = 2048;
   const H = 1600;
@@ -252,22 +252,30 @@ function skyline(): CanvasTexture {
   const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
   const horizon = H * 0.55;
 
+  // Deep blue overhead, warming to the city's sodium glow at the horizon.
   const sky = g.createLinearGradient(0, 0, 0, horizon);
-  sky.addColorStop(0, "#40507a");
-  sky.addColorStop(0.45, "#9a7a8e");
-  sky.addColorStop(0.78, "#eaa06a");
-  sky.addColorStop(1, "#f8c88a");
+  sky.addColorStop(0, "#03050c");
+  sky.addColorStop(0.5, "#0b1328");
+  sky.addColorStop(0.86, "#1d2342");
+  sky.addColorStop(1, "#46354a");
   g.fillStyle = sky;
   g.fillRect(0, 0, W, H);
-  const sun = g.createRadialGradient(W * 0.74, horizon - 40, 10, W * 0.74, horizon - 40, W * 0.32);
-  sun.addColorStop(0, "rgba(255,236,190,0.95)");
-  sun.addColorStop(0.12, "rgba(255,214,150,0.55)");
-  sun.addColorStop(1, "rgba(255,190,120,0)");
-  g.fillStyle = sun;
-  g.fillRect(0, 0, W, H);
-  // a few long clouds
+  for (let i = 0; i < 140; i++) {
+    g.fillStyle = `rgba(220,230,255,${0.2 + rand() * 0.6})`;
+    const r = rand() < 0.1 ? 2 : 1.2;
+    g.fillRect(rand() * W, rand() * horizon * 0.7, r, r);
+  }
+  // a low moon, top left
+  const moon = g.createRadialGradient(W * 0.2, horizon * 0.28, 4, W * 0.2, horizon * 0.28, 160);
+  moon.addColorStop(0, "rgba(235,236,225,1)");
+  moon.addColorStop(0.17, "rgba(235,236,225,1)");
+  moon.addColorStop(0.2, "rgba(160,180,230,0.25)");
+  moon.addColorStop(1, "rgba(120,140,200,0)");
+  g.fillStyle = moon;
+  g.fillRect(0, 0, W, horizon);
+  // a few long clouds, lit from below by the city
   for (let i = 0; i < 7; i++) {
-    g.fillStyle = `rgba(255,${180 + rand() * 40},${150 + rand() * 40},${0.12 + rand() * 0.12})`;
+    g.fillStyle = `rgba(${70 + rand() * 30},${60 + rand() * 20},${90 + rand() * 30},${0.15 + rand() * 0.15})`;
     g.beginPath();
     g.ellipse(rand() * W, horizon * (0.25 + rand() * 0.45), 160 + rand() * 260, 6 + rand() * 10, 0, 0, Math.PI * 2);
     g.fill();
@@ -277,7 +285,8 @@ function skyline(): CanvasTexture {
     for (let yy = y + 8; yy < y + h - 4; yy += 9) {
       for (let xx = x + 4; xx < x + w - 4; xx += 7) {
         if (rand() < density) {
-          g.fillStyle = `rgba(255,${200 + rand() * 40},${120 + rand() * 60},${0.55 + rand() * 0.4})`;
+          // mostly warm office lights, a few cool fluorescent ones
+          g.fillStyle = rand() < 0.8 ? `rgba(255,${190 + rand() * 50},${110 + rand() * 60},${0.6 + rand() * 0.4})` : `rgba(180,210,255,${0.5 + rand() * 0.4})`;
           g.fillRect(xx, yy, 3, 4);
         }
       }
@@ -294,23 +303,23 @@ function skyline(): CanvasTexture {
   for (let x = -W * 0.4; x < W * 1.4; ) {
     const bw = 30 + rand() * 70;
     const bh = 30 + rand() * 110;
-    g.fillStyle = "rgba(150,110,120,0.55)";
+    g.fillStyle = "rgba(28,26,44,0.9)";
     g.fillRect(x, horizon - bh, bw, bh + 4);
     x += bw + rand() * 10;
   }
 
-  const ink = "#4a3a44";
+  const ink = "#0b0c16";
   const tower = (x: number, w: number, h: number, top?: (x: number, y: number) => void) => {
     g.fillStyle = ink;
     g.fillRect(x, horizon - h, w, h);
-    lit(x, horizon - h, w, h, 0.14);
+    lit(x, horizon - h, w, h, 0.18);
     top?.(x, horizon - h);
   };
   // fillers
   for (let i = 0; i < 40; i++) tower(-W * 0.2 + rand() * W * 1.4, 40 + rand() * 60, 80 + rand() * 180);
   // Renaissance Tower: the X bracing
   tower(W * 0.47, 88, 430, (x, y) => {
-    g.strokeStyle = "rgba(255,210,160,0.35)";
+    g.strokeStyle = "rgba(255,235,200,0.7)";
     g.lineWidth = 2;
     for (let yy = y + 20; yy < horizon - 60; yy += 60) {
       g.beginPath();
@@ -323,16 +332,19 @@ function skyline(): CanvasTexture {
   });
   // Bank of America Plaza, with its green outline
   tower(W * 0.57, 96, 520, (x, y) => {
-    g.strokeStyle = "rgba(90,255,140,0.75)";
+    g.strokeStyle = "rgba(90,255,140,0.95)";
     g.lineWidth = 3;
+    g.shadowColor = "#5aff8c";
+    g.shadowBlur = 12;
     g.strokeRect(x + 2, y + 2, 92, 516);
+    g.shadowBlur = 0;
   });
   // Fountain Place: a prism
   g.fillStyle = ink;
   g.beginPath();
   g.moveTo(W * 0.66, horizon); g.lineTo(W * 0.66, horizon - 380); g.lineTo(W * 0.66 + 50, horizon - 470); g.lineTo(W * 0.66 + 100, horizon - 330); g.lineTo(W * 0.66 + 100, horizon);
   g.fill();
-  lit(W * 0.66, horizon - 330, 100, 330, 0.12);
+  lit(W * 0.66, horizon - 330, 100, 330, 0.16);
   tower(W * 0.73, 76, 400); // Thanksgiving Tower
   // the Magnolia building and its red Pegasus
   tower(W * 0.4, 62, 270, (x, y) => {
@@ -353,41 +365,42 @@ function skyline(): CanvasTexture {
   g.beginPath();
   g.arc(rx, horizon - 360, 44, 0, Math.PI * 2);
   g.fill();
-  g.fillStyle = "rgba(255,236,190,0.9)";
+  g.fillStyle = "rgba(255,240,200,1)";
+  g.shadowColor = "#ffe9b0";
+  g.shadowBlur = 8;
   for (let a = 0; a < Math.PI * 2; a += Math.PI / 9) {
     for (let r = 12; r < 42; r += 10) g.fillRect(rx + Math.cos(a) * r - 1.5, horizon - 360 + Math.sin(a) * r * 0.9 - 1.5, 3, 3);
   }
+  g.shadowBlur = 0;
 
   g.restore();
 
   // Below the horizon, the city spreads out towards the window: rows of low buildings getting
-  // bigger and darker as they come closer, with lit windows, and trees between them.
+  // bigger and darker as they come closer, with lit windows, trees, and streetlights between them.
   const ground = g.createLinearGradient(0, horizon, 0, H);
-  ground.addColorStop(0, "#9a7476");
-  ground.addColorStop(1, "#3a2c30");
+  ground.addColorStop(0, "#2a2236");
+  ground.addColorStop(1, "#07060b");
   g.fillStyle = ground;
   g.fillRect(0, horizon, W, H - horizon);
   for (let row = 0; row < 9; row++) {
     const t = row / 8;
     const y = horizon + 10 + t * t * (H - horizon - 40);
     const scale = 0.4 + t * 2.2;
-    const shade = Math.round(140 - t * 85);
+    const shade = Math.round(34 - t * 22);
     for (let x = -20; x < W; ) {
       const bw = (30 + rand() * 50) * scale;
       const bh = (14 + rand() * 30) * scale;
-      g.fillStyle = `rgb(${shade + 14},${shade - 6},${shade + 4})`;
+      g.fillStyle = `rgb(${shade},${shade - 2},${shade + 10})`;
       g.fillRect(x, y - bh, bw, bh + 6 * scale);
-      g.fillStyle = `rgb(${shade + 30},${shade + 8},${shade + 10})`; // sunlit roof edge
-      g.fillRect(x, y - bh, bw, Math.max(1, 1.5 * scale));
       for (let k = 0; k < bw * bh * 0.002; k++) {
-        if (rand() < 0.6) {
-          g.fillStyle = `rgba(255,${200 + rand() * 40},${120 + rand() * 60},0.8)`;
+        if (rand() < 0.35) {
+          g.fillStyle = `rgba(255,${190 + rand() * 50},${110 + rand() * 60},0.85)`;
           g.fillRect(x + rand() * (bw - 3 * scale), y - bh + 3 * scale + rand() * (bh - 6 * scale), 2 * scale, 2.5 * scale);
         }
       }
       if (rand() < 0.35) {
         // a tree: a cluster of dark leaf blobs
-        g.fillStyle = `rgb(${shade - 20},${shade - 28},${shade - 26})`;
+        g.fillStyle = `rgb(${Math.max(0, shade - 12)},${Math.max(0, shade - 10)},${Math.max(0, shade - 6)})`;
         const r = (6 + rand() * 6) * scale;
         for (let k = 0; k < 4; k++) {
           g.beginPath();
@@ -397,13 +410,21 @@ function skyline(): CanvasTexture {
       }
       x += bw + rand() * 14 * scale;
     }
+    // a street in front of the row, lined with sodium lamps
+    g.fillStyle = "rgba(255,170,80,0.9)";
+    for (let x = rand() * 60 * scale; x < W; x += (50 + rand() * 40) * scale) g.fillRect(x, y + 3 * scale, 2.2 * scale, 2.2 * scale);
   }
-  g.strokeStyle = "rgba(20,14,12,0.7)";
-  g.lineWidth = 2;
-  g.beginPath();
-  g.moveTo(0, horizon - 220);
-  g.quadraticCurveTo(W * 0.5, horizon - 140, W, horizon - 240);
-  g.stroke();
+  // The freeway into downtown: a ribbon of headlights one way and tail lights the other.
+  for (const [colour, dy] of [["rgba(255,236,200,0.55)", 0], ["rgba(255,60,40,0.5)", 7]] as const) {
+    g.strokeStyle = colour;
+    g.lineWidth = 3;
+    g.setLineDash([5, 9]);
+    g.beginPath();
+    g.moveTo(0, horizon + 150 + dy);
+    g.quadraticCurveTo(W * 0.5, horizon + 70 + dy, W, horizon + 140 + dy);
+    g.stroke();
+  }
+  g.setLineDash([]);
 
   const t = new CanvasTexture(c);
   t.colorSpace = SRGBColorSpace;
