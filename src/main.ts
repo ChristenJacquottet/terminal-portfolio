@@ -86,4 +86,9 @@ async function boot() {
   term.focus();
 }
 
+// `?soundtest`: dev-only audition panel for every cue and loop (never loaded otherwise).
+if (new URLSearchParams(location.search).has("soundtest")) {
+  void import("./soundtest").then((m) => m.mountSoundTest());
+}
+
 void boot();

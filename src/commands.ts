@@ -1,3 +1,4 @@
+import { audio } from "./audio";
 import { EMPLOYER, FOLDERS, HOST, SOCIAL, STACK, USER, art, endYear, fileName, profile, projects } from "./content";
 import { HOME, display, findFile, lookup, resolve, type DirNode, type Node } from "./fs";
 import { isBlock, link, pad, run, s, swatch, text, type Line, type Span } from "./output";
@@ -160,6 +161,7 @@ export const COMMANDS: Record<string, Command> = {
             row("stack", STACK),
             row("shell", "cjsh 1.0"),
             row("theme", `${currentTheme()}${crtOn() ? " + crt" : ""}`),
+            row("sound", audio.muted ? "off" : "on"),
             row("uptime", ctx.term.uptime()),
             row("work", `${projects.length} case studies · ${ALL_AWARDS.length} awards`),
             row("contact", [link(SOCIAL.email, `mailto:${SOCIAL.email}`)]),
@@ -325,6 +327,24 @@ export const COMMANDS: Record<string, Command> = {
     },
   },
 
+  sound: {
+    desc: "key clicks and room audio on or off",
+    usage: "sound [on | off]",
+    run: (args) => {
+      const arg = operands(args)[0]?.toLowerCase();
+      if (!arg) {
+        return audio.muted
+          ? [[s("sound is "), s("off", "dim"), s(" · ", "dim"), run("sound on", "sound on", "accent")]]
+          : [[s("sound is "), s("on", "accent"), s(" · ", "dim"), run("sound off", "sound off", "dim")]];
+      }
+      if (arg !== "on" && arg !== "off") return err("usage: sound [on | off]");
+      const mute = arg === "off";
+      audio.setMuted(mute);
+      if (!mute) audio.play("switch", { volume: 0.65 });
+      return [[s("sound "), s(mute ? "off" : "on", mute ? "dim" : "accent")]];
+    },
+  },
+
   clear: { desc: "clear the screen (ctrl+l)", run: (_, ctx) => ctx.term.clear() },
   cls: { desc: "clear", hidden: true, run: (_, ctx) => ctx.term.clear() },
 
@@ -383,6 +403,8 @@ export const COMMANDS: Record<string, Command> = {
       ...PROP_CREDITS.map((c, i): Line => [s(i ? "                             " : "desk props                   ", "dim"), link(`“${c.title}”`, c.url), s(` by ${c.author}, `), link(MODEL_CREDIT.license, MODEL_CREDIT.licenseUrl)]),
       [s("                             ", "dim"), link("Poly Haven", "https://polyhaven.com"), s(" (CC0): the desk, wall, floor, lamp, cassette player, camera, plant, clock, frame, pens, spectacles, duck, suitcase")],
       [s("                             ", "dim"), s("made in code: the room, the Dallas skyline, the racquet, notebook, floppies, mug, card, pennant, bitcoin, grad cap, cork board, diploma and pixel portrait")],
+      [s("sound                        ", "dim"), s("synthesised in Web Audio + CC0 foley ("), link("Wikimedia Commons", "https://commons.wikimedia.org"), s(" / PDSounds) and "), link("“Synth Wave”", "https://opengameart.org/content/synth-wave"), s(" by Alex McCulloch (CC0)")],
+      [s("                             ", "dim"), s("distance low-pass curve adapted from "), link("portfolio-website", "https://github.com/henryjeff/portfolio-website"), s(" by Henry Heffernan (MIT)")],
       [s("fonts                        ", "dim"), s("IBM Plex Mono, VT323 (SIL Open Font License)")],
       [s("first version                ", "dim"), link("WebShell", "https://github.com/nasan016/webshell"), s(" by Nathaniel Macapinlac (MIT)")],
     ],

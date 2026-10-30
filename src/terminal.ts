@@ -1,3 +1,4 @@
+import { audio, type Cue } from "./audio";
 import { COMMANDS, OPEN_TARGETS, type Ctx, type TermApi } from "./commands";
 import { HOST, USER } from "./content";
 import { HOME, display, lookup, resolve } from "./fs";
@@ -287,6 +288,8 @@ export class Terminal {
         .map(([name]) => `${name} `);
     } else if (command === "theme") {
       options = [...THEMES.map((t) => t.name), "next"].filter((n) => n.startsWith(last)).map((n) => `${n} `);
+    } else if (command === "sound" || command === "crt") {
+      options = ["on", "off"].filter((n) => n.startsWith(last)).map((n) => `${n} `);
     } else if (command === "man") {
       options = Object.keys(COMMANDS).filter((n) => !COMMANDS[n].hidden && n.startsWith(last)).map((n) => `${n} `);
     } else {
@@ -324,6 +327,42 @@ export class Terminal {
 
   private bind() {
     const input = this.input;
+    let lastKeyAt = 0;
+
+    const promptKeyCue = (e: KeyboardEvent): Cue | null => {
+      if (!e.isTrusted || e.isComposing || e.metaKey || e.altKey) return null;
+      if (e.key === "Enter") return "keyReturn";
+      if (e.key === " ") return "keySpace";
+      if (e.ctrlKey) {
+        const k = e.key.toLowerCase();
+        return k === "c" || k === "l" || k === "u" ? "key" : null;
+      }
+      if (e.key.length === 1) return "key";
+      if (
+        e.key === "Backspace" ||
+        e.key === "Delete" ||
+        e.key === "Tab" ||
+        e.key === "ArrowUp" ||
+        e.key === "ArrowDown" ||
+        e.key === "ArrowLeft" ||
+        e.key === "ArrowRight" ||
+        e.key === "Home" ||
+        e.key === "End"
+      ) {
+        return "key";
+      }
+      return null;
+    };
+
+    const playPromptKey = (e: KeyboardEvent) => {
+      const cue = promptKeyCue(e);
+      if (!cue) return;
+      const now = performance.now();
+      const minGap = e.repeat ? 78 : 22;
+      if (now - lastKeyAt < minGap) return;
+      lastKeyAt = now;
+      audio.play(cue, e.repeat ? { volume: 0.65 } : undefined);
+    };
 
     input.addEventListener("keydown", (e) => {
       if (this.busy) {
@@ -331,6 +370,7 @@ export class Terminal {
         e.preventDefault();
         return;
       }
+      playPromptKey(e);
       if (e.key === "Enter") {
         e.preventDefault();
         this.submit(input.value);
@@ -389,7 +429,17 @@ export class Terminal {
 
     document.addEventListener("keydown", (e) => {
       if (this.busy) this.skip = true;
-      if (document.activeElement !== input && !e.metaKey && !e.ctrlKey && !e.altKey && e.key.length === 1) this.focus();
+      if (
+        document.activeElement !== input &&
+        !(e.target instanceof HTMLElement && e.target.closest("input, select, textarea, button")) &&
+        !e.metaKey &&
+        !e.ctrlKey &&
+        !e.altKey &&
+        e.key.length === 1
+      ) {
+        if (!this.busy && !this.promptLine.hidden) playPromptKey(e);
+        this.focus();
+      }
     });
   }
 }
