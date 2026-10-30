@@ -105,7 +105,7 @@ export function buildRoom(scene: Scene, assets: RoomAssets, computer: Box3): Roo
   scene.add(floor);
 
   // ── wall with a window hole ─────────────────────────────────────────────────────────────
-  const win = { x0: 0.5, x1: 1.4, y0: 0.2, y1: 1.2 };
+  const win = { x0: -1.45, x1: -0.6, y0: 0.2, y1: 1.2 }; // on the left, like the room I want
   const wallShape = new Shape().moveTo(-3.5, floorY).lineTo(3.5, floorY).lineTo(3.5, floorY + 2.8).lineTo(-3.5, floorY + 2.8).closePath();
   wallShape.holes.push(new Path().moveTo(win.x0, win.y0).lineTo(win.x0, win.y1).lineTo(win.x1, win.y1).lineTo(win.x1, win.y0).closePath());
   const wall = new Mesh(
@@ -184,8 +184,8 @@ export function buildRoom(scene: Scene, assets: RoomAssets, computer: Box3): Roo
   // wall casts a shadow, so it lands as a window-shaped patch on the desk, striped by the blinds.
   // Its shadow map is drawn once (and again when something moves), never per frame; see desk.ts.
   const sun = new DirectionalLight("#6f8fc7", 0.55);
-  sun.position.set(cx + 1.5, cy + 0.75, wallZ - 2.2);
-  sun.target.position.set(-0.2, 0, computer.max.z);
+  sun.position.set(cx - 1.3, cy + 0.75, wallZ - 2.2);
+  sun.target.position.set(0.25, 0, computer.max.z);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
   Object.assign(sun.shadow.camera, { left: -1.8, right: 1.8, top: 1.4, bottom: -1.4, near: 0.5, far: 6 });

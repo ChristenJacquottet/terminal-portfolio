@@ -407,9 +407,9 @@ export async function createDesk(opts: {
   // Props flank the computer and the wall has things on it, so the wide shot frames the desk, not just the machine.
   size.x += 0.62;
   size.y += 0.12;
-  // Looking down at the desk from just above head height, nearly straight on, with the computer in
-  // the middle: the desk fills the frame and the wall with its map sits right behind it.
-  const target = new Vector3(0.12, 0.22, -0.05);
+  // Looking at the desk from just above head height, nearly straight on, the computer in the middle:
+  // the whole desk, the window on the left, the map behind, the shelf and the lab corner on the right.
+  const target = new Vector3(0.12, 0.3, -0.1);
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
@@ -475,15 +475,15 @@ export async function createDesk(opts: {
     };
   };
 
-  /** Far enough back to frame the desk's width (about 1.85 m of it). */
+  /** Far enough back to frame the room around the desk (about 2.4 m of it). */
   function wideDistance() {
     const tan = Math.tan((FOV * Math.PI) / 360);
     // On tall screens let the outer props crop rather than shrinking the computer to a speck.
-    const fit = Math.max(size.y, (1.85 * (camera.aspect < 1 ? 0.5 : 1)) / camera.aspect);
+    const fit = Math.max(size.y, (2.4 * (camera.aspect < 1 ? 0.5 : 1)) / camera.aspect);
     return fit / (2 * tan);
   }
   const widePose = () => {
-    const dir = new Vector3(-0.01, 0.42, 0.91).normalize();
+    const dir = new Vector3(0, 0.3, 0.95).normalize();
     return { position: target.clone().addScaledVector(dir, wideDistance()), target: target.clone() };
   };
 

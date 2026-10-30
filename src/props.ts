@@ -297,6 +297,45 @@ function rubik(): Group {
   return g;
 }
 
+/** A floating walnut shelf on two black steel brackets, its top at y, its back on the wall. */
+function shelf(x: number, y: number, wallZ: number, w: number, d: number): Group {
+  const g = new Group();
+  const wood = new MeshStandardMaterial({ color: "#5a3a28", roughness: 0.6 });
+  const steel = new MeshStandardMaterial({ color: "#1f1d1b", roughness: 0.45, metalness: 0.6 });
+  const plank = new Mesh(new BoxGeometry(w, 0.025, d), wood);
+  plank.position.set(0, -0.0125, d / 2);
+  g.add(plank);
+  for (const bx of [-w / 2 + 0.1, w / 2 - 0.1]) {
+    const arm = new Mesh(new BoxGeometry(0.012, 0.01, d * 0.85), steel);
+    arm.position.set(bx, -0.03, d * 0.43);
+    const post = new Mesh(new BoxGeometry(0.012, 0.12, 0.01), steel);
+    post.position.set(bx, -0.085, 0.005);
+    g.add(arm, post);
+  }
+  g.position.set(x, y, wallZ);
+  return g;
+}
+
+/** A row of books, spines out, in the palette's cloth colours, a couple leaning. */
+function books(n: number): Group {
+  const g = new Group();
+  const cloth = ["#5a3a28", "#2f6f6b", "#b8412c", "#d39b32", "#1f1d1b", "#ece2cc", "#3f5f8c", "#7a4a35", "#9d968a"];
+  let x = 0;
+  for (let i = 0; i < n; i++) {
+    const h = 0.17 + ((i * 37) % 7) * 0.008;
+    const t = 0.018 + ((i * 13) % 5) * 0.004;
+    const book = new Mesh(new BoxGeometry(t, h, 0.13), new MeshStandardMaterial({ color: cloth[i % cloth.length], roughness: 0.8 }));
+    book.position.set(x + t / 2, h / 2, 0);
+    if (i === n - 1) {
+      book.rotation.z = -0.32; // the last one leans on the rest
+      book.position.x += 0.03;
+    }
+    g.add(book);
+    x += t + 0.001;
+  }
+  return g;
+}
+
 /** A teal self-healing cutting mat: a 1 cm grid, inch rules on two edges, 45° guides. */
 function cuttingMat(x0: number, x1: number, z0: number, z1: number): Mesh {
   const w = x1 - x0;
@@ -342,8 +381,8 @@ function cuttingMat(x0: number, x1: number, z0: number, z1: number): Mesh {
  */
 function wallMap(onReady: () => void): Group {
   const g = new Group();
-  const W = 0.9;
-  const H = 0.45;
+  const W = 1.12;
+  const H = 0.56;
   const material = new MeshStandardMaterial({ color: "#a9c6d6", roughness: 0.32 });
   new TextureLoader().load(
     "/textures/world-map.webp",
@@ -923,16 +962,25 @@ export async function addProps(
   put("ball", place(tennisBall(), room.desk.maxX - 0.26, back + 0.1, { height: 0.067 }));
   // The cutting mat under the computer, and the big world map behind it, like the one in my room.
   scene.add(cuttingMat(min.x - 0.12, max.x + 0.16, back + 0.03, max.z + 0.05));
-  put("worldmap", hang(wallMap(onChange), (min.x + max.x) / 2, 0.5, wall, 0.45));
+  put("worldmap", hang(wallMap(onChange), (min.x + max.x) / 2 - 0.02, 0.58, wall, 0.56));
   put("cube", place(rubik(), min.x - 0.25, max.z + 0.2, { height: 0.057, rotY: 0.5 }));
   put("bitcoin", place(bitcoin(), max.x + 0.16, max.z + 0.03, { width: 0.04 }));
-  put("pennant", hang(pennant(), min.x - 0.36, 0.8, wall, 0.14));
-  put("diploma", onWall(diploma(), room.desk.minX + 0.33, 0.87, 0.15));
+  // The right wall: a floating shelf (books, the framed things leaning on it, the grad cap), the cork
+  // board of places under it and the pennant beside.
+  const shelfY = 0.6;
+  const shelfX = 0.88;
+  put("shelf", shelf(shelfX, shelfY, wall, 0.76, 0.17));
+  const onShelf = (o: Object3D, x: number, opts: PlaceOpts) => place(o, shelfX + x, wall + 0.085, { ...opts, y: shelfY, shadow: true });
+  put("books", onShelf(books(9), -0.22, { width: 0.24 }));
+  put("pennant", hang(pennant(), 1.3, 0.42, wall, 0.14));
+  const diplomaFrame = diploma();
+  diplomaFrame.rotation.x = -0.1; // leaning on the wall
+  put("diploma", onShelf(diplomaFrame, 0.08, { height: 0.15, rotY: -0.05 }));
   const portrait = pixelPortrait();
   portrait.rotation.x = -0.12; // leaning back against the glass
   put("pixelart", onSill(portrait, sill.x0 + 0.42, { height: 0.15 }));
-  put("corkboard", onWall(corkboard(), room.desk.minX + 0.18, 0.5, 0.4));
-  put("mortarboard", onSill(mortarboard(), sill.x1 - 0.2, { width: 0.2, rotY: 0.3 }));
+  put("corkboard", onWall(corkboard(), shelfX, 0.32, 0.3));
+  put("mortarboard", onShelf(mortarboard(), 0.28, { width: 0.17, rotY: 0.3 }));
   onChange();
 
   let gltf: GLTF;
@@ -1011,11 +1059,11 @@ export async function addProps(
   }
   add("camera", (o) => place(o, max.x + 0.2, max.z + 0.1, { width: 0.15, rotY: -0.7 }));
   add("plant", (o) => onSill(o, sill.x1 - 0.42, { height: 0.2 }));
-  add("clock", (o) => hang(o, room.desk.minX + 0.02, 0.86, wall, 0.17));
+  add("clock", (o) => hang(o, shelfX + 0.1, 0.88, wall, 0.17));
   add("clapper", (o) => place(o, min.x - 0.14, back + 0.1, { width: 0.22, rotY: 1.35 })); // imagination side, by the globe
   add("longhorn", (o) => { // above the map
     o.rotation.set(Math.PI / 2, 0, -Math.PI / 2, "ZYX"); // face out from the wall, nose down
-    return hang(o, mid, 0.92, wall, 0.22); // a steer skull over the computer, DFW style
+    return hang(o, mid, 1.02, wall, 0.2); // a steer skull over the map, DFW style
   });
   add("biplane", (o) => onSill(o, sill.x0 + 0.18, { width: 0.24, rotY: 0.5 }));
   add("rugby", (o) => place(o, room.desk.minX - 0.45, wall + 0.75, { width: 0.28, rotY: -0.4, y: floor, shadow: true }));
@@ -1047,7 +1095,8 @@ export async function addProps(
       }
       if (mat.name.includes("glass")) mesh.visible = false; // its tint hid the print
     });
-    put("frame", hang(byName.frame, min.x - 0.36, 0.47, wall, 0.28));
+    byName.frame.rotation.x = -0.1; // leaning on the shelf, against the wall
+    put("frame", place(byName.frame, shelfX - 0.05, wall + 0.06, { height: 0.24, y: shelfY, shadow: true }));
   }
   await prepare(arrivals);
   for (const o of [...arrivals.children]) scene.add(o);

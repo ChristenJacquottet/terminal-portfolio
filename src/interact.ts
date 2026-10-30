@@ -72,6 +72,7 @@ const BY_NAME: Record<string, Hotspot> = {
   pens: { kind: "wiggle", label: "pen cup" },
   clock: { kind: "swing", label: "the clock", hint: "it's late" },
   worldmap: { kind: "swing", label: "the world map", hint: "the one from my room" },
+  books: { kind: "wiggle", label: "books" },
   plant: { kind: "wiggle", label: "the plant" },
   chair: { kind: "wiggle", label: "my chair" },
 };
