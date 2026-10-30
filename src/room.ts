@@ -73,19 +73,63 @@ const box = (w: number, h: number, d: number, mat: MeshStandardMaterial, x: numb
   return m;
 };
 
+/** Oak planks (Poly Haven, CC0), loaded now so the shaders are compiled with their maps. */
+function oak(repeatX: number, repeatY: number) {
+  const load = (name: string, srgb = false) => {
+    const t = new TextureLoader().load(`/textures/oak_${name}.webp`);
+    t.wrapS = t.wrapT = RepeatWrapping;
+    t.repeat.set(repeatX, repeatY);
+    t.anisotropy = 8;
+    if (srgb) t.colorSpace = SRGBColorSpace;
+    return t;
+  };
+  return new MeshStandardMaterial({ map: load("diff", true), normalMap: load("nor_gl"), roughnessMap: load("rough"), roughness: 1, color: "#e8d6c0" });
+}
+
+/** A wooden desk: an oak top 4 cm thick, a drawer pedestal at each end, a modesty panel. */
+function woodDesk(box: Box3): Group {
+  const g = new Group();
+  const w = box.max.x - box.min.x;
+  const d = box.max.z - box.min.z;
+  const h = box.max.y - box.min.y;
+  const cx = (box.min.x + box.max.x) / 2;
+  const cz = (box.min.z + box.max.z) / 2;
+  const top = new Mesh(new BoxGeometry(w + 0.04, 0.04, d + 0.03), oak(1.6, 0.8));
+  top.position.set(cx, -0.02, cz);
+  const body = new MeshStandardMaterial({ color: "#5a3a28", roughness: 0.6 });
+  const handle = new MeshStandardMaterial({ color: "#b58b4c", roughness: 0.35, metalness: 1 });
+  g.add(top);
+  for (const side of [-1, 1]) {
+    const px = cx + side * (w / 2 - 0.22);
+    const ped = new Mesh(new BoxGeometry(0.42, h - 0.04, d - 0.06), body);
+    ped.position.set(px, -0.04 - (h - 0.04) / 2, cz - 0.01);
+    g.add(ped);
+    for (let i = 0; i < 3; i++) {
+      const dh = (h - 0.1) / 3;
+      const y = -0.07 - dh / 2 - i * dh;
+      const front = new Mesh(new BoxGeometry(0.39, dh - 0.012, 0.018), body);
+      front.position.set(px, y, cz + (d - 0.06) / 2);
+      const pull = new Mesh(new BoxGeometry(0.1, 0.012, 0.014), handle);
+      pull.position.set(px, y + dh * 0.25, cz + (d - 0.06) / 2 + 0.014);
+      g.add(front, pull);
+    }
+  }
+  const panel = new Mesh(new BoxGeometry(w - 0.9, h * 0.45, 0.02), body);
+  panel.position.set(cx, -0.04 - h * 0.225, box.min.z + 0.04);
+  g.add(panel);
+  return g;
+}
+
 export function buildRoom(scene: Scene, assets: RoomAssets, computer: Box3): Room {
-  // ── the desk: a 2 m steel tanker desk, top at y = 0, the computer towards its left ─────────
+  // ── the desk: 2 m of oak on two drawer pedestals, top at y = 0, the computer towards its left ─
+  // (The steel desk model only sets the size now: everything sits where it always did.)
   let deskBox: Box3;
   if (assets.desk) {
     const desk = assets.desk;
-    desk.traverse((o) => {
-      const mesh = o as Mesh;
-      if (mesh.isMesh) (mesh.material as MeshStandardMaterial).color.set("#d9ccb0"); // putty-coloured steel
-    });
     const b = new Box3().setFromObject(desk);
     desk.position.set(0.12 - (b.min.x + b.max.x) / 2, -b.max.y, computer.min.z - 0.1 - b.min.z);
-    scene.add(desk);
     deskBox = new Box3().setFromObject(desk);
+    scene.add(woodDesk(deskBox));
   } else {
     const top = box(2, 0.04, 0.95, new MeshStandardMaterial({ color: "#7a6a55", roughness: 0.6 }), 0.12, -0.02, computer.min.z - 0.1 + 0.475);
     scene.add(top);
