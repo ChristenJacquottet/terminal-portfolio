@@ -910,6 +910,7 @@ export async function addProps(
   prepare: (arrivals: Object3D) => Promise<void>,
   onChange: () => void,
   disks: Disk[],
+  onLoad: (fraction: number) => void,
 ) {
   const { min, max } = bounds;
   const back = room.desk.backZ;
@@ -976,7 +977,7 @@ export async function addProps(
 
   let gltf: GLTF;
   try {
-    gltf = await loader.loadAsync(PROPS_URL);
+    gltf = await loader.loadAsync(PROPS_URL, (e) => e.total && onLoad(e.loaded / e.total));
   } catch {
     return; // the scene is complete without them
   }

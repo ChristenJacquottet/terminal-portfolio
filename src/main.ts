@@ -17,13 +17,36 @@ const stamp = (d: Date) =>
 let desk: Promise<Desk> | null = null;
 const loadDesk = () => import("./desk");
 
+/** A terminal progress bar: `desk  [████████░░░░░░░░]  52%  mounting`. */
+const bar = (f: number, label: string): Line => {
+  const n = 24;
+  const full = Math.round(Math.min(1, Math.max(0, f)) * n);
+  return [s("desk  ", "dim"), s(`[${"█".repeat(full)}${"░".repeat(n - full)}]`, "accent"), s(` ${String(Math.round(f * 100)).padStart(3)}%  `), s(label, "dim")];
+};
+
+// The first time, everything loads behind a progress line before you step back, so nothing on the
+// desk pops in afterwards. Later exits are instant.
+let fraction = 0;
+let show: ((next: Line) => void) | null = null;
+
 function stepBack() {
+  // printed on the next frame, under the command's "logout"
+  requestAnimationFrame(() => {
+    if (fraction < 1 && !show) show = term.live(bar(fraction, "mounting /dev/desk"));
+  });
   desk ??= loadDesk().then(({ createDesk }) =>
     createDesk({
       host: $("desk"),
       screenEl: $("screen"),
       glow: currentScheme().fg,
-      onProgress: () => {},
+      onProgress: (f) => {
+        fraction = f;
+        show?.(bar(f, f < 0.35 ? "apple-ii.glb" : f < 1 ? "props.glb" : "ready"));
+      },
+      onSitDown: () => {
+        term.print([[s(`Last login: ${stamp(new Date())} on ttys000`, "dim")]]);
+        term.focus();
+      },
       run: (command) => void term.type(command, 12),
       sound: {
         play: (cue) => audio.play(cue),
@@ -34,16 +57,18 @@ function stepBack() {
         muted: () => audio.muted,
         setMuted: (m) => audio.setMuted(m),
       },
-      onSitDown: () => {
-        term.print([[s(`Last login: ${stamp(new Date())} on ttys000`, "dim")]]);
-        term.focus();
-      },
     }),
   );
   desk
-    .then((d) => d.stepBack())
+    .then(async (d) => {
+      await d.ready;
+      fraction = 1;
+      show = null;
+      return d.stepBack();
+    })
     .catch(() => {
       desk = null;
+      show = null;
       term.print([[s("exit: couldn't load the desk on this device. you're still logged in.", "err")]]);
     });
 }

@@ -2,6 +2,8 @@
 // skyline at night, venetian blinds, a floor. Loaded alongside the computer.
 // Desk model and textures: Poly Haven (CC0). The skyline is drawn here, in code.
 import {
+  Cache,
+  ImageLoader,
   Box3,
   BoxGeometry,
   CanvasTexture,
@@ -51,11 +53,17 @@ const PAINT = "#e8e0cc";
 export async function loadRoom(loader: GLTFLoader): Promise<RoomAssets> {
   const tex = new TextureLoader();
   const get = (url: string) => tex.loadAsync(url).catch(() => null);
+  // The oak and the wall map are fetched now too (into three's cache), so they're there on the
+  // first frame instead of popping in after.
+  Cache.enabled = true;
+  const images = new ImageLoader();
+  const warm = ["oak_diff", "oak_nor_gl", "oak_rough", "world-map"].map((n) => images.loadAsync(`/textures/${n}.webp`).catch(() => null));
   const [desk, floor] = await Promise.all([
     loader.loadAsync("/models/desk.glb").then((g) => g.scene, () => null),
     get("/textures/floor_diff.webp"),
+    ...warm,
   ]);
-  return { desk, floor };
+  return { desk: desk as Group | null, floor: floor as Texture | null };
 }
 
 function tile(t: Texture | null, x: number, y: number, srgb = true) {

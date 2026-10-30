@@ -85,6 +85,8 @@ export type Desk = {
   sitDown(): Promise<void>;
   setGlow(fg: string): void;
   hasModel: boolean;
+  /** Everything on the desk loaded and prepared: step back only after this, so nothing pops in. */
+  ready: Promise<void>;
 };
 
 /** One floppy per featured project, in the portfolio's order; loading one cats its file. */
@@ -358,7 +360,8 @@ export async function createDesk(opts: {
   roomLoader.setMeshoptDecoder(MeshoptDecoder);
   MeshoptDecoder.useWorkers?.(2); // decode the models off the main thread
   const roomAssets = loadRoom(roomLoader);
-  const loaded = await loadModel(opts.onProgress);
+  // Progress: the computer is the first third, the props the rest.
+  const loaded = await loadModel((f) => opts.onProgress(f * 0.35));
   const { root, screen } = loaded ?? standIn();
   scene.add(root);
   const room = buildRoom(scene, await roomAssets, new Box3().setFromObject(root));
@@ -848,6 +851,9 @@ export async function createDesk(opts: {
 
   const api: Desk = {
     hasModel: Boolean(loaded),
+    get ready() {
+      return ready;
+    },
     setGlow(fg) {
       glow.color.set(fg);
       request();
@@ -890,7 +896,6 @@ export async function createDesk(opts: {
       if (hint) hint.hidden = editing; // the editor panel has its own help
       if (credit && loaded) credit.hidden = false;
       transitioning = false;
-      landed();
     },
 
     async sitDown() {
@@ -924,18 +929,15 @@ export async function createDesk(opts: {
 
   // The rest of the desk streams in after the computer; each piece just asks for a frame.
   const props = new Map<string, Object3D>();
-  // The loaded props wait for the first flight to land, then compile and upload a texture a frame.
-  let landed = () => {};
-  const firstLanding = new Promise<void>((r) => (landed = r));
+  // Everything is loaded before the first step back now, so this runs behind the fullscreen terminal.
   const prepare = async (arrivals: Object3D) => {
-    await firstLanding;
     await renderer.compileAsync(arrivals, camera, scene);
     for (const t of textures(arrivals)) {
       renderer.initTexture(t);
       await nextFrame();
     }
   };
-  const propsReady = loaded ? addProps(scene, roomLoader, bounds, room, lamp, props, prepare, relight, featuredDisks()) : Promise.resolve();
+  const propsReady = loaded ? addProps(scene, roomLoader, bounds, room, lamp, props, prepare, relight, featuredDisks(), (f) => opts.onProgress(0.35 + f * 0.6)) : Promise.resolve();
   void propsReady.then(() => {
     const parts: Box3[] = [];
     root.traverse((x) => {
@@ -956,6 +958,7 @@ export async function createDesk(opts: {
     );
   }
 
+  const ready = propsReady.then(() => opts.onProgress(1));
   resize();
   // Compile every shader now, behind the fullscreen terminal, so the flight out never hitches.
   place(closeUp());

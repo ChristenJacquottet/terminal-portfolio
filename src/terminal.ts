@@ -189,6 +189,18 @@ export class Terminal {
     this.scroll();
   }
 
+  /** Prints a line that can be rewritten in place (a progress bar); returns the rewrite. */
+  live(line: Line): (next: Line) => void {
+    let el = this.line(line);
+    this.output.append(el);
+    this.scroll();
+    return (next) => {
+      const fresh = this.line(next);
+      el.replaceWith(fresh);
+      el = fresh;
+    };
+  }
+
   print(lines: Line[]) {
     const frag = document.createDocumentFragment();
     for (const line of lines) frag.append(this.line(line));
