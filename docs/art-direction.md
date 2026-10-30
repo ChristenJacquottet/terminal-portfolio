@@ -2,17 +2,15 @@
 
 The brief every prop, texture, light and sound follows. If something doesn't fit these rules, change it or leave it out.
 
-## The scene: my room, 1983
+## The scene: the lab at golden hour
 
-My room sometime in the early eighties, at dusk (click the window and it's 2 AM). I've just stepped away from the Apple II; the lamp is still on, the mug is still warm, the tape is still in the Walkman. At dusk the low sun comes through the blinds; at night the city is asleep and blue and the only real light is the lamp bulb and the glow of the screen.
+My room, where I make things: a maker's room collected across decades, at golden hour (click the window and it's 2 AM). The old Apple II is the centre and the terminal lives in it, but it isn't the only machine: laptops are stacked on the side, a little home lab hums in the corner (a rack of switches with blinking lights, a small CRT on top, a pegboard of tools), and cameras line the shelves. The big world map from my room fills the wall behind the computer. Plants trail off the shelves. The low sun comes in through the window on the left.
 
-References: David's bedroom in *WarGames* (a kid, a modem, the screen as the light), the garage benches in *Halt and Catch Fire* (opened machines, floppies, printouts), the practical lights in *Stranger Things*. For craft and interaction: c-na.dev (study only: nothing from it is used). Henry Heffernan and Edward Hinrichsen (MIT code) for sound and the screen.
+Vintage leads (beige plastic, CRTs, wood, paper), but it isn't a period piece: it's my stuff from different decades in one room. Nothing glossy-modern takes the focus.
 
-The desk tells the tagline, *from imagination to implementation*, left to right:
+What it says, left to right: **imagination** (the window, the cameras and film gear, the globe, the places), **the work** in the middle (the Apple II, the floppies, the notebook, the map), **implementation** on the right (the phone, the breadboard, the shelves of parts, the home lab and its tools). And through all of it, **international**: the map, the postcards, a packed bag, things from the places I've lived.
 
-- **Left, imagination:** the camera, the Super 8, the clapper, the globe and the cork board of places (Réunion, Guyane, Normandie, Indiana, London, Dallas), a sketchbook.
-- **Centre, the work:** the Apple II, the floppies (one per project), the notebook.
-- **Right, implementation:** the phone (contact), a breadboard and wires, the Walkman and tapes, the mug, the cube.
+References: the creator-lab image Christen shared (golden hour, map wall, shelves, home-lab rack, pegboard, plants), *WarGames* and *Halt and Catch Fire* for the hacker side, c-na.dev for craft and interaction (study only: nothing from it is used), Henry Heffernan and Edward Hinrichsen (MIT code) for sound and the screen.
 
 ## Why it has to look like one set
 
