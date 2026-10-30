@@ -955,11 +955,11 @@ export async function addProps(
   put("floppies", place(diskBox(disks), min.x - 0.14, max.z - 0.02, { width: Math.max(0.152, 0.06 + disks.length * 0.016), rotY: 0.25 }));
   put("notebook", place(notebook(), min.x + 0.02, max.z + 0.17, { width: 0.31, rotY: 0.12 }));
   put("card", place(card(), max.x + 0.42, max.z - 0.14, { width: 0.11, rotY: -0.55 }));
-  // The racquet leans against the wall in the back right corner, the ball at its foot.
+  // The racquet leans against the wall on the floor by the desk; the ball stays on the desk.
   const bat = racquet();
   bat.rotation.x = -1.2;
-  put("racquet", place(bat, room.desk.maxX - 0.12, back + 0.06, { height: 0.42, rotY: -0.35 }));
-  put("ball", place(tennisBall(), room.desk.maxX - 0.26, back + 0.1, { height: 0.067 }));
+  put("racquet", place(bat, room.desk.maxX + 0.14, wall + 0.1, { height: 0.66, rotY: -0.35, y: floor, shadow: true }));
+  put("ball", place(tennisBall(), room.desk.maxX - 0.3, back + 0.12, { height: 0.067 }));
   // The cutting mat under the computer, and the big world map behind it, like the one in my room.
   scene.add(cuttingMat(min.x - 0.12, max.x + 0.16, back + 0.03, max.z + 0.05));
   put("worldmap", hang(wallMap(onChange), (min.x + max.x) / 2 - 0.02, 0.58, wall, 0.56));

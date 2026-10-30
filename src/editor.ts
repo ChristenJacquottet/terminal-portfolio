@@ -18,6 +18,8 @@ export function startEditor(opts: {
   props: Map<string, Object3D>;
   request: () => void;
   sitDown: () => void;
+  /** How far back the default wide shot is for this window, so a saved view scales to others. */
+  wideDistance: () => number;
 }) {
   const { scene, camera, canvas, controls, props, request } = opts;
   const host = canvas.parentElement!;
@@ -73,6 +75,7 @@ export function startEditor(opts: {
       <button data-act="save" class="editor-primary">save to layout.json</button>
       <button data-act="copy">copy json</button>
       <button data-act="discard">discard draft</button>
+      <button data-act="view" title="the wide shot visitors land on">use this view</button>
       <button data-act="sit">sit down</button>
     </div>
     <p class="editor-status" data-status>G move · R rotate · S scale · H hide · F focus · shift snaps · esc deselects · right-drag pans</p>`;
@@ -128,8 +131,10 @@ export function startEditor(opts: {
     refresh();
   }
 
+  // The wide shot, if you've picked one: direction, target, and distance relative to the default.
+  let view = (locked as unknown as { view?: unknown }).view;
   function merged(): Layout {
-    return { ...locked, ...changes };
+    return { ...locked, ...changes, ...(view ? { view } : {}) } as Layout;
   }
 
   // ── gizmo ─────────────────────────────────────────────────────────────────────────────
@@ -251,6 +256,12 @@ export function startEditor(opts: {
       count();
       select(selected);
       say("draft discarded.");
+    },
+    view() {
+      const dir = camera.position.clone().sub(controls.target);
+      const round = (v: number) => Math.round(v * 1000) / 1000;
+      view = { dir: dir.clone().normalize().toArray().map(round), target: controls.target.toArray().map(round), k: round(dir.length() / opts.wideDistance()) };
+      say("this is the wide shot now: save to layout.json (or copy json) to keep it.");
     },
     sit() {
       select(null);

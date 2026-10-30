@@ -47,7 +47,7 @@ import { CSS3DObject, CSS3DRenderer } from "three/examples/jsm/renderers/CSS3DRe
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { MODEL_CREDIT } from "./credit";
-import { editing } from "./layout";
+import { editing, locked } from "./layout";
 import { fileName, projects } from "./content";
 import { display, findFile } from "./fs";
 import type { Cue } from "./audio";
@@ -363,6 +363,7 @@ export async function createDesk(opts: {
   const room = buildRoom(scene, await roomAssets, new Box3().setFromObject(root));
   /** Dusk (the default: warm, everything reads) or the middle of the night (the window toggles it). */
   let time: Time = "dusk";
+  let screenGlow: PointLight | null = null; // made below, with the screen
   const setTime = (next: Time) => {
     time = next;
     room.setTime(next);
@@ -372,19 +373,34 @@ export async function createDesk(opts: {
     fill.intensity = dusk ? 0.16 : 0.06;
     scene.environmentIntensity = dusk ? 0.09 : 0.04;
     renderer.toneMappingExposure = dusk ? 0.92 : 0.85;
+    if (screenGlow) screenGlow.intensity = dusk ? 0.25 : 0.7;
   };
   setTime(time);
 
   const glass = glassMaterial(screen, room.windowCenter.clone().sub(screen.center).normalize());
   if (loaded) {
     loaded.tube.material = glass;
+    // The model's plastics are near white; age them to the palette's beige so the machine sits in
+    // the warm room instead of glowing in it.
+    loaded.root.traverse((o) => {
+      const mesh = o as Mesh;
+      if (!mesh.isMesh || mesh === loaded.tube) return;
+      for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+        const mat = m as MeshStandardMaterial;
+        if (!mat.color || /screen/i.test(mat.name)) continue;
+        mat.color.multiply(new Color("#cdbd9f"));
+        mat.roughness = Math.max(mat.roughness, 0.55);
+      }
+    });
     loaded.tube.renderOrder = 1;
   }
 
   // The screen lights the room in the theme's colour: the keys, the desk in front, the drives.
-  const glow = new PointLight(opts.glow, 0.8, 1.6, 2);
+  // Low at dusk (the sun and the lamp do the work), stronger at night (see setTime).
+  const glow = new PointLight(opts.glow, 0.25, 1.4, 2);
   glow.position.copy(screen.center).addScaledVector(screen.normal, 0.12);
   scene.add(glow);
+  screenGlow = glow;
 
   // The terminal, as DOM, on the tube.
   const scale = Math.min(screen.width / SCREEN_W, screen.height / SCREEN_H);
@@ -409,13 +425,13 @@ export async function createDesk(opts: {
   size.y += 0.12;
   // Looking at the desk from just above head height, nearly straight on, the computer in the middle:
   // the whole desk, the window on the left, the map behind, the shelf and the lab corner on the right.
-  const target = new Vector3(0.12, 0.3, -0.1);
+  const target = new Vector3(0.05, 0.28, -0.1);
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
   controls.enablePan = false;
-  controls.minAzimuthAngle = -0.5;
-  controls.maxAzimuthAngle = 0.5;
+  controls.minAzimuthAngle = -0.35;
+  controls.maxAzimuthAngle = 0.85;
   controls.minPolarAngle = 0.85;
   controls.maxPolarAngle = 1.32;
   controls.zoomSpeed = 0.6;
@@ -479,12 +495,16 @@ export async function createDesk(opts: {
   function wideDistance() {
     const tan = Math.tan((FOV * Math.PI) / 360);
     // On tall screens let the outer props crop rather than shrinking the computer to a speck.
-    const fit = Math.max(size.y, (2.4 * (camera.aspect < 1 ? 0.5 : 1)) / camera.aspect);
+    const fit = Math.max(size.y, (2.25 * (camera.aspect < 1 ? 0.5 : 1)) / camera.aspect);
     return fit / (2 * tan);
   }
+  // A three-quarter view from the front right: the window's light comes across from the left, the
+  // lamp is in the foreground. The layout editor can replace it (`view` in layout.json).
+  const savedView = (locked as unknown as { view?: { dir: number[]; target: number[]; k: number } }).view;
   const widePose = () => {
-    const dir = new Vector3(0, 0.3, 0.95).normalize();
-    return { position: target.clone().addScaledVector(dir, wideDistance()), target: target.clone() };
+    const dir = new Vector3(...((savedView?.dir ?? [0.7, 0.57, 2.05]) as [number, number, number])).normalize();
+    const at = savedView ? new Vector3(...(savedView.target as [number, number, number])) : target.clone();
+    return { position: at.clone().addScaledVector(dir, wideDistance() * (savedView?.k ?? 1)), target: at };
   };
 
   // Render on demand only.
@@ -872,7 +892,7 @@ export async function createDesk(opts: {
   // `?edit`: the layout editor, for arranging the props (never loaded otherwise).
   if (editing && loaded) {
     void Promise.all([import("./editor"), propsReady]).then(([{ startEditor }]) =>
-      startEditor({ scene, camera, canvas, controls, props, request: relight, sitDown: () => api.sitDown() }),
+      startEditor({ scene, camera, canvas, controls, props, request: relight, sitDown: () => api.sitDown(), wideDistance }),
     );
   }
 
