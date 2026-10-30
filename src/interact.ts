@@ -245,6 +245,12 @@ export function createInteractions(o: {
     return highlight(t.object, t.spot.nav ? 1 : 0.65);
   }
 
+  /** A label with no object behind it (the screen, which desk.ts handles itself). */
+  function say(label: string, hint: string, e: PointerEvent): boolean {
+    showChip({ kind: "screen", label, nav: true }, label, hint, e);
+    return highlight(null, 0);
+  }
+
   function leave(): boolean {
     chip.hidden = true;
     return highlight(null, 0);
@@ -499,7 +505,7 @@ export function createInteractions(o: {
     return found;
   }
 
-  return { pick, hover, leave, click, setTargets, get busy() {
+  return { pick, hover, say, leave, click, setTargets, get busy() {
     return busy;
   } };
 }

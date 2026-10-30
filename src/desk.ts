@@ -694,8 +694,9 @@ export async function createDesk(opts: {
         hoverEvent = null;
         if (seated || transitioning) return touch.leave();
         const target = touch.pick(ev, vw, vh);
-        if (touch.hover(target, ev)) request();
-        canvas.style.cursor = target ? "pointer" : onGlass(ev) ? "zoom-in" : "grab";
+        const glassy = !target && onGlass(ev);
+        if (glassy ? touch.say("Apple II", "sit back down", ev) : touch.hover(target, ev)) request();
+        canvas.style.cursor = target ? "pointer" : glassy ? "zoom-in" : "grab";
       });
     }
     hoverEvent = e;
