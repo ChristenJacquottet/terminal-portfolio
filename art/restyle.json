@@ -1,0 +1,504 @@
+{
+  "$comment": "Per-prop material restyle mapping for scripts/restyle.py against art/palette.json. Each prop lists its sourceMaterials first, then maps every material to a palette swatch and flatten strength (0..1: lower keeps printed labels/artwork/multi-part contrast; higher unifies plain plastic, wood, metal and scanned surfaces).",
+  "palette": "art/palette.json",
+  "props": {
+    "lamp": {
+      "source": "desk_lamp_arm_01/desk_lamp_arm_01_1k.gltf",
+      "sourceMaterials": [
+        "desk_lamp_arm_01",
+        "desk_lamp_arm_01_light"
+      ],
+      "materials": {
+        "desk_lamp_arm_01": {
+          "swatch": "tomato",
+          "flatten": 0.6,
+          "roughnessBand": [
+            0.4,
+            0.5
+          ],
+          "note": "The lamp stays red: the warm accent on the imagination side, balancing the red mug on the other."
+        },
+        "desk_lamp_arm_01_light": {
+          "swatch": "glass",
+          "flatten": 0.95,
+          "dropMaps": [
+            "baseColor",
+            "roughness",
+            "normal"
+          ],
+          "opaque": true,
+          "note": "Lamp bulb glass; kept opaque with warm bulb emission so src/props.ts fitBulb() locates the bulb mesh and attaches the desk SpotLight."
+        }
+      }
+    },
+    "cassette": {
+      "source": "portable_cassette_player/portable_cassette_player_1k.gltf",
+      "sourceMaterials": [
+        "portable_cassette_player",
+        "portable_cassette_player_glass"
+      ],
+      "materials": {
+        "portable_cassette_player": {
+          "swatch": "teal",
+          "flatten": 0.66,
+          "roughnessBand": [
+            0.46,
+            0.6
+          ],
+          "note": "Walkman body shifts from neutral grey to the teal accent swatch; moderate flatten keeps printed lettering, tape label and dark buttons readable."
+        },
+        "portable_cassette_player_glass": {
+          "swatch": "glass",
+          "flatten": 1.0,
+          "dropMaps": [
+            "baseColor",
+            "roughness",
+            "normal"
+          ],
+          "alpha": 0.24,
+          "note": "Clears the opaque JPEG window texture into translucent glass so the cassette tape inside the lid is visible."
+        }
+      }
+    },
+    "pens": {
+      "source": "stationery_supplies/stationery_supplies_1k.gltf",
+      "sourceMaterials": [
+        "stationery_supplies"
+      ],
+      "materials": {
+        "stationery_supplies": {
+          "swatch": "mustard",
+          "flatten": 0.45,
+          "roughnessBand": [
+            0.42,
+            0.58
+          ],
+          "note": "Single shared atlas across cup, pencils, pens and eraser; gentle flatten warms stray neon hues towards mustard while preserving dark-cup vs light-pencil value separation."
+        }
+      }
+    },
+    "spectacles": {
+      "source": "round_spectacles/round_spectacles_1k.gltf",
+      "sourceMaterials": [
+        "round_spectacles",
+        "round_spectacles_glass"
+      ],
+      "dropVertexColors": true,
+      "materials": {
+        "round_spectacles": {
+          "swatch": "dark-metal",
+          "flatten": 0.8,
+          "roughnessBand": [
+            0.32,
+            0.44
+          ],
+          "note": "Thin round wire frames unified to dark-metal."
+        },
+        "round_spectacles_glass": {
+          "swatch": "glass",
+          "flatten": 1.0,
+          "dropMaps": [
+            "baseColor",
+            "roughness",
+            "normal"
+          ],
+          "alpha": 0.2,
+          "note": "Drops opaque JPEG diffuse and dark vertex AO so lenses read as clear optical glass over the notebook."
+        }
+      }
+    },
+    "duck": {
+      "source": "rubber_duck_toy/rubber_duck_toy_1k.gltf",
+      "sourceMaterials": [
+        "rubber_duck_toy"
+      ],
+      "materials": {
+        "rubber_duck_toy": {
+          "swatch": "mustard",
+          "flatten": 0.72,
+          "roughnessBand": [
+            0.45,
+            0.55
+          ],
+          "note": "Pulls hyper-saturated orange rubber into warm 1980s mustard while keeping darker beak and painted eyes legible."
+        }
+      }
+    },
+    "camera": {
+      "source": "Camera_01/Camera_01_1k.gltf",
+      "sourceMaterials": [
+        "Camera_01_body",
+        "Camera_01_lens",
+        "Camera_01_lens_body",
+        "Camera_01_strap"
+      ],
+      "materials": {
+        "Camera_01_body": {
+          "swatch": "near-black",
+          "flatten": 0.62,
+          "roughnessBand": [
+            0.38,
+            0.52
+          ],
+          "note": "35mm SLR body in near-black; moderate flatten preserves shutter dial numerals and top-plate engravings."
+        },
+        "Camera_01_lens": {
+          "swatch": "glass",
+          "flatten": 1.0,
+          "transmission": 1.0,
+          "note": "Untextured transmissive front lens element takes specular glass swatch over the dark inner barrel."
+        },
+        "Camera_01_lens_body": {
+          "swatch": "dark-metal",
+          "flatten": 0.6,
+          "roughnessBand": [
+            0.32,
+            0.44
+          ],
+          "note": "Machined lens rings in dark-metal while keeping white aperture and focus-distance markings readable."
+        },
+        "Camera_01_strap": {
+          "swatch": "near-black",
+          "flatten": 0.78,
+          "roughnessBand": [
+            0.46,
+            0.58
+          ],
+          "note": "Worn leather neck strap unified to near-black."
+        }
+      }
+    },
+    "plant": {
+      "source": "potted_plant_04/potted_plant_04_1k.gltf",
+      "sourceMaterials": [
+        "potted_plant_04"
+      ],
+      "materials": {
+        "potted_plant_04": {
+          "swatch": "beige-plastic",
+          "flatten": 0.42,
+          "roughnessBand": [
+            0.48,
+            0.68
+          ],
+          "note": "Pot, succulent leaves and soil share one atlas; low-moderate flatten warms the stark white pot to beige ceramic and mutes raw photographic leaf greens."
+        }
+      }
+    },
+    "clock": {
+      "source": "wall_clock/wall_clock_1k.gltf",
+      "sourceMaterials": [
+        "wall_clock",
+        "wall_clock_glass"
+      ],
+      "materials": {
+        "wall_clock": {
+          "swatch": "warm-grey",
+          "flatten": 0.52,
+          "roughnessBand": [
+            0.44,
+            0.56
+          ],
+          "note": "Removes cold blue steel cast from rim towards warm-grey plastic while keeping the cream dial and 1-12 numerals sharp."
+        },
+        "wall_clock_glass": {
+          "swatch": "glass",
+          "flatten": 1.0,
+          "dropMaps": [
+            "roughness"
+          ],
+          "alpha": 0.18,
+          "note": "Clean clock cover glass without a separate 1k roughness map."
+        }
+      }
+    },
+    "frame": {
+      "source": "hanging_picture_frame_01/hanging_picture_frame_01_1k.gltf",
+      "sourceMaterials": [
+        "hanging_picture_frame_01",
+        "hanging_picture_frame_01_artwork",
+        "hanging_picture_frame_01_glass"
+      ],
+      "materials": {
+        "hanging_picture_frame_01": {
+          "swatch": "walnut",
+          "flatten": 0.8,
+          "roughnessBand": [
+            0.54,
+            0.66
+          ],
+          "note": "Turns cold black moulding into warm walnut wood matching the corkboard and diploma frames."
+        },
+        "hanging_picture_frame_01_artwork": {
+          "swatch": "cream-paper",
+          "flatten": 0.35,
+          "dropMaps": [
+            "roughness"
+          ],
+          "note": "Warm cream-paper backing (replaced at runtime by reunionPrint() in src/props.ts)."
+        },
+        "hanging_picture_frame_01_glass": {
+          "swatch": "glass",
+          "flatten": 1.0,
+          "dropMaps": [
+            "baseColor",
+            "roughness",
+            "normal"
+          ],
+          "alpha": 0.16,
+          "note": "Replaces opaque black JPEG glass with clear glass."
+        }
+      }
+    },
+    "globe": {
+      "source": "sketchfab/globe.glb",
+      "sourceMaterials": [
+        "Globe.003",
+        "Globe_Base"
+      ],
+      "materials": {
+        "Globe.003": {
+          "swatch": "cream-paper",
+          "flatten": 0.22,
+          "dropMaps": [
+            "roughness"
+          ],
+          "note": "Antique map sphere: a light touch, so the blue-green oceans and the continents keep their colour; matte paper roughness."
+        },
+        "Globe_Base": {
+          "swatch": "brass",
+          "flatten": 0.78,
+          "roughnessBand": [
+            0.3,
+            0.4
+          ],
+          "note": "Globe stand and meridian arc unified to aged brass per art/palette.json."
+        }
+      }
+    },
+    "super8": {
+      "source": "sketchfab/super8.glb",
+      "sourceMaterials": [
+        "lambert1",
+        "lambert5"
+      ],
+      "materials": {
+        "lambert1": {
+          "swatch": "near-black",
+          "flatten": 0.6,
+          "roughnessBand": [
+            0.4,
+            0.52
+          ],
+          "note": "Canon 310XL body in near-black plastic band while keeping the side Canon 310XL nameplate and exposure markings legible."
+        },
+        "lambert5": {
+          "swatch": "glass",
+          "flatten": 1.0,
+          "dropMaps": [
+            "baseColor",
+            "roughness",
+            "occlusion"
+          ],
+          "alpha": 0.26,
+          "note": "Fixes metallic-1.0 dark lens and viewfinder meshes into clear specular optical glass."
+        }
+      }
+    },
+    "cube": {
+      "source": "sketchfab/rubik.glb",
+      "sourceMaterials": [
+        "RubixCube"
+      ],
+      "materials": {
+        "RubixCube": {
+          "swatch": "beige-plastic",
+          "flatten": 0.26,
+          "dropMaps": [
+            "roughness"
+          ],
+          "note": "All six sticker colours share one texture; light flatten ages harsh digital RGB primaries towards warm 1980s vinyl stickers and normalizes roughness to 0.5."
+        }
+      }
+    },
+    "phone": {
+      "source": "sketchfab/phone.glb",
+      "sourceMaterials": [
+        "sfmtelephone001rotary",
+        "sfmtelephone001rotary_rotary"
+      ],
+      "materials": {
+        "sfmtelephone001rotary": {
+          "swatch": "beige-plastic",
+          "flatten": 0.84,
+          "dropMaps": [
+            "roughness"
+          ],
+          "note": "Rescues the phone body, receiver and cord from metallic-1.0 black into warm 1980s Bell-style beige-plastic per art/palette.json."
+        },
+        "sfmtelephone001rotary_rotary": {
+          "swatch": "warm-grey",
+          "flatten": 0.55,
+          "dropMaps": [
+            "roughness"
+          ],
+          "note": "Rotary dial wheel and number ring in contrasting warm-grey so finger holes and numerals stay readable."
+        }
+      }
+    },
+    "longhorn": {
+      "source": "sketchfab/longhorn-up.glb",
+      "sourceMaterials": [
+        "Scene_-_Root"
+      ],
+      "materials": {
+        "Scene_-_Root": {
+          "swatch": "cream-paper",
+          "flatten": 1.0,
+          "note": "Untextured decimated skull scan takes matte cream-paper (sun-bleached bone) instead of raw dark brown."
+        }
+      }
+    },
+    "rugby": {
+      "source": "sketchfab/rugby.glb",
+      "sourceMaterials": [
+        "material0"
+      ],
+      "materials": {
+        "material0": {
+          "swatch": "walnut",
+          "flatten": 0.74,
+          "note": "Flattens baked underside studio shadow and scan noise on the leather rugby ball into rich walnut leather while preserving seams and lacing."
+        }
+      }
+    },
+    "skateboard": {
+      "source": "sketchfab/skateboard.glb",
+      "sourceMaterials": [
+        "defaultMat"
+      ],
+      "materials": {
+        "defaultMat": {
+          "swatch": "walnut",
+          "flatten": 0.56,
+          "roughnessBand": [
+            0.52,
+            0.68
+          ],
+          "note": "Photogrammetry scan with deck, grip tape, trucks and wheels in one texture; moderate flatten removes lighting gradients and warms wood to walnut while keeping dark grip and light wheels."
+        }
+      }
+    },
+    "clapper": {
+      "source": "sketchfab/clapper.glb",
+      "sourceMaterials": [
+        "Material.001",
+        "Material.002",
+        "Material.003",
+        "Material.004"
+      ],
+      "materials": {
+        "Material.001": {
+          "swatch": "near-black",
+          "flatten": 0.46,
+          "note": "Main acrylic slate and clapsticks: removes wrong 0.88 metalness and keeps white PROD./ROLL/SCENE/TAKE lines and diagonal stripes crisp."
+        },
+        "Material.002": {
+          "swatch": "near-black",
+          "flatten": 0.46,
+          "note": "Slate edge and stick trim matched to near-black."
+        },
+        "Material.003": {
+          "swatch": "dark-metal",
+          "flatten": 0.78,
+          "note": "Clapper corner hinge bracket in dark-metal."
+        },
+        "Material.004": {
+          "swatch": "dark-metal",
+          "flatten": 1.0,
+          "note": "Untextured hinge bolts/nuts take dark-metal instead of raw white metallic."
+        }
+      }
+    },
+    "biplane": {
+      "source": "sketchfab/biplane.glb",
+      "sourceMaterials": [
+        "DefaultMaterial"
+      ],
+      "materials": {
+        "DefaultMaterial": {
+          "swatch": "tomato",
+          "flatten": 0.66,
+          "roughnessBand": [
+            0.4,
+            0.52
+          ],
+          "note": "Painted vintage toy biplane mapped to the tomato red accent swatch while keeping dark tires, struts and engine shading."
+        }
+      }
+    },
+    "studiolight": {
+      "source": "sketchfab/studiolight.glb",
+      "sourceMaterials": [
+        "LMP0001_Textures"
+      ],
+      "materials": {
+        "LMP0001_Textures": {
+          "swatch": "near-black",
+          "flatten": 0.78,
+          "roughnessBand": [
+            0.4,
+            0.52
+          ],
+          "emissionSwatch": "cream-paper",
+          "emissionStrength": 0.85,
+          "note": "Tripod stand and softbox shroud unified to near-black; front diffuser emission warmed from clinical #ffffff to cream-paper."
+        }
+      }
+    },
+    "chair": {
+      "source": "sketchfab/chair.glb",
+      "sourceMaterials": [
+        "computerchair_material"
+      ],
+      "materials": {
+        "computerchair_material": {
+          "swatch": "walnut",
+          "flatten": 0.68,
+          "roughnessBand": [
+            0.52,
+            0.66
+          ],
+          "note": "Bent-plywood office chair shifted from bright orange tan into warm walnut wood while preserving wood grain and base contrast."
+        }
+      }
+    },
+    "suitcase": {
+      "source": "vintage_suitcase/vintage_suitcase_1k.gltf",
+      "sourceMaterials": [
+        "vintage_suitcase_01",
+        "vintage_suitcase_02"
+      ],
+      "materials": {
+        "vintage_suitcase_01": {
+          "swatch": "walnut",
+          "flatten": 0.46,
+          "roughnessBand": [
+            0.52,
+            0.66
+          ],
+          "note": "Stickered vintage suitcase: lower flatten turns the olive-grey body to warm walnut leather while keeping the travel stickers colorful and readable."
+        },
+        "vintage_suitcase_02": {
+          "swatch": "cork",
+          "flatten": 0.76,
+          "roughnessBand": [
+            0.86,
+            0.96
+          ],
+          "note": "Plain companion suitcase mapped to warm tan cork/suede leather."
+        }
+      }
+    }
+  }
+}

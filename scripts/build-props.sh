@@ -32,6 +32,7 @@ props=(
   "chair|sketchfab/chair.glb|512"
   "suitcase|vintage_suitcase/vintage_suitcase_1k.gltf|512"
 )
+blender="${BLENDER:-/Applications/Blender 2.app/Contents/MacOS/Blender}"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 names=()
@@ -39,7 +40,8 @@ for entry in "${props[@]}"; do
   IFS='|' read -r name path size parts <<<"$entry"
   keep=()
   [ "${parts:-}" = parts ] && keep=(--flatten false --join false)
-  npx --no-install gltf-transform optimize "$src/$path" "$tmp/$name.glb" --compress false --texture-compress webp --texture-size "$size" --simplify false "${keep[@]+"${keep[@]}"}"
+  "$blender" -b -Y --python scripts/restyle.py -- "$src/$path" "$tmp/$name-restyle.glb" art/restyle.json
+  npx --no-install gltf-transform optimize "$tmp/$name-restyle.glb" "$tmp/$name.glb" --compress false --texture-compress webp --texture-size "$size" --simplify false "${keep[@]+"${keep[@]}"}"
   names+=("$tmp/$name.glb")
 done
 npx --no-install gltf-transform merge "${names[@]}" "$tmp/merged.glb"
