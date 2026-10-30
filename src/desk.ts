@@ -31,6 +31,8 @@ import {
   Vector2,
   Vector3,
   WebGLRenderer,
+  WebGLRenderTarget,
+  type Texture,
   Box3,
   Matrix3,
   Matrix4,
@@ -75,6 +77,18 @@ export type Desk = {
   setGlow(fg: string): void;
   hasModel: boolean;
 };
+
+/** Every texture on the materials under `root`, to upload before they are first drawn. */
+function textures(root: Object3D) {
+  const found = new Set<Texture>();
+  root.traverse((o) => {
+    const material = (o as Mesh).material;
+    for (const m of Array.isArray(material) ? material : material ? [material] : []) {
+      for (const value of Object.values(m)) if ((value as Texture | null)?.isTexture) found.add(value as Texture);
+    }
+  });
+  return found;
+}
 
 const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
 const reduced = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -284,7 +298,9 @@ export async function createDesk(opts: {
   pmrem.dispose();
 
   scene.add(new HemisphereLight("#d9c9b8", "#120c08", 0.1));
-  const lamp = new SpotLight("#ffcf8f", 14, 6, 0.55, 0.6, 2);
+  // The desk lamp's light. Off until the lamp model arrives and puts it on its bulb (props.ts);
+  // without the model, it comes on here, over the desk.
+  const lamp = new SpotLight("#ffcf8f", 0, 6, 0.55, 0.6, 2);
   lamp.castShadow = true;
   lamp.shadow.mapSize.set(1024, 1024);
   lamp.shadow.camera.near = 0.05;
@@ -298,6 +314,7 @@ export async function createDesk(opts: {
   // The computer and the room load together, so the first wide shot is never an empty void.
   const roomLoader = new GLTFLoader();
   roomLoader.setMeshoptDecoder(MeshoptDecoder);
+  MeshoptDecoder.useWorkers?.(2); // decode the models off the main thread
   const roomAssets = loadRoom(roomLoader);
   const loaded = await loadModel(opts.onProgress);
   const { root, screen } = loaded ?? standIn();
@@ -418,6 +435,7 @@ export async function createDesk(opts: {
   }
   /** Something in the scene moved or arrived: redraw the shadow maps on the next frame. */
   function relight() {
+    (lamp.userData.sync as (() => void) | undefined)?.(); // the light rides on the lamp's bulb
     renderer.shadowMap.needsUpdate = true;
     request();
   }
@@ -476,7 +494,60 @@ export async function createDesk(opts: {
     await wait(reduced() ? 0 : ms);
     screenEl.style.transition = "";
   };
+  /**
+   * The glass as it's seen at the close-up pose (the hole the bezel leaves), as a mask image in the
+   * terminal's own box: one small render. The shrinking screen fades into this shape, so the frame
+   * where it hands over to the real glass is the same picture.
+   */
+  const glassMask = (rect: { x: number; y: number; w: number; h: number }) => {
+    if (!loaded) return null;
+    const W = 400;
+    const H = 300;
+    const rt = new WebGLRenderTarget(W, H);
+    const strength = glass.uniforms.uStrength.value as number;
+    glass.uniforms.uStrength.value = 0;
+    camera.setViewOffset(vw, vh, rect.x, rect.y, rect.w, rect.h);
+    renderer.setRenderTarget(rt);
+    renderer.render(scene, camera);
+    const px = new Uint8Array(W * H * 4);
+    renderer.readRenderTargetPixels(rt, 0, 0, W, H, px);
+    renderer.setRenderTarget(null);
+    camera.clearViewOffset();
+    rt.dispose();
+    glass.uniforms.uStrength.value = strength;
+    const c = document.createElement("canvas");
+    c.width = W;
+    c.height = H;
+    const g = c.getContext("2d")!;
+    const img = g.createImageData(W, H);
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) img.data[(y * W + x) * 4 + 3] = px[((H - 1 - y) * W + x) * 4 + 3] < 128 ? 255 : 0;
+    }
+    g.putImageData(img, 0, 0);
+    return c.toDataURL();
+  };
+  /** `open` 1 shows the whole screen, 0 only the glass shape; in between, the corners fade. */
+  const setMask = (url: string | null, open: number) => {
+    const image = url ? `linear-gradient(rgba(0,0,0,${open}), rgba(0,0,0,${open})), url(${url})` : "";
+    for (const prefix of ["", "-webkit-"]) {
+      screenEl.style.setProperty(`${prefix}mask-image`, image);
+      screenEl.style.setProperty(`${prefix}mask-size`, "100% 100%");
+    }
+  };
+  const fadeMask = (url: string | null, from: number, to: number, ms: number) =>
+    new Promise<void>((done) => {
+      if (!url) return done();
+      const start = performance.now();
+      const step = (now: number) => {
+        const t = reduced() ? 1 : Math.min(1, (now - start) / ms);
+        setMask(url, from + (to - from) * ease(t));
+        if (t < 1) requestAnimationFrame(step);
+        else done();
+      };
+      requestAnimationFrame(step);
+    });
   const release = () => {
+    setMask(null, 1);
     for (const p of ["width", "height", "inset", "transform", "transition", "opacity"] as const) screenEl.style.removeProperty(p === "inset" ? "inset" : p);
   };
 
@@ -525,14 +596,17 @@ export async function createDesk(opts: {
       resize();
       const close = closeUp();
       place(close);
-      request();
+      relight(); // the shadow maps must be current before the first frame anyone sees
 
-      // Fullscreen → the 4:3 tube rect, still as a plain fixed element above the canvas.
+      // Fullscreen → the 4:3 tube rect, still as a plain fixed element above the canvas, taking
+      // on the shape of the glass as it goes.
+      const mask = glassMask(close.rect);
       screenEl.style.opacity = "0";
       pin(fitWindow());
+      setMask(mask, 1);
       await nextFrame();
       screenEl.style.opacity = "";
-      await animateScreen(close.rect, 420);
+      await Promise.all([animateScreen(close.rect, 420), fadeMask(mask, 1, 0, 420)]);
 
       // Hand the element to CSS3D; at the close-up pose it projects onto the same rect.
       release();
@@ -545,6 +619,7 @@ export async function createDesk(opts: {
       if (hint) hint.hidden = editing; // the editor panel has its own help
       if (credit && loaded) credit.hidden = false;
       transitioning = false;
+      landed();
     },
 
     async sitDown() {
@@ -556,11 +631,13 @@ export async function createDesk(opts: {
       const close = closeUp();
       await fly(close, 1100, 0);
 
-      // Back out of CSS3D onto the same rect, then grow to fill the window.
+      // Back out of CSS3D onto the same rect, in the glass's shape, then grow to fill the window.
+      const mask = glassMask(close.rect);
       document.body.append(screenEl);
       pin(close.rect);
+      setMask(mask, 0);
       await nextFrame();
-      await animateScreen(fitWindow(), 380);
+      await Promise.all([animateScreen(fitWindow(), 380), fadeMask(mask, 0, 1, 380)]);
       release();
       host.hidden = true;
       seated = true;
@@ -571,7 +648,23 @@ export async function createDesk(opts: {
 
   // The rest of the desk streams in after the computer; each piece just asks for a frame.
   const props = new Map<string, Object3D>();
-  const propsReady = loaded ? addProps(scene, roomLoader, bounds, room, lamp, props, relight) : Promise.resolve();
+  // The loaded props wait for the first flight to land, then compile and upload a texture a frame.
+  let landed = () => {};
+  const firstLanding = new Promise<void>((r) => (landed = r));
+  const prepare = async (arrivals: Object3D) => {
+    await firstLanding;
+    await renderer.compileAsync(arrivals, camera, scene);
+    for (const t of textures(arrivals)) {
+      renderer.initTexture(t);
+      await nextFrame();
+    }
+  };
+  const propsReady = loaded ? addProps(scene, roomLoader, bounds, room, lamp, props, prepare, relight) : Promise.resolve();
+  void propsReady.then(() => {
+    if (lamp.intensity) return;
+    lamp.intensity = 14;
+    relight();
+  });
   // `?edit`: the layout editor, for arranging the props (never loaded otherwise).
   if (editing && loaded) {
     void Promise.all([import("./editor"), propsReady]).then(([{ startEditor }]) =>
@@ -583,5 +676,7 @@ export async function createDesk(opts: {
   // Compile every shader now, behind the fullscreen terminal, so the flight out never hitches.
   place(closeUp());
   await renderer.compileAsync(scene, camera);
+  for (const t of textures(scene)) renderer.initTexture(t); // the painted props, before the first frame
+
   return api;
 }

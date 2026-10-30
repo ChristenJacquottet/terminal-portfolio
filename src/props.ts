@@ -642,17 +642,81 @@ function corkboard(): Group {
 }
 
 /**
- * Loads and arranges the desk props around the computer. `bounds` is the computer's world box;
- * the lamp's light is moved onto the lamp head. Every prop is registered in `props` by name and
- * then posed from the layout. Calls `onChange` whenever the scene needs a frame.
+ * Puts `light` where the lamp's bulb is, shining out of the shade, and keeps it there when the lamp
+ * is moved (`light.userData.sync`, called on every relight). The bulb is the lamp's "light"
+ * material; the shade is the lamp body around it, so the opening is away from the shade's middle.
  */
-export async function addProps(scene: Scene, loader: GLTFLoader, bounds: Box3, room: Room, light: SpotLight, props: Map<string, Object3D>, onChange: () => void) {
+function fitBulb(lamp: Object3D, light: SpotLight): boolean {
+  lamp.updateMatrixWorld(true);
+  let bulb: Mesh | undefined;
+  let body: Mesh | undefined;
+  lamp.traverse((o) => {
+    const m = o as Mesh;
+    if (!m.isMesh || (m.material as MeshStandardMaterial).transparent) return;
+    if ((m.material as MeshStandardMaterial).name.endsWith("_light")) bulb = m;
+    else body ??= m;
+  });
+  if (!bulb || !body) return false;
+  // The bulb is screwed in along the shade's axis, so its long axis is the way the light goes;
+  // of the two ends, the one away from the shade's middle is the opening.
+  const world = (mesh: Mesh) => {
+    const pos = mesh.geometry.getAttribute("position");
+    return Array.from({ length: pos.count }, (_, i) => new Vector3().fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld));
+  };
+  const glassPts = world(bulb);
+  const center = glassPts.reduce((sum, v) => sum.add(v), new Vector3()).divideScalar(glassPts.length);
+  const cov = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+  for (const v of glassPts) {
+    const d = v.clone().sub(center).toArray();
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) cov[i * 3 + j] += d[i] * d[j];
+  }
+  let axis = new Vector3(0.3, 0.5, 0.8);
+  for (let i = 0; i < 60; i++) {
+    const [x, y, z] = axis.toArray();
+    axis = new Vector3(cov[0] * x + cov[1] * y + cov[2] * z, cov[3] * x + cov[4] * y + cov[5] * z, cov[6] * x + cov[7] * y + cov[8] * z).normalize();
+  }
+  const near = world(body).filter((v) => v.distanceTo(center) < 0.08);
+  const shadeMiddle = near.reduce((sum, v) => sum.add(v), new Vector3()).divideScalar(Math.max(1, near.length));
+  if (axis.dot(shadeMiddle.sub(center)) > 0) axis.negate();
+  const at = lamp.worldToLocal(center.clone());
+  const aim = lamp.worldToLocal(center.clone().addScaledVector(axis, 0.5));
+  const glass = bulb.material as MeshStandardMaterial;
+  glass.emissive.set("#ffd9a0");
+  glass.emissiveIntensity = 2.5;
+  const sync = () => {
+    lamp.updateMatrixWorld(true);
+    light.position.copy(lamp.localToWorld(at.clone()));
+    light.target.position.copy(lamp.localToWorld(aim.clone()));
+    light.target.updateMatrixWorld();
+  };
+  light.userData.sync = sync; // starts once the lamp is in the scene (see addProps)
+  return true;
+}
+
+/**
+ * Loads and arranges the desk props around the computer. `bounds` is the computer's world box;
+ * the lamp's light is moved onto the lamp's bulb. Every prop is registered in `props` by name and
+ * then posed from the layout. The loaded models are built off-scene and handed to `prepare`
+ * (shaders compiled, textures uploaded, after any camera move) before they appear, so they never
+ * stall a frame. Calls `onChange` whenever the scene needs a frame.
+ */
+export async function addProps(
+  scene: Scene,
+  loader: GLTFLoader,
+  bounds: Box3,
+  room: Room,
+  light: SpotLight,
+  props: Map<string, Object3D>,
+  prepare: (arrivals: Object3D) => Promise<void>,
+  onChange: () => void,
+) {
   const { min, max } = bounds;
   const back = room.desk.backZ;
   const front = room.desk.frontZ;
   const floor = room.floorY;
   const wall = room.wallZ;
   const layout = currentLayout();
+  let into: Object3D = scene;
   const put = (name: string, o: Object3D) => {
     o.name = name;
     o.userData.home = poseOf(o); // where the code put it, for the editor's reset
@@ -665,7 +729,7 @@ export async function addProps(scene: Scene, loader: GLTFLoader, bounds: Box3, r
     });
     applyPose(o, layout[name]);
     props.set(name, o);
-    scene.add(o);
+    into.add(o);
     return o;
   };
   const onWall = (o: Object3D, x: number, y: number, height: number) => hang(o, x, y, wall, height);
@@ -698,6 +762,8 @@ export async function addProps(scene: Scene, loader: GLTFLoader, bounds: Box3, r
     return; // the scene is complete without them
   }
   const byName = Object.fromEntries(ORDER.map((name, i) => [name, gltf.scenes[i]])) as Record<(typeof ORDER)[number], Group | undefined>;
+  const arrivals = new Group(); // off-scene until `prepare` is done
+  into = arrivals;
   const add = (name: (typeof ORDER)[number], fn: (o: Group) => Object3D) => {
     const o = byName[name];
     if (o) put(name, fn(o));
@@ -706,13 +772,12 @@ export async function addProps(scene: Scene, loader: GLTFLoader, bounds: Box3, r
   if (byName.lamp) {
     // A clamp lamp, clamped to the back edge, reaching over the keyboard.
     const lamp = put("lamp", place(byName.lamp, min.x - 0.16, back + 0.025, { height: 0.5, rotY: 0.85, y: -0.045 }));
-    lamp.updateMatrixWorld(true);
-    const head = new Box3().setFromObject(lamp);
-    light.position.set(head.max.x - 0.04, head.max.y - 0.06, head.max.z - 0.02);
-    light.target.position.set((min.x + max.x) / 2, 0.05, max.z);
-    light.angle = 0.75;
-    light.distance = 3;
-    light.intensity = 3.2; // much closer to the desk than the default lamp position
+    if (fitBulb(lamp, light)) {
+      light.angle = 0.62;
+      light.penumbra = 0.55;
+      light.distance = 3;
+      light.userData.on = 2.6; // a 60 W bulb a hand's width from the desk
+    }
   }
   add("globe", (o) => place(o, min.x - 0.42, back + 0.2, { height: 0.32, rotY: 2.4 }));
   add("super8", (o) => place(o, min.x - 0.42, max.z + 0.06, { height: 0.17, rotY: 0.9 }));
@@ -785,5 +850,10 @@ export async function addProps(scene: Scene, loader: GLTFLoader, bounds: Box3, r
     });
     put("frame", hang(byName.frame, min.x - 0.02, 0.66, wall, 0.36));
   }
+  await prepare(arrivals);
+  for (const o of [...arrivals.children]) scene.add(o);
+  // The lamp switches on once it's on the desk, at its bulb (desk.ts keeps it off until then).
+  (light.userData.sync as (() => void) | undefined)?.();
+  if (light.userData.on) light.intensity = light.userData.on as number;
   onChange();
 }
