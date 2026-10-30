@@ -49,9 +49,11 @@ import { editing } from "./layout";
 import { addProps } from "./props";
 import { buildRoom, loadRoom } from "./room";
 
-/** CSS size of the terminal while it sits in the monitor (a 4:3 tube). */
+/** The tube's shape (4:3). In the monitor the terminal keeps the window's text size, see `fitTube`. */
 const SCREEN_W = 800;
 const SCREEN_H = 600;
+/** Never let the terminal in the tube get shorter than this (CSS px), or a phone's tube is a postage stamp. */
+const TUBE_MIN_H = 360;
 const FOV = 35;
 /** How much of the window the screen fills in the close-up pose, which must match the fullscreen hand-off. */
 const FILL = 0.94;
@@ -91,9 +93,11 @@ function textures(root: Object3D) {
 }
 
 const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
+/** Out of a move that's already going (stepping back), and into one that keeps going (sitting down). */
+const easeOut = (t: number) => 1 - (1 - t) ** 1.8;
+const easeIn = (t: number) => t ** 1.8;
 const reduced = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r(null)));
-const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function contactShadow(): Mesh {
   const c = document.createElement("canvas");
@@ -376,6 +380,7 @@ export async function createDesk(opts: {
     camera.updateProjectionMatrix();
     renderer.setSize(vw, vh);
     css.setSize(vw, vh);
+    fitTube();
     // A little closer or further than the wide shot, never into the keys or out of the room.
     // (The layout editor frees the camera and sets its own limits.)
     if (!editing) {
@@ -389,6 +394,20 @@ export async function createDesk(opts: {
     }
     request();
   };
+
+  /**
+   * The terminal's CSS size in the tube: exactly the close-up rect, so stepping back changes the
+   * screen's shape but never its text size (the hand-off is at scale 1).
+   */
+  let tubeW = SCREEN_W;
+  let tubeH = SCREEN_H;
+  function fitTube() {
+    tubeH = Math.max(TUBE_MIN_H, Math.round(closeUp().rect.h));
+    tubeW = Math.round((tubeH * SCREEN_W) / SCREEN_H);
+    holder.style.width = `${tubeW}px`;
+    holder.style.height = `${tubeH}px`;
+    screenObject.scale.setScalar(worldH / tubeH);
+  }
 
   /** Camera distance where the screen fills FILL of the window, and the rect it lands on. */
   const closeUp = () => {
@@ -445,18 +464,26 @@ export async function createDesk(opts: {
     if (!host.hidden) resize();
   });
 
-  const fly = (to: { position: Vector3; target: Vector3 }, ms: number, glassTo = glass.uniforms.uStrength.value as number) =>
+  const fly = (to: { position: Vector3; target: Vector3 }, ms: number, glassTo = glass.uniforms.uStrength.value as number, curve = ease) =>
     new Promise<void>((done) => {
       const glassFrom = glass.uniforms.uStrength.value as number;
       const fromPos = camera.position.clone();
       const fromTarget = controls.target.clone();
+      const fromOffset = fromPos.clone().sub(fromTarget);
+      const toOffset = to.position.clone().sub(to.target);
+      const fromDistance = fromOffset.length();
+      const toDistance = toOffset.length();
+      const direction = new Vector3();
       const start = performance.now();
       const duration = reduced() ? 0 : ms;
       tween = (now) => {
         const t = duration ? Math.min(1, (now - start) / duration) : 1;
-        const e = ease(t);
-        camera.position.lerpVectors(fromPos, to.position, e);
+        const e = curve(t);
+        // Distance changes by the same ratio each moment (not the same metres), so the screen
+        // shrinks or grows at an even rate instead of lurching while the camera is close to it.
         controls.target.lerpVectors(fromTarget, to.target, e);
+        direction.lerpVectors(fromOffset, toOffset, e).normalize();
+        camera.position.copy(controls.target).addScaledVector(direction, fromDistance * (toDistance / fromDistance) ** e);
         camera.lookAt(controls.target);
         // The glass comes in over the first third of the flight out, and goes in the last third back.
         const g = glassTo > glassFrom ? Math.min(1, t * 3) : Math.max(0, (t - 2 / 3) * 3);
@@ -476,31 +503,59 @@ export async function createDesk(opts: {
     camera.lookAt(pose.target);
   };
 
-  /** Puts the fullscreen terminal at `rect` (window pixels) at its 4:3 desk size. */
-  const pin = (rect: { x: number; y: number; w: number; h: number }) => {
-    screenEl.style.width = `${SCREEN_W}px`;
-    screenEl.style.height = `${SCREEN_H}px`;
+  type Rect = { x: number; y: number; w: number; h: number };
+  const fullWindow = (): Rect => ({ x: 0, y: 0, w: vw, h: vh });
+  /**
+   * Puts the fixed terminal on `rect` (window pixels). The fullscreen rect lays it out at the
+   * window's size; the tube rect at the tube's size, scaled to fit (1 unless the window is tiny).
+   */
+  const pin = (rect: Rect) => {
+    const full = rect.w === vw && rect.h === vh && rect.x === 0 && rect.y === 0;
+    const w = full ? vw : tubeW;
+    const h = full ? vh : tubeH;
+    screenEl.style.width = `${w}px`;
+    screenEl.style.height = `${h}px`;
     screenEl.style.inset = "0 auto auto 0";
-    screenEl.style.transform = `translate(${rect.x}px, ${rect.y}px) scale(${rect.h / SCREEN_H})`;
+    screenEl.style.transform = `translate(${rect.x}px, ${rect.y}px) scale(${rect.h / h})`;
   };
-  /** The 4:3 screen fitted inside the window: nothing is cropped, the bezel shows around it. */
-  const fitWindow = () => {
-    const s = Math.min(vw / SCREEN_W, vh / SCREEN_H);
-    return { x: (vw - SCREEN_W * s) / 2, y: (vh - SCREEN_H * s) / 2, w: SCREEN_W * s, h: SCREEN_H * s };
-  };
-  const animateScreen = async (rect: { x: number; y: number; w: number; h: number }, ms: number) => {
-    screenEl.style.transition = reduced() ? "none" : `transform ${ms}ms cubic-bezier(.65,0,.35,1)`;
+  /**
+   * Morphs the screen between the window and the tube: its box narrows (the text rewraps, like a
+   * window being resized) while it keeps the scrollback where it was.
+   */
+  const animateScreen = async (rect: Rect, ms: number, curve: string) => {
+    const term = screenEl.querySelector<HTMLElement>(".term");
+    const bottom = term ? term.scrollHeight - term.scrollTop - term.clientHeight < 4 : false;
+    const time = reduced() ? 0 : ms;
+    screenEl.style.transition = time ? ["transform", "width", "height"].map((p) => `${p} ${time}ms ${curve}`).join(", ") : "none";
     pin(rect);
-    await wait(reduced() ? 0 : ms);
+    const end = performance.now() + time;
+    while (performance.now() < end) {
+      if (term && bottom) term.scrollTop = term.scrollHeight;
+      await nextFrame();
+    }
+    if (term && bottom) term.scrollTop = term.scrollHeight;
     screenEl.style.transition = "";
+  };
+  /** Moving the element to another parent resets its scroll; this carries it across. */
+  const moveScreen = (to: HTMLElement) => {
+    const term = screenEl.querySelector<HTMLElement>(".term");
+    const top = term?.scrollTop ?? 0;
+    to.append(screenEl);
+    if (term) term.scrollTop = top;
+    // A freshly inserted element has no "before" style, so flush one or its first transition is skipped.
+    void screenEl.getBoundingClientRect();
   };
   /**
    * The glass as it's seen at the close-up pose (the hole the bezel leaves), as a mask image in the
    * terminal's own box: one small render. The shrinking screen fades into this shape, so the frame
    * where it hands over to the real glass is the same picture.
    */
-  const glassMask = (rect: { x: number; y: number; w: number; h: number }) => {
+  let maskCache: { key: string; url: string } | null = null;
+  const glassMask = (rect: Rect) => {
     if (!loaded) return null;
+    // The same window gives the same picture; reusing it also skips decoding a new mask image.
+    const key = `${vw}x${vh}`;
+    if (maskCache?.key === key) return maskCache.url;
     const W = 400;
     const H = 300;
     const rt = new WebGLRenderTarget(W, H);
@@ -524,7 +579,8 @@ export async function createDesk(opts: {
       for (let x = 0; x < W; x++) img.data[(y * W + x) * 4 + 3] = px[((H - 1 - y) * W + x) * 4 + 3] < 128 ? 255 : 0;
     }
     g.putImageData(img, 0, 0);
-    return c.toDataURL();
+    maskCache = { key, url: c.toDataURL() };
+    return maskCache.url;
   };
   /** `open` 1 shows the whole screen, 0 only the glass shape; in between, the corners fade. */
   const setMask = (url: string | null, open: number) => {
@@ -598,23 +654,19 @@ export async function createDesk(opts: {
       place(close);
       relight(); // the shadow maps must be current before the first frame anyone sees
 
-      // Fullscreen → the 4:3 tube rect, still as a plain fixed element above the canvas, taking
-      // on the shape of the glass as it goes.
+      // Fullscreen → the tube rect, still as a plain fixed element above the canvas, taking on the
+      // shape of the glass as it goes. It speeds up into the hand-off and the camera carries the
+      // motion on, so it reads as one move back from the screen.
       const mask = glassMask(close.rect);
-      screenEl.style.opacity = "0";
-      pin(fitWindow());
+      pin(fullWindow());
       setMask(mask, 1);
       await nextFrame();
-      screenEl.style.opacity = "";
-      await Promise.all([animateScreen(close.rect, 420), fadeMask(mask, 1, 0, 420)]);
+      await Promise.all([animateScreen(close.rect, 380, "cubic-bezier(.45,0,.8,.5)"), fadeMask(mask, 1, 0, 380)]);
 
       // Hand the element to CSS3D; at the close-up pose it projects onto the same rect.
       release();
-      holder.append(screenEl);
-      request();
-      await nextFrame();
-
-      await fly(widePose(), 1500, 1);
+      moveScreen(holder);
+      await fly(widePose(), 1700, 1, easeOut);
       controls.enabled = true;
       if (hint) hint.hidden = editing; // the editor panel has its own help
       if (credit && loaded) credit.hidden = false;
@@ -629,15 +681,15 @@ export async function createDesk(opts: {
       if (hint) hint.hidden = true;
       if (credit) credit.hidden = true;
       const close = closeUp();
-      await fly(close, 1100, 0);
+      await fly(close, 1200, 0, easeIn);
 
-      // Back out of CSS3D onto the same rect, in the glass's shape, then grow to fill the window.
+      // Back out of CSS3D onto the same rect, in the glass's shape, then grow to fill the window,
+      // still moving, so the camera's push in carries straight through.
       const mask = glassMask(close.rect);
-      document.body.append(screenEl);
       pin(close.rect);
       setMask(mask, 0);
-      await nextFrame();
-      await Promise.all([animateScreen(fitWindow(), 380), fadeMask(mask, 0, 1, 380)]);
+      moveScreen(document.body);
+      await Promise.all([animateScreen(fullWindow(), 380, "cubic-bezier(.2,.5,.55,1)"), fadeMask(mask, 0, 1, 380)]);
       release();
       host.hidden = true;
       seated = true;
