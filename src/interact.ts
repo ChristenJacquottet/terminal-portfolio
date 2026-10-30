@@ -5,6 +5,7 @@
 // can do here can also be done from the terminal; the desk is a shortcut, never the only door.
 import {
   AdditiveBlending,
+  Box3,
   BufferGeometry,
   Color,
   Mesh,
@@ -156,7 +157,9 @@ export function createInteractions(o: {
 
   let lit: Object3D | null = null;
   const shells: Mesh[] = [];
+  /** Returns whether anything changed (so the caller only redraws when it did). */
   const highlight = (object: Object3D | null, strength: number) => {
+    const changed = object !== lit || rim.uniforms.uStrength.value !== (object ? strength : 0);
     if (object !== lit) {
       for (const s of shells.splice(0)) s.removeFromParent();
       lit = object;
@@ -171,6 +174,7 @@ export function createInteractions(o: {
       });
     }
     rim.uniforms.uStrength.value = object ? strength : 0;
+    return changed;
   };
 
   // ── finding what's under the pointer ──────────────────────────────────────────────
@@ -179,24 +183,30 @@ export function createInteractions(o: {
     for (let p: Object3D | null = object; p; p = p.parent) if (!p.visible) return false;
     return true;
   };
-  /** The props (and anything that might stand in front of them, like the computer). */
-  const occluders: Object3D[] = [];
-  function setTargets(props: Iterable<Object3D>, blockers: Object3D[]) {
+  /**
+   * The props, and boxes for what might stand in front of them (the computer's parts): testing a
+   * few boxes instead of the computer's 77k triangles keeps hovering inside a frame.
+   */
+  const blockers: Box3[] = [];
+  function setTargets(props: Iterable<Object3D>, occluders: Box3[]) {
     targets.length = 0;
     targets.push(...props);
-    occluders.length = 0;
-    occluders.push(...blockers);
+    blockers.length = 0;
+    blockers.push(...occluders);
   }
 
+  const behind = new Vector3();
   function pick(e: PointerEvent, width: number, height: number): Target | null {
     pointer.set((e.clientX / width) * 2 - 1, -(e.clientY / height) * 2 + 1);
     ray.setFromCamera(pointer, camera);
-    const hit = ray.intersectObjects([...targets, ...occluders], true).find((h) => shown(h.object) && (h.object as Mesh).material !== rim);
+    const hit = ray.intersectObjects(targets, true).find((h) => shown(h.object) && (h.object as Mesh).material !== rim);
     if (!hit) return null;
+    for (const box of blockers) {
+      if (ray.ray.intersectBox(box, behind) && behind.distanceTo(ray.ray.origin) < hit.distance) return null;
+    }
     for (let p: Object3D | null = hit.object; p; p = p.parent) {
       const spot = spotOf(p);
       if (spot) return { object: p, spot, hit };
-      if (occluders.includes(p)) return null;
     }
     return null;
   }
@@ -224,20 +234,20 @@ export function createInteractions(o: {
     return [spot.label, spot.hint];
   };
 
-  function hover(t: Target | null, e: PointerEvent) {
+  /** Shows what's under the pointer; true when the scene needs a redraw. */
+  function hover(t: Target | null, e: PointerEvent): boolean {
     if (!t || busy) {
       chip.hidden = true;
-      highlight(null, 0);
-      return;
+      return highlight(null, 0);
     }
     const [label, hint] = labelFor(t);
     showChip(t.spot, label, hint, e);
-    highlight(t.object, t.spot.nav ? 1 : 0.65);
+    return highlight(t.object, t.spot.nav ? 1 : 0.65);
   }
 
-  function leave() {
+  function leave(): boolean {
     chip.hidden = true;
-    highlight(null, 0);
+    return highlight(null, 0);
   }
 
   // ── motions ────────────────────────────────────────────────────────────────────────

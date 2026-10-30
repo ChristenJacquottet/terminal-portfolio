@@ -667,7 +667,7 @@ export async function createDesk(opts: {
     if (!loaded) return true;
     pointer.set((e.clientX / vw) * 2 - 1, -(e.clientY / vh) * 2 + 1);
     ray.setFromCamera(pointer, camera);
-    return ray.intersectObject(root, true)[0]?.object === loaded.tube;
+    return ray.intersectObject(loaded.tube, false).length > 0;
   };
   let down: { x: number; y: number } | null = null;
   const canvas = renderer.domElement;
@@ -685,7 +685,7 @@ export async function createDesk(opts: {
   canvas.addEventListener("pointermove", (e) => {
     if (seated || editing) return;
     if (e.buttons) {
-      touch.leave();
+      if (touch.leave()) request();
       return;
     }
     if (!hoverEvent) {
@@ -694,16 +694,14 @@ export async function createDesk(opts: {
         hoverEvent = null;
         if (seated || transitioning) return touch.leave();
         const target = touch.pick(ev, vw, vh);
-        touch.hover(target, ev);
+        if (touch.hover(target, ev)) request();
         canvas.style.cursor = target ? "pointer" : onGlass(ev) ? "zoom-in" : "grab";
-        request();
       });
     }
     hoverEvent = e;
   });
   canvas.addEventListener("pointerleave", () => {
-    touch.leave();
-    request();
+    if (touch.leave()) request();
   });
 
   // The Disk II: its slot from the drive's own mesh. Two drives are stacked; disks go in the top one.
@@ -820,7 +818,14 @@ export async function createDesk(opts: {
     }
   };
   const propsReady = loaded ? addProps(scene, roomLoader, bounds, room, lamp, props, prepare, relight, featuredDisks()) : Promise.resolve();
-  void propsReady.then(() => touch.setTargets(props.values(), [root]));
+  void propsReady.then(() => {
+    const parts: Box3[] = [];
+    root.traverse((x) => {
+      const m = x as Mesh;
+      if (m.isMesh && m !== loaded?.tube) parts.push(new Box3().setFromObject(m));
+    });
+    touch.setTargets(props.values(), parts);
+  });
   void propsReady.then(() => {
     if (lamp.intensity) return;
     lamp.intensity = 14;
