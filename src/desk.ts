@@ -430,10 +430,7 @@ export async function createDesk(opts: {
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
   controls.enablePan = false;
-  controls.minAzimuthAngle = -0.35;
-  controls.maxAzimuthAngle = 0.85;
-  controls.minPolarAngle = 0.85;
-  controls.maxPolarAngle = 1.32;
+  // Look around from the chair: limits are set around the wide shot in resize().
   controls.zoomSpeed = 0.6;
   controls.enabled = false;
 
@@ -452,8 +449,18 @@ export async function createDesk(opts: {
     // A little closer or further than the wide shot, never into the keys or out of the room.
     // (The layout editor frees the camera and sets its own limits.)
     if (!editing) {
-      controls.minDistance = wideDistance() * 0.62;
-      controls.maxDistance = wideDistance() * 1.12;
+      // Around wherever the wide shot is (the default, or the one saved in the layout editor): turn
+      // your head and lean in or back a little, never under the desk or into the wall.
+      const wide = widePose();
+      const offset = wide.position.clone().sub(wide.target);
+      const polar = Math.acos(offset.y / offset.length());
+      const azimuth = Math.atan2(offset.x, offset.z);
+      controls.minPolarAngle = Math.max(0.6, polar - 0.4);
+      controls.maxPolarAngle = Math.min(1.5, polar + 0.1);
+      controls.minAzimuthAngle = azimuth - 0.55;
+      controls.maxAzimuthAngle = azimuth + 0.55;
+      controls.minDistance = offset.length() * 0.7;
+      controls.maxDistance = offset.length() * 1.45;
     }
     // At the desk, keep the viewing angle but re-frame for the new window shape.
     if (!seated && !transitioning && !editing) {
