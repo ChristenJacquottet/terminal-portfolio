@@ -538,6 +538,363 @@
           "note": "An untextured box: Apple II beige."
         }
       }
+    },
+    "rack": {
+      "source": "lab/ph_steel_frame_shelves_01/steel_frame_shelves_01_1k.gltf",
+      "sourceMaterials": [
+        "steel_frame_shelves_01"
+      ],
+      "materials": {
+        "steel_frame_shelves_01": {
+          "swatch": "walnut",
+          "flatten": 0.42,
+          "roughnessBand": [
+            0.48,
+            0.64
+          ],
+          "note": "Open-frame rack shelf: shared atlas across black steel angle-iron uprights and wooden shelves; moderate flatten warms pale pine boards into walnut while preserving dark near-black frame contrast."
+        }
+      }
+    },
+    "switch": {
+      "source": "lab/sf_02_switch_tplink8/model.glb",
+      "sourceMaterials": [
+        "tp-link-fr",
+        "tp-link-texture"
+      ],
+      "materials": {
+        "tp-link-texture": {
+          "swatch": "near-black",
+          "flatten": 0.68,
+          "roughnessBand": [
+            0.4,
+            0.52
+          ],
+          "note": "8-port gigabit switch sheet-metal housing unified to matte near-black."
+        },
+        "tp-link-fr": {
+          "swatch": "near-black",
+          "flatten": 0.34,
+          "roughnessBand": [
+            0.38,
+            0.5
+          ],
+          "note": "Separate front RJ45 port and LED strip mesh (Object_5); light flatten preserves port numbering, gold pins and link/activity LED windows."
+        }
+      }
+    },
+    "nas": {
+      "source": "lab/sf_03_nas_qnap/model.glb",
+      "sourceMaterials": [
+        "Material",
+        "Plane__0"
+      ],
+      "materials": {
+        "Material": {
+          "swatch": "beige-plastic",
+          "flatten": 0.62,
+          "roughnessBand": [
+            0.42,
+            0.54
+          ],
+          "note": "Compact 2-bay NAS enclosure (Cube_Material_0) shifted from cold white plastic into warm beige-plastic while preserving side vents, drive seam and front status strip."
+        },
+        "Plane__0": {
+          "swatch": "near-black",
+          "flatten": 1.0,
+          "dropMaps": [
+            "baseColor",
+            "roughness",
+            "normal"
+          ],
+          "alpha": 0.0,
+          "note": "2-tri baked floor shadow card (Plane__0); made transparent here and should be dropped on scene assembly."
+        }
+      }
+    },
+    "crt": {
+      "source": "lab/sf_04_crt_sony_pvm/model.glb",
+      "sourceMaterials": [
+        "crt_back",
+        "crt_front",
+        "crt_top"
+      ],
+      "materials": {
+        "crt_front": {
+          "swatch": "warm-grey",
+          "flatten": 0.45,
+          "roughnessBand": [
+            0.38,
+            0.52
+          ],
+          "note": "Sony PVM-14L2 broadcast cube CRT front bezel and tube face; moderate flatten warms cool medical grey toward warm-grey while keeping dark glass tube and button row distinct."
+        },
+        "crt_top": {
+          "swatch": "warm-grey",
+          "flatten": 0.64,
+          "roughnessBand": [
+            0.42,
+            0.54
+          ],
+          "note": "Top and side painted metal cabinet cover unified to warm-grey."
+        },
+        "crt_back": {
+          "swatch": "near-black",
+          "flatten": 0.58,
+          "roughnessBand": [
+            0.42,
+            0.54
+          ],
+          "note": "Rear CRT neck housing and BNC connector panel in near-black."
+        }
+      }
+    },
+    "pegboard": {
+      "source": "lab/sf_05_pegboard_sousinho/model.glb",
+      "sourceMaterials": [
+        "T_tool_wall_1001"
+      ],
+      "materials": {
+        "T_tool_wall_1001": {
+          "swatch": "cork",
+          "flatten": 0.72,
+          "roughnessBand": [
+            0.64,
+            0.8
+          ],
+          "note": "Perforated wall pegboard shifted from bright shop blue into warm tempered-hardboard/cork tan matching the golden-hour wall palette while keeping dark peg holes crisp."
+        }
+      }
+    },
+    "pliers": {
+      "source": "lab/ph_pliers/pliers_1k.gltf",
+      "sourceMaterials": [
+        "pliers"
+      ],
+      "materials": {
+        "pliers": {
+          "swatch": "tomato",
+          "flatten": 0.44,
+          "roughnessBand": [
+            0.38,
+            0.54
+          ],
+          "note": "Articulated combination pliers (pliers_a, pliers_b, pliers_pin — keep |parts); gentle flatten pulls bright red/yellow rubber grips into warm tomato/mustard while preserving machined steel jaws."
+        }
+      }
+    },
+    "screwdrivers": {
+      "source": "lab/ph_screwdrivers_02/screwdrivers_02_1k.gltf",
+      "sourceMaterials": [
+        "screwdrivers_02"
+      ],
+      "materials": {
+        "screwdrivers_02": {
+          "swatch": "dark-metal",
+          "flatten": 0.46,
+          "roughnessBand": [
+            0.34,
+            0.48
+          ],
+          "note": "Separate Phillips and flathead screwdrivers (screwdrivers_02_a, screwdrivers_02_b); keeps steel shafts and dark rubberized handles cleanly separated."
+        }
+      }
+    },
+    "cutters": {
+      "source": "lab/sf_06_wire_cutter_robin/model.glb",
+      "sourceMaterials": [
+        "Scene_-_Root"
+      ],
+      "materials": {
+        "Scene_-_Root": {
+          "swatch": "tomato",
+          "flatten": 0.45,
+          "roughnessBand": [
+            0.36,
+            0.52
+          ],
+          "note": "4-part articulated flush diagonal cutters; warms orange insulated handles toward tomato while keeping dark steel cutting jaws distinct."
+        }
+      }
+    },
+    "thinkpad": {
+      "source": "lab/sf_10_laptop_thinkpad_closed/model.glb",
+      "sourceMaterials": [
+        "Union1Mtl"
+      ],
+      "materials": {
+        "Union1Mtl": {
+          "swatch": "near-black",
+          "flatten": 0.58,
+          "roughnessBand": [
+            0.42,
+            0.55
+          ],
+          "note": "Closed 2000s matte-black ThinkPad for the side laptop stack; preserves corner ThinkPad badge and side port detail."
+        }
+      }
+    },
+    "macbook": {
+      "source": "lab/sf_10_laptop_aluminum_closed/model.glb",
+      "sourceMaterials": [
+        "Apple_Logo",
+        "Body_Bottom",
+        "Body_Side",
+        "Body_Top"
+      ],
+      "materials": {
+        "Body_Top": {
+          "swatch": "warm-grey",
+          "flatten": 0.72,
+          "roughnessBand": [
+            0.38,
+            0.5
+          ],
+          "note": "Closed aluminum laptop lid softened to satin warm-grey so it stacks naturally on the ThinkPad without glossy-modern glare."
+        },
+        "Body_Bottom": {
+          "swatch": "warm-grey",
+          "flatten": 0.75,
+          "roughnessBand": [
+            0.4,
+            0.52
+          ],
+          "note": "Lower unibody shell matched to satin warm-grey."
+        },
+        "Body_Side": {
+          "swatch": "dark-metal",
+          "flatten": 0.72,
+          "roughnessBand": [
+            0.34,
+            0.44
+          ],
+          "note": "Perimeter port band and hinge seam in dark-metal."
+        },
+        "Apple_Logo": {
+          "swatch": "cream-paper",
+          "flatten": 0.85,
+          "roughnessBand": [
+            0.38,
+            0.5
+          ],
+          "note": "Unlit translucent lid emblem warmed to cream-paper."
+        }
+      }
+    },
+    "mac128k": {
+      "source": "lab/sf_11_mac_128k_connor/model.glb",
+      "sourceMaterials": [
+        "01_-_Mac",
+        "02_-_Keyboard",
+        "Mouse_low__0"
+      ],
+      "materials": {
+        "01_-_Mac": {
+          "swatch": "beige-plastic",
+          "flatten": 0.52,
+          "roughnessBand": [
+            0.42,
+            0.54
+          ],
+          "note": "Macintosh 128K all-in-one housing (973 tris alone) unified to Apple beige-plastic while keeping the dark 9-inch CRT bezel, 3.5-inch drive slot and badge crisp."
+        },
+        "02_-_Keyboard": {
+          "swatch": "beige-plastic",
+          "flatten": 0.54,
+          "roughnessBand": [
+            0.4,
+            0.54
+          ],
+          "note": "Separate M0110 keyboard in matching beige-plastic with legible keycap legends."
+        },
+        "Mouse_low__0": {
+          "swatch": "beige-plastic",
+          "flatten": 0.58,
+          "roughnessBand": [
+            0.42,
+            0.54
+          ],
+          "note": "Separate single-button M0100 mouse in matching beige-plastic."
+        }
+      }
+    },
+    "c64": {
+      "source": "lab/sf_12_c64_hoschu/model.glb",
+      "sourceMaterials": [
+        "Default"
+      ],
+      "materials": {
+        "Default": {
+          "swatch": "beige-plastic",
+          "flatten": 0.44,
+          "roughnessBand": [
+            0.4,
+            0.54
+          ],
+          "note": "Commodore 64 breadbin keyboard computer; moderate flatten pulls taupe plastic into the beige-plastic/warm-grey family while preserving dark brown keycaps and rainbow badge."
+        }
+      }
+    },
+    "ivy": {
+      "source": "lab/sf_13_potted_ivy_meemoe/model.glb",
+      "sourceMaterials": [
+        "plant_material"
+      ],
+      "materials": {
+        "plant_material": {
+          "swatch": "teal",
+          "flatten": 0.28,
+          "roughnessBand": [
+            0.52,
+            0.7
+          ],
+          "note": "Shelf-hanging trailing ivy and pot share one atlas; gentle golden-hour flatten mutes raw CG green slightly toward warm teal-sage while keeping terracotta pot and leaf veins natural."
+        }
+      }
+    },
+    "monstera": {
+      "source": "lab/sf_14_monstera_angemturc/model.glb",
+      "sourceMaterials": [
+        "plant_mat",
+        "pot_mat"
+      ],
+      "materials": {
+        "plant_mat": {
+          "swatch": "teal",
+          "flatten": 0.26,
+          "roughnessBand": [
+            0.48,
+            0.66
+          ],
+          "note": "Fenestrated monstera leaves given a light golden-hour desaturation so foliage sits inside the room palette without losing organic leaf greens."
+        },
+        "pot_mat": {
+          "swatch": "beige-plastic",
+          "flatten": 0.58,
+          "roughnessBand": [
+            0.52,
+            0.68
+          ],
+          "note": "Ceramic planter pot and potting soil warmed to beige stoneware."
+        }
+      }
+    },
+    "kiev": {
+      "source": "lab/sf_18_camera_kiev4am/model.glb",
+      "sourceMaterials": [
+        "Kiev"
+      ],
+      "materials": {
+        "Kiev": {
+          "swatch": "dark-metal",
+          "flatten": 0.42,
+          "roughnessBand": [
+            0.34,
+            0.5
+          ],
+          "note": "Kiev-4AM 35mm rangefinder with Helios lens; preserves bright chrome top plate against pebbled black leatherette body so it reads clearly on high shelves."
+        }
+      }
     }
   }
 }

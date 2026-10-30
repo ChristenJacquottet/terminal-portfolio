@@ -365,6 +365,10 @@ export async function createDesk(opts: {
   const { root, screen } = loaded ?? standIn();
   scene.add(root);
   const room = buildRoom(scene, await roomAssets, new Box3().setFromObject(root));
+  // The home lab's corner, past the end of the desk, gets its own small warm light.
+  const labLight = new PointLight("#ffc488", 0.45, 1.6, 2);
+  labLight.position.set(room.desk.maxX + 0.45, 0.75, room.wallZ + 0.6);
+  scene.add(labLight);
   /** Dusk (the default: warm, everything reads) or the middle of the night (the window toggles it). */
   let time: Time = "dusk";
   let screenGlow: PointLight | null = null; // made below, with the screen

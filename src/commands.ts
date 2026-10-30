@@ -401,7 +401,7 @@ export const COMMANDS: Record<string, Command> = {
       [s("code, copy and case studies  ", "dim"), s(profile.name)],
       [s("3d model                     ", "dim"), link(`“${MODEL_CREDIT.title}”`, MODEL_CREDIT.url), s(` by ${MODEL_CREDIT.author}, `), link(MODEL_CREDIT.license, MODEL_CREDIT.licenseUrl)],
       ...PROP_CREDITS.map((c, i): Line => [s(i ? "                             " : "desk props                   ", "dim"), link(`“${c.title}”`, c.url), s(` by ${c.author}, `), link(MODEL_CREDIT.license, MODEL_CREDIT.licenseUrl)]),
-      [s("                             ", "dim"), link("Poly Haven", "https://polyhaven.com"), s(" (CC0): the desk, wall, floor, lamp, cassette player, camera, plant, clock, frame, pens, spectacles, duck, multimeter")],
+      [s("                             ", "dim"), link("Poly Haven", "https://polyhaven.com"), s(" (CC0): the oak, the floor, lamp, cassette player, camera, plant, clock, frame, pens, spectacles, duck, multimeter, the lab's shelving, pliers and screwdrivers")],
       [s("                             ", "dim"), s("made in code: the room, the Dallas skyline, the racquet, notebook, floppies, mug, card, pennant, bitcoin, Rubik's cube, grad cap, cork board, diploma and pixel portrait")],
       [s("sound                        ", "dim"), s("synthesised in Web Audio + CC0 foley ("), link("Wikimedia Commons", "https://commons.wikimedia.org"), s(" / PDSounds) and "), link("“Synth Wave”", "https://opengameart.org/content/synth-wave"), s(" by Alex McCulloch (CC0)")],
       [s("                             ", "dim"), s("distance low-pass curve adapted from "), link("portfolio-website", "https://github.com/henryjeff/portfolio-website"), s(" by Henry Heffernan (MIT)")],

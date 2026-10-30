@@ -22,6 +22,7 @@ import {
   DoubleSide,
   Group,
   LatheGeometry,
+  Matrix4,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
@@ -33,6 +34,7 @@ import {
   SphereGeometry,
   TextureLoader,
   PointLight,
+  Raycaster,
   SpotLight,
   TorusGeometry,
   TubeGeometry,
@@ -50,6 +52,7 @@ const ORDER = [
   "lamp", "cassette", "pens", "spectacles", "duck", "camera", "plant", "clock", "frame", "globe", "super8", "phone",
   "longhorn", "rugby", "skateboard", "clapper", "biplane", "studiolight", "chair", "suitcase",
   "breadboard", "multimeter", "joystick", "headphones", "answering",
+  "rack", "switch", "nas", "crt", "pegboard", "pliers", "screwdrivers", "cutters", "thinkpad", "macbook", "mac128k", "c64", "ivy", "monstera", "kiev",
 ] as const;
 
 /** Decals (shadows, labels, paper) sit a hair above what they're on and win the depth test. */
@@ -972,7 +975,7 @@ export async function addProps(
   portrait.rotation.x = -0.12; // leaning back against the glass
   put("pixelart", onSill(portrait, sill.x0 + 0.42, { height: 0.15 }));
   put("corkboard", onWall(corkboard(), shelfX, 0.32, 0.3));
-  put("mortarboard", onShelf(mortarboard(), 0.28, { width: 0.17, rotY: 0.3 }));
+  put("mortarboard", onSill(mortarboard(), sill.x1 - 0.2, { width: 0.18, rotY: 0.3 }));
   onChange();
 
   let gltf: GLTF;
@@ -1060,7 +1063,7 @@ export async function addProps(
   add("biplane", (o) => onSill(o, sill.x0 + 0.18, { width: 0.24, rotY: 0.5 }));
   add("rugby", (o) => place(o, room.desk.minX - 0.45, wall + 0.75, { width: 0.28, rotY: -0.4, y: floor, shadow: true }));
   add("chair", (o) => place(o, min.x - 0.62, front + 0.32, { height: 0.85, rotY: 0.9, y: floor, shadow: true }));
-  add("studiolight", (o) => place(o, room.desk.maxX + 0.45, wall + 0.55, { height: 1.75, rotY: -0.6, y: floor, shadow: true }));
+  add("studiolight", (o) => place(o, room.desk.minX - 0.7, wall + 0.8, { height: 1.6, rotY: 0.7, y: floor, shadow: true })); // by the window, out of the lab's way
   add("suitcase", (o) => place(o, room.desk.minX - 0.3, wall + 0.3, { width: 0.6, rotY: 0.15, y: floor, shadow: true }));
   add("skateboard", (o) => place(o, room.desk.minX - 0.12, wall + 0.2, { height: 0.7, y: floor, shadow: true }));
   // The implementation side: a breadboard mid-build, the meter on it, the joystick by the keys.
@@ -1075,6 +1078,72 @@ export async function addProps(
       put("headphones", place(cans, max.x + 0.62, front - 0.28, { width: 0.14, rotY: 0.4 }));
     }
   }
+  // ── the home lab, in the corner past the end of the desk ──────────────────────────────────────
+  // A steel shelving rack, its shelves found by looking straight down through it, with the CRT and
+  // the Macintosh on top, the switch and the NAS, the C64, the laptops; the pegboard of tools above.
+  if (byName.rack) {
+    const labX = room.desk.maxX + 0.5;
+    const labZ = wall + 0.22;
+    const turn = -0.55; // turned towards the chair
+    const rack = put("rack", place(byName.rack, labX, labZ, { height: 1.3, rotY: turn, y: floor, shadow: true }));
+    rack.updateMatrixWorld(true);
+    const down = new Raycaster(new Vector3(labX, floor + 3, labZ), new Vector3(0, -1, 0));
+    const tops = [...new Set(down.intersectObject(rack, true).filter((h) => h.face && h.face.normal.y > 0.5).map((h) => Math.round(h.point.y * 1000) / 1000))].sort((a, b) => a - b);
+    const along = new Vector3(Math.cos(turn), 0, -Math.sin(turn)); // the rack's width, in the room
+    const onRack = (name: (typeof ORDER)[number], level: number, dx: number, opts: PlaceOpts) => {
+      const o = byName[name];
+      const y = tops[tops.length - 1 - level];
+      if (!o || y === undefined) return null;
+      return put(name, place(o, labX + along.x * dx, labZ + along.z * dx, { ...opts, rotY: turn + (opts.rotY ?? 0), y, shadow: true }));
+    };
+    onRack("crt", 0, -0.14, { height: 0.28 });
+    onRack("mac128k", 0, 0.2, { height: 0.3, rotY: Math.PI - 0.15 }); // the model faces away
+    onRack("switch", 1, -0.13, { width: 0.24 });
+    onRack("nas", 1, 0.18, { height: 0.19 });
+    onRack("c64", 2, 0, { width: 0.4 });
+    const lowest = onRack("thinkpad", 3, -0.02, { width: 0.33 });
+    if (lowest && byName.macbook) {
+      const top = new Box3().setFromObject(lowest).max.y;
+      put("macbook", place(byName.macbook, labX + along.x * 0.02, labZ + along.z * 0.02, { width: 0.31, rotY: turn + 0.12, y: top, shadow: false }));
+    }
+  }
+  if (byName.pegboard) {
+    const board = byName.pegboard;
+    board.rotation.y = Math.PI / 2;
+    put("pegboard", hang(board, room.desk.maxX + 0.62, 0.8, wall, 0.42));
+    const tool = (name: (typeof ORDER)[number], x: number, y: number, h: number, tilt = 0) => {
+      const o = byName[name];
+      if (!o) return;
+      // Hung flat on the board, whichever way the model was made: its longest side goes up and
+      // its thinnest side goes against the board.
+      const size = new Box3().setFromObject(o).getSize(new Vector3()).toArray();
+      const axes = [new Vector3(1, 0, 0), new Vector3(0, 1, 0), new Vector3(0, 0, 1)];
+      const order = [0, 1, 2].sort((i, j) => size[j] - size[i]);
+      const long = axes[order[0]];
+      const thin = axes[order[2]];
+      const basis = new Matrix4().makeBasis(long.clone().cross(thin), long, thin); // board space → model space
+      o.quaternion.setFromRotationMatrix(basis.transpose());
+      const holder = new Group();
+      holder.add(o);
+      holder.rotation.z = tilt;
+      put(name, hang(holder, room.desk.maxX + 0.62 + x, y, wall + 0.012, h));
+    };
+    tool("pliers", -0.22, 0.86, 0.17, 0.2);
+    tool("screwdrivers", -0.03, 0.82, 0.2);
+    tool("cutters", 0.16, 0.86, 0.15, -0.3);
+  }
+  // A trailing ivy on the end of the wall shelf, the vines hanging over its edge; the Kiev next to it.
+  if (byName.ivy) {
+    const ivy = byName.ivy;
+    const s = 1.7;
+    ivy.scale.setScalar(s);
+    const holder = new Group();
+    holder.add(ivy);
+    holder.position.set(shelfX + 0.33, shelfY + 0.01 * s, wall + 0.1);
+    put("ivy", holder);
+  }
+  add("kiev", (o) => onShelf(o, 0.21, { width: 0.13, rotY: -0.4 }));
+  add("monstera", (o) => place(o, room.desk.minX - 0.3, wall + 0.35, { height: 0.95, y: floor, shadow: true }));
   if (byName.frame) {
     byName.frame.traverse((o) => {
       const mesh = o as Mesh;
