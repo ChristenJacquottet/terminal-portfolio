@@ -1,3 +1,4 @@
+import { audio } from "./audio";
 import { EMPLOYER, FOLDERS, OPEN, SOCIAL, fileName, profile, projects, site, type Project } from "./content";
 import { link, run, s, type Line } from "./output";
 import { crtOn, currentTheme } from "./themes";
@@ -43,6 +44,7 @@ function build(): DirNode {
       [s("# cjsh settings. change them with the commands, not by hand.", "dim")],
       [s("theme ", "accent"), s(currentTheme())],
       [s("crt   ", "accent"), s(crtOn() ? "on" : "off")],
+      [s("sound ", "accent"), s(audio.muted ? "off" : "on")],
     ], { summary: "shell settings" }),
   );
 
