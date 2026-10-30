@@ -409,7 +409,7 @@ function wallMap(onReady: () => void): Group {
   return g;
 }
 
-/** An open graph-paper notebook with a BASIC doodle, and a pencil. */
+/** An open graph-paper notebook with a BASIC doodle (the pencil is its own prop). */
 function notebook(): Group {
   const g = new Group();
   const page = canvas(512, 704, (ctx) => {
@@ -440,17 +440,6 @@ function notebook(): Group {
   const rightBlock = new Mesh(new BoxGeometry(0.15, 0.0005, 0.205), new MeshStandardMaterial({ color: "#f1ecdd", roughness: 0.9 }));
   rightBlock.position.set(0.077, 0.0059, 0);
   g.add(base, left, rightBlock, right);
-  // the pencil
-  const pencil = new Group();
-  const wood = new Mesh(new CylinderGeometry(0.0038, 0.0038, 0.16, 6), new MeshStandardMaterial({ color: "#e8b923", roughness: 0.5 }));
-  const tip = new Mesh(new CylinderGeometry(0.0038, 0.0004, 0.018, 6), new MeshStandardMaterial({ color: "#e3c9a0", roughness: 0.8 }));
-  tip.position.y = -0.089;
-  const eraser = new Mesh(new CylinderGeometry(0.0038, 0.0038, 0.012, 12), new MeshStandardMaterial({ color: "#d77a7a", roughness: 0.9 }));
-  eraser.position.y = 0.086;
-  pencil.add(wood, tip, eraser);
-  pencil.rotation.set(0, 0.4, Math.PI / 2);
-  pencil.position.set(0.05, 0.0105, 0.07);
-  g.add(pencil);
   return g;
 }
 

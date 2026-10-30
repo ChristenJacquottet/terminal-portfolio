@@ -29,6 +29,7 @@ import {
   ShaderMaterial,
   SpotLight,
   Vector2,
+  Euler,
   Vector3,
   WebGLRenderer,
   WebGLRenderTarget,
@@ -448,24 +449,10 @@ export async function createDesk(opts: {
     fitTube();
     // A little closer or further than the wide shot, never into the keys or out of the room.
     // (The layout editor frees the camera and sets its own limits.)
-    if (!editing) {
-      // Around wherever the wide shot is (the default, or the one saved in the layout editor): turn
-      // your head and lean in or back a little, never under the desk or into the wall.
-      const wide = widePose();
-      const offset = wide.position.clone().sub(wide.target);
-      const polar = Math.acos(offset.y / offset.length());
-      const azimuth = Math.atan2(offset.x, offset.z);
-      controls.minPolarAngle = Math.max(0.6, polar - 0.4);
-      controls.maxPolarAngle = Math.min(1.5, polar + 0.1);
-      controls.minAzimuthAngle = azimuth - 0.55;
-      controls.maxAzimuthAngle = azimuth + 0.55;
-      controls.minDistance = offset.length() * 0.7;
-      controls.maxDistance = offset.length() * 1.45;
-    }
-    // At the desk, keep the viewing angle but re-frame for the new window shape.
-    if (!seated && !transitioning && !editing) {
-      const dir = camera.position.clone().sub(controls.target).normalize();
-      camera.position.copy(controls.target).addScaledVector(dir, wideDistance());
+    // At the desk, keep where you're looking but sit where the new window shape puts you.
+    if (!seated && !transitioning && !editing && look.active) {
+      sitAt(widePose());
+      updateLook(true);
     }
     request();
   };
@@ -514,6 +501,49 @@ export async function createDesk(opts: {
     return { position: at.clone().addScaledVector(dir, wideDistance() * (savedView?.k ?? 1)), target: at };
   };
 
+  // ── looking around, as someone sitting at the desk: the head stays put, the eyes turn ─────────
+  // Drag turns your head (grab the room and pull it), the wheel leans you in or back a little.
+  const LIMITS = { yaw: 0.62, up: 0.32, down: 0.5, lean: [-0.08, 0.32] as const };
+  const look = { active: false, yaw: 0, pitch: 0, lean: 0, toYaw: 0, toPitch: 0, toLean: 0, baseYaw: 0, basePitch: 0, head: new Vector3() };
+  const lookEuler = new Euler(0, 0, 0, "YXZ");
+  const forward = new Vector3();
+  /** Sits you at a pose: the head goes there, and straight ahead is where it looks. */
+  function sitAt(pose: { position: Vector3; target: Vector3 }) {
+    const dir = pose.target.clone().sub(pose.position).normalize();
+    look.head.copy(pose.position);
+    look.baseYaw = Math.atan2(-dir.x, -dir.z);
+    look.basePitch = Math.asin(dir.y);
+  }
+  /** Eases the head towards where you're pulling it; true while it's still moving. */
+  function updateLook(snap = false) {
+    if (!look.active) return false;
+    const k = snap ? 1 : 0.16;
+    look.yaw += (look.toYaw - look.yaw) * k;
+    look.pitch += (look.toPitch - look.pitch) * k;
+    look.lean += (look.toLean - look.lean) * k;
+    lookEuler.set(look.basePitch + look.pitch, look.baseYaw + look.yaw, 0);
+    camera.quaternion.setFromEuler(lookEuler);
+    forward.set(0, 0, -1).applyQuaternion(camera.quaternion);
+    camera.position.copy(look.head).addScaledVector(forward, look.lean);
+    return Math.abs(look.toYaw - look.yaw) + Math.abs(look.toPitch - look.pitch) + Math.abs(look.toLean - look.lean) > 1e-4;
+  }
+  const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+  function turnHead(dx: number, dy: number) {
+    // a full drag across the window turns the head about as far as it goes
+    look.toYaw = clamp(look.toYaw + (dx / vw) * 1.6, -LIMITS.yaw, LIMITS.yaw);
+    look.toPitch = clamp(look.toPitch + (dy / vh) * 1.2, -LIMITS.down, LIMITS.up);
+    request();
+  }
+  function leanBy(amount: number) {
+    look.toLean = clamp(look.toLean + amount, LIMITS.lean[0], LIMITS.lean[1]);
+    request();
+  }
+  /** Whatever you're looking at becomes the target the flight back into the screen starts from. */
+  function lookTarget() {
+    forward.set(0, 0, -1).applyQuaternion(camera.quaternion);
+    return camera.position.clone().addScaledVector(forward, 1);
+  }
+
   // Render on demand only.
   let running = false;
   let tween: ((now: number) => boolean) | null = null;
@@ -524,7 +554,7 @@ export async function createDesk(opts: {
     if (!tweening) tween = null;
     for (const m of motions) if (!m(now)) motions.delete(m);
     if (motions.size) renderer.shadowMap.needsUpdate = true; // moving things move their shadows
-    const moving = controls.enabled ? controls.update() : false;
+    const moving = controls.enabled ? controls.update() : updateLook();
     renderer.render(scene, camera);
     css.render(scene, camera);
     if (tweening || moving || motions.size) requestAnimationFrame(frame);
@@ -723,7 +753,15 @@ export async function createDesk(opts: {
   };
   let down: { x: number; y: number } | null = null;
   const canvas = renderer.domElement;
-  canvas.addEventListener("pointerdown", (e) => (down = { x: e.clientX, y: e.clientY }));
+  let last: { x: number; y: number } | null = null;
+  canvas.addEventListener("pointerdown", (e) => {
+    down = { x: e.clientX, y: e.clientY };
+    last = { x: e.clientX, y: e.clientY };
+    if (look.active) canvas.setPointerCapture(e.pointerId);
+  });
+  canvas.addEventListener("wheel", (e) => {
+    if (look.active) leanBy(-e.deltaY * 0.0006);
+  }, { passive: true });
   canvas.addEventListener("pointerup", (e) => {
     const click = down && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 6;
     down = null;
@@ -738,6 +776,11 @@ export async function createDesk(opts: {
     if (seated || editing) return;
     if (e.buttons) {
       if (touch.leave()) request();
+      if (look.active && last) {
+        turnHead(e.clientX - last.x, e.clientY - last.y);
+        last = { x: e.clientX, y: e.clientY };
+        canvas.style.cursor = "grabbing";
+      }
       return;
     }
     if (!hoverEvent) {
@@ -836,8 +879,14 @@ export async function createDesk(opts: {
       opts.sound?.loop("room", true);
       opts.sound?.loop("hum", true);
       opts.sound?.setInside(0);
-      await fly(widePose(), 1700, 1, easeOut);
-      controls.enabled = true;
+      const wide = widePose();
+      await fly(wide, 1700, 1, easeOut);
+      if (editing) controls.enabled = true; // the layout editor's free camera
+      else {
+        sitAt(wide);
+        Object.assign(look, { active: true, yaw: 0, pitch: 0, lean: 0, toYaw: 0, toPitch: 0, toLean: 0 });
+        updateLook(true);
+      }
       if (hint) hint.hidden = editing; // the editor panel has its own help
       if (credit && loaded) credit.hidden = false;
       transitioning = false;
@@ -848,6 +897,10 @@ export async function createDesk(opts: {
       if (seated || transitioning) return;
       transitioning = true;
       controls.enabled = false;
+      if (look.active) {
+        controls.target.copy(lookTarget()); // the flight starts from where you're looking
+        look.active = false;
+      }
       if (hint) hint.hidden = true;
       if (credit) credit.hidden = true;
       const close = closeUp();
