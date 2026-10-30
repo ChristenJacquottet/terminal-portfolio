@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Downloaded model sources (rebuilt into public/models by scripts/build-props.sh)
+art/sources/
+research/

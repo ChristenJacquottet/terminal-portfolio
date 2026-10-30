@@ -1,0 +1,24 @@
+{
+  "$comment": "Every desk material maps to one swatch (docs/art-direction.md). color is the base colour in sRGB; textures are tinted and flattened towards it.",
+  "swatches": {
+    "beige-plastic": { "color": "#d6c9ab", "roughness": 0.5, "metalness": 0, "use": "Apple II case, monitor, disk drives, phone, lamp body" },
+    "warm-grey": { "color": "#9d968a", "roughness": 0.5, "metalness": 0, "use": "secondary plastics, keycap legends, the clock" },
+    "near-black": { "color": "#1f1d1b", "roughness": 0.45, "metalness": 0, "use": "keycaps, cameras, cables, floppy sleeves, clapper" },
+    "dark-metal": { "color": "#4a4743", "roughness": 0.38, "metalness": 1, "use": "small metal parts: hinges, screws, lens rings" },
+    "brass": { "color": "#b58b4c", "roughness": 0.35, "metalness": 1, "use": "the globe stand, the bitcoin, lamp fittings" },
+    "walnut": { "color": "#5a3a28", "roughness": 0.6, "metalness": 0, "use": "desk, frames, cork board frame" },
+    "cream-paper": { "color": "#ece2cc", "roughness": 0.92, "metalness": 0, "use": "paper, notebook pages, labels, diploma, postcards" },
+    "cork": { "color": "#a87a4f", "roughness": 0.95, "metalness": 0, "use": "cork board" },
+    "wall": { "color": "#c9b79a", "roughness": 0.9, "metalness": 0, "use": "walls" },
+    "tomato": { "color": "#b8412c", "roughness": 0.45, "metalness": 0, "use": "accent: the mug, the phone cord, one floppy label, the pins" },
+    "mustard": { "color": "#d39b32", "roughness": 0.5, "metalness": 0, "use": "accent: pencils, the tennis ball, a tape label" },
+    "teal": { "color": "#2f6f6b", "roughness": 0.55, "metalness": 0, "use": "accent: the Walkman, the cutting mat, a book" },
+    "taylor-purple": { "color": "#4b2e83", "roughness": 0.85, "metalness": 0, "use": "only the Taylor pennant and the mortarboard" },
+    "glass": { "color": "#dfe6ea", "roughness": 0.05, "metalness": 0, "use": "lenses, the lamp bulb glass, the spectacles" }
+  },
+  "lights": {
+    "lamp": "#ffb36b",
+    "window-night": "#6f8fc7",
+    "screen": "theme foreground"
+  }
+}
