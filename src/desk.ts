@@ -87,6 +87,7 @@ export const MODEL = {
 const PROPS_URL = "/models/props.glb";
 
 // Shared in-flight prefetches populate THREE.Cache so an `exit` mid-prefetch reuses the download.
+Cache.enabled = true;
 const binaryFlights = new Map<string, Promise<ArrayBuffer | null>>();
 const imageFlights = new Map<string, Promise<HTMLImageElement | null>>();
 const blobUrls: string[] = [];
@@ -1185,7 +1186,8 @@ export async function createDesk(opts: {
     }
     hoverEvent = e;
   });
-  canvas.addEventListener("pointerleave", () => {
+  canvas.addEventListener("pointerleave", (e) => {
+    if (e.pointerType === "touch") return;
     if (touch.leave()) request();
   });
 
