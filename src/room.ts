@@ -55,6 +55,14 @@ const PAINT = "#e8e0cc";
 /** Exact extents of the desk footprint (2 m × 0.78744 m × 0.94711 m) every prop was arranged on. */
 const DESK_SIZE = { w: 2, h: 0.78744, d: 0.94711 };
 
+export const ROOM_TEXTURES = [
+  "/textures/floor_diff.webp",
+  "/textures/oak_diff.webp",
+  "/textures/oak_nor_gl.webp",
+  "/textures/oak_rough.webp",
+  "/textures/world-map.webp",
+] as const;
+
 export async function loadRoom(): Promise<RoomAssets> {
   const tex = new TextureLoader();
   const get = (url: string) => tex.loadAsync(url).catch(() => null);
@@ -62,9 +70,9 @@ export async function loadRoom(): Promise<RoomAssets> {
   // first frame instead of popping in after.
   Cache.enabled = true;
   const images = new ImageLoader();
-  const warm = ["oak_diff", "oak_nor_gl", "oak_rough", "world-map"].map((n) => images.loadAsync(`/textures/${n}.webp`).catch(() => null));
+  const warm = ROOM_TEXTURES.slice(1).map((url) => images.loadAsync(url).catch(() => null));
   const [floor] = await Promise.all([
-    get("/textures/floor_diff.webp"),
+    get(ROOM_TEXTURES[0]),
     ...warm,
   ]);
   return { floor: floor as Texture | null };

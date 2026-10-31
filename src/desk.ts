@@ -11,10 +11,15 @@
 import {
   ACESFilmicToneMapping,
   BoxGeometry,
+  BufferAttribute,
+  BufferGeometry,
+  Cache,
   CanvasTexture,
   Color,
+  Float32BufferAttribute,
   Group,
   HemisphereLight,
+  type Material,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
@@ -42,11 +47,12 @@ import {
   PCFShadowMap,
   type Object3D,
 } from "three";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { GLTFLoader, type GLTF } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import { CSS3DObject, CSS3DRenderer } from "three/examples/jsm/renderers/CSS3DRenderer.js";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { MODEL_CREDIT } from "./credit";
 import { editing, locked } from "./layout";
 import { fileName, projects } from "./content";
@@ -54,7 +60,7 @@ import { display, findFile } from "./fs";
 import type { Cue } from "./audio";
 import { createInteractions, type Drive } from "./interact";
 import { addProps, type Disk } from "./props";
-import { buildRoom, loadRoom, type Time } from "./room";
+import { ROOM_TEXTURES, buildRoom, loadRoom, type Time } from "./room";
 
 /** The tube's shape (4:3). In the monitor the terminal keeps the window's text size, see `fitTube`. */
 const SCREEN_W = 800;
@@ -77,6 +83,97 @@ export const MODEL = {
   /** Fraction of the glass the terminal covers; the rest is theme background under the glass. */
   inset: 0.93,
 };
+
+const PROPS_URL = "/models/props.glb";
+
+// Shared in-flight prefetches populate THREE.Cache so an `exit` mid-prefetch reuses the download.
+const binaryFlights = new Map<string, Promise<ArrayBuffer | null>>();
+const imageFlights = new Map<string, Promise<HTMLImageElement | null>>();
+const blobUrls: string[] = [];
+
+function fetchBinaryCached(url: string, lowPriority: boolean): Promise<ArrayBuffer | null> {
+  Cache.enabled = true;
+  const cached = Cache.get(`file:${url}`) as ArrayBuffer | undefined;
+  if (cached) return Promise.resolve(cached);
+  const existing = binaryFlights.get(url);
+  if (existing) return existing;
+  const job = fetch(url, (lowPriority ? { priority: "low" } : {}) as RequestInit)
+    .then(async (res) => {
+      if (!res.ok || res.headers.get("content-type")?.includes("text/html")) return null;
+      const buf = await res.arrayBuffer();
+      Cache.add(`file:${url}`, buf);
+      return buf;
+    })
+    .catch(() => null)
+    .finally(() => binaryFlights.delete(url));
+  binaryFlights.set(url, job);
+  return job;
+}
+
+function fetchImageCached(url: string, lowPriority: boolean): Promise<HTMLImageElement | null> {
+  Cache.enabled = true;
+  const cached = Cache.get(`image:${url}`) as HTMLImageElement | undefined;
+  if (cached?.complete) return Promise.resolve(cached);
+  const existing = imageFlights.get(url);
+  if (existing) return existing;
+  const job = fetch(url, (lowPriority ? { priority: "low" } : {}) as RequestInit)
+    .then(async (res) => {
+      if (!res.ok || res.headers.get("content-type")?.includes("text/html")) return null;
+      const blob = await res.blob();
+      const objUrl = URL.createObjectURL(blob);
+      blobUrls.push(objUrl);
+      const img = new Image();
+      img.src = objUrl;
+      await img.decode();
+      Cache.add(`image:${url}`, img);
+      return img;
+    })
+    .catch(() => null)
+    .finally(() => imageFlights.delete(url));
+  imageFlights.set(url, job);
+  return job;
+}
+
+let parsedModelJob: Promise<GLTF | null> | null = null;
+let parsedPropsJob: Promise<GLTF | null> | null = null;
+
+function parseGltfCached(url: string, lowPriority: boolean): Promise<GLTF | null> {
+  return fetchBinaryCached(url, lowPriority).then(async (buf) => {
+    if (!buf) return null;
+    const loader = new GLTFLoader();
+    loader.setMeshoptDecoder(MeshoptDecoder);
+    try {
+      return await loader.parseAsync(buf, "/models/");
+    } catch {
+      return null;
+    }
+  });
+}
+
+let warmJob: Promise<void> | null = null;
+
+/** Quietly warms THREE.Cache, decodes textures, and pre-parses GLBs at low priority once the terminal is idle. */
+export function prefetchDesk(onProgress?: (fraction: number) => void): Promise<void> {
+  if (warmJob) return warmJob;
+  MeshoptDecoder.useWorkers?.(2);
+  let doneWeight = 0;
+  const step = (w: number) => {
+    doneWeight = Math.min(1, doneWeight + w);
+    onProgress?.(doneWeight);
+  };
+  const texWeight = 0.11 / ROOM_TEXTURES.length;
+  parsedModelJob ??= parseGltfCached(MODEL.url, true);
+  parsedPropsJob ??= parseGltfCached(PROPS_URL, true);
+  warmJob = Promise.all([
+    MeshoptDecoder.ready,
+    parsedModelJob.then(() => step(0.28)),
+    parsedPropsJob.then(() => step(0.61)),
+    ...ROOM_TEXTURES.map((url) => fetchImageCached(url, true).then(() => step(texWeight))),
+  ]).then(() => {
+    onProgress?.(1);
+  });
+  return warmJob;
+}
 
 type Screen = { center: Vector3; normal: Vector3; up: Vector3; width: number; height: number };
 
@@ -110,6 +207,174 @@ function textures(root: Object3D) {
     }
   });
   return found;
+}
+
+const PROTECTED_SUBNODES = new Set([
+  "cubies",
+  "handset",
+  "Empty.001_4",
+  "portable_cassette_player_lid",
+]);
+
+/** Coalesces multi-material geometry groups that point to the same Material (e.g. 6-face floppy sleeves -> 2 groups). */
+function coalesceMaterialGroups(mesh: Mesh) {
+  if (!Array.isArray(mesh.material) || mesh.geometry.groups.length <= 1) return;
+  const mats = mesh.material;
+  const unique: Material[] = [];
+  const remap: number[] = [];
+  for (const m of mats) {
+    let idx = unique.indexOf(m);
+    if (idx === -1) {
+      idx = unique.length;
+      unique.push(m);
+    }
+    remap.push(idx);
+  }
+  if (unique.length === mats.length && mesh.geometry.groups.length <= unique.length) return;
+  const geo = mesh.geometry;
+  const index = geo.index;
+  if (!index) return;
+  const buckets: number[][] = unique.map(() => []);
+  for (const g of geo.groups) {
+    const u = remap[g.materialIndex ?? 0] ?? 0;
+    const dst = buckets[u];
+    const end = Math.min(index.count, g.start + g.count);
+    for (let i = g.start; i < end; i++) dst.push(index.getX(i));
+  }
+  const total = buckets.reduce((s, b) => s + b.length, 0);
+  const out = geo.attributes.position.count > 65535 ? new Uint32Array(total) : new Uint16Array(total);
+  geo.clearGroups();
+  let offset = 0;
+  for (let u = 0; u < buckets.length; u++) {
+    const b = buckets[u];
+    if (!b.length) continue;
+    out.set(b, offset);
+    geo.addGroup(offset, b.length, u);
+    offset += b.length;
+  }
+  geo.setIndex(new BufferAttribute(out, 1));
+  mesh.material = unique.length === 1 ? unique[0] : unique;
+}
+
+function toFloatClone(src: BufferGeometry): BufferGeometry {
+  const dst = new BufferGeometry();
+  if (src.index) {
+    const idx = src.index;
+    const arr = new Uint32Array(idx.count);
+    for (let i = 0; i < idx.count; i++) arr[i] = idx.getX(i);
+    dst.setIndex(new BufferAttribute(arr, 1));
+  }
+  for (const name of Object.keys(src.attributes).sort()) {
+    const attr = src.attributes[name];
+    const itemSize = attr.itemSize;
+    const out = new Float32Array(attr.count * itemSize);
+    for (let i = 0; i < attr.count; i++) {
+      const o = i * itemSize;
+      out[o] = attr.getX(i);
+      if (itemSize > 1) out[o + 1] = attr.getY(i);
+      if (itemSize > 2) out[o + 2] = attr.getZ(i);
+      if (itemSize > 3) out[o + 3] = attr.getW(i);
+    }
+    dst.setAttribute(name, new Float32BufferAttribute(out, itemSize));
+  }
+  return dst;
+}
+
+const batchedRoots = new WeakSet<Object3D>();
+
+/** Batches static same-material leaf meshes under `root` without touching named/interactive sub-parts. */
+function mergeStaticLeaves(propName: string, root: Object3D, skipNode?: (o: Object3D) => boolean) {
+  if (batchedRoots.has(root)) return;
+  batchedRoots.add(root);
+  root.traverse((o) => {
+    if ((o as Mesh).isMesh) coalesceMaterialGroups(o as Mesh);
+  });
+  if (propName === "cube" || propName === "clock" || propName === "globe") return;
+
+  root.updateMatrixWorld(true);
+  const rootInv = root.matrixWorld.clone().invert();
+  const rootDet = rootInv.determinant();
+
+  if (propName === "books") {
+    let sharedBooksMat: MeshStandardMaterial | null = null;
+    for (const child of root.children) {
+      const m = child as Mesh;
+      const mat = m.material as MeshStandardMaterial | undefined;
+      if (!m.isMesh || Array.isArray(m.material) || !mat?.isMeshStandardMaterial || mat.transparent || mat.map) continue;
+      sharedBooksMat ??= new MeshStandardMaterial({ vertexColors: true, roughness: mat.roughness, metalness: mat.metalness });
+      const count = m.geometry.attributes.position.count;
+      const colors = new Float32Array(count * 3);
+      for (let i = 0; i < count; i++) {
+        colors[i * 3] = mat.color.r;
+        colors[i * 3 + 1] = mat.color.g;
+        colors[i * 3 + 2] = mat.color.b;
+      }
+      const nextGeo = m.geometry.clone();
+      nextGeo.setAttribute("color", new Float32BufferAttribute(colors, 3));
+      m.geometry = nextGeo;
+      m.material = sharedBooksMat;
+    }
+  }
+
+  const buckets = new Map<Material, Map<string, Mesh[]>>();
+  const rel = new Matrix4();
+
+  const collect = (node: Object3D) => {
+    if (node !== root) {
+      if (!node.visible || node.userData?.hotspot || PROTECTED_SUBNODES.has(node.name) || skipNode?.(node)) return;
+    }
+    const mesh = node as Mesh;
+    if (
+      mesh.isMesh &&
+      node !== root &&
+      mesh.children.length === 0 &&
+      !Array.isArray(mesh.material) &&
+      !(mesh as unknown as { isSkinnedMesh?: boolean }).isSkinnedMesh &&
+      !(mesh as unknown as { isInstancedMesh?: boolean }).isInstancedMesh &&
+      Object.keys(mesh.geometry.morphAttributes).length === 0 &&
+      mesh.matrixWorld.determinant() * rootDet > 0
+    ) {
+      const geo = mesh.geometry;
+      const sig = `${mesh.castShadow ? 1 : 0}:${mesh.receiveShadow ? 1 : 0}:${mesh.renderOrder}:${geo.index ? 1 : 0}:${Object.keys(geo.attributes)
+        .sort()
+        .map((k) => `${k}${geo.attributes[k].itemSize}`)
+        .join(",")}`;
+      let bySig = buckets.get(mesh.material);
+      if (!bySig) {
+        bySig = new Map();
+        buckets.set(mesh.material, bySig);
+      }
+      const list = bySig.get(sig) ?? [];
+      list.push(mesh);
+      bySig.set(sig, list);
+      return;
+    }
+    for (const c of node.children) collect(c);
+  };
+  collect(root);
+
+  for (const [material, bySig] of buckets) {
+    for (const meshes of bySig.values()) {
+      if (meshes.length < 2) continue;
+      const geos: BufferGeometry[] = [];
+      for (const m of meshes) {
+        const g = toFloatClone(m.geometry);
+        rel.multiplyMatrices(rootInv, m.matrixWorld);
+        g.applyMatrix4(rel);
+        geos.push(g);
+      }
+      const mergedGeo = mergeGeometries(geos, false);
+      for (const g of geos) g.dispose();
+      if (!mergedGeo) continue;
+      const first = meshes[0];
+      const batch = new Mesh(mergedGeo, material);
+      batch.castShadow = first.castShadow;
+      batch.receiveShadow = first.receiveShadow;
+      batch.renderOrder = first.renderOrder;
+      root.add(batch);
+      for (const m of meshes) m.removeFromParent();
+    }
+  }
 }
 
 const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
@@ -156,15 +421,27 @@ function standIn(): { root: Group; screen: Screen } {
 }
 
 async function loadModel(onProgress: (f: number) => void): Promise<{ root: Group; screen: Screen; tube: Mesh } | null> {
-  try {
-    const head = await fetch(MODEL.url, { method: "HEAD" });
-    if (!head.ok || !head.headers.get("content-type")?.match(/gltf|octet|model/)) return null;
-  } catch {
-    return null;
+  Cache.enabled = true;
+  let gltf: GLTF | null = null;
+  if (parsedModelJob) {
+    const job = parsedModelJob;
+    parsedModelJob = null;
+    gltf = await job;
+  } else {
+    if (binaryFlights.has(MODEL.url)) {
+      const buf = await binaryFlights.get(MODEL.url);
+      if (!buf) return null;
+    }
+    const loader = new GLTFLoader();
+    loader.setMeshoptDecoder(MeshoptDecoder);
+    try {
+      gltf = await loader.loadAsync(MODEL.url, (e) => e.total && onProgress(e.loaded / e.total));
+    } catch {
+      return null;
+    }
   }
-  const loader = new GLTFLoader();
-  loader.setMeshoptDecoder(MeshoptDecoder);
-  const gltf = await loader.loadAsync(MODEL.url, (e) => e.total && onProgress(e.loaded / e.total));
+  if (!gltf) return null;
+  onProgress(1);
   const model = gltf.scene;
   const root = new Group();
   root.add(model);
@@ -359,6 +636,26 @@ export async function createDesk(opts: {
   const roomLoader = new GLTFLoader();
   roomLoader.setMeshoptDecoder(MeshoptDecoder);
   MeshoptDecoder.useWorkers?.(2); // decode the models off the main thread
+  // Start props.glb in parallel if idle prefetch hasn't pre-parsed it yet, and reuse any in-flight work.
+  const preParsedProps = parsedPropsJob;
+  parsedPropsJob = null;
+  const propsPrefetch = preParsedProps ? null : fetchBinaryCached(PROPS_URL, false);
+  const rawLoadAsync = roomLoader.loadAsync.bind(roomLoader);
+  roomLoader.loadAsync = async (url, onProgress) => {
+    if (url === PROPS_URL) {
+      if (preParsedProps) {
+        const readyGltf = await preParsedProps;
+        if (readyGltf) {
+          onProgress?.(new ProgressEvent("progress", { lengthComputable: true, loaded: 1, total: 1 }));
+          return readyGltf;
+        }
+      }
+      await propsPrefetch;
+    }
+    const gltf = await rawLoadAsync(url, onProgress);
+    onProgress?.(new ProgressEvent("progress", { lengthComputable: true, loaded: 1, total: 1 }));
+    return gltf;
+  };
   const roomAssets = loadRoom();
   // Progress: the computer is the first third, the props the rest.
   const loaded = await loadModel((f) => opts.onProgress(f * 0.35));
@@ -436,13 +733,8 @@ export async function createDesk(opts: {
   // Looking at the desk from just above head height, nearly straight on, the computer in the middle:
   // the whole desk, the window on the left, the map behind, the shelf and the lab corner on the right.
   const target = new Vector3(0.05, 0.28, -0.1);
-  const controls = new OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true;
-  controls.dampingFactor = 0.08;
-  controls.enablePan = false;
-  // Look around from the chair: limits are set around the wide shot in resize().
-  controls.zoomSpeed = 0.6;
-  controls.enabled = false;
+  const camTarget = new Vector3();
+  let controls: OrbitControls | null = null;
 
   let vw = 0;
   let vh = 0;
@@ -563,7 +855,7 @@ export async function createDesk(opts: {
     if (!tweening) tween = null;
     for (const m of motions) if (!m(now)) motions.delete(m);
     if (motions.size) renderer.shadowMap.needsUpdate = true; // moving things move their shadows
-    const moving = controls.enabled ? controls.update() : updateLook();
+    const moving = controls?.enabled ? controls.update() : updateLook();
     renderer.render(scene, camera);
     css.render(scene, camera);
     if (tweening || moving || motions.size) requestAnimationFrame(frame);
@@ -594,7 +886,6 @@ export async function createDesk(opts: {
     request();
   }
   relight();
-  controls.addEventListener("change", request);
   window.addEventListener("resize", () => {
     if (!host.hidden) resize();
   });
@@ -603,7 +894,7 @@ export async function createDesk(opts: {
     new Promise<void>((done) => {
       const glassFrom = glass.uniforms.uStrength.value as number;
       const fromPos = camera.position.clone();
-      const fromTarget = controls.target.clone();
+      const fromTarget = (controls ? controls.target : camTarget).clone();
       const fromOffset = fromPos.clone().sub(fromTarget);
       const toOffset = to.position.clone().sub(to.target);
       const fromDistance = fromOffset.length();
@@ -616,10 +907,11 @@ export async function createDesk(opts: {
         const e = curve(t);
         // Distance changes by the same ratio each moment (not the same metres), so the screen
         // shrinks or grows at an even rate instead of lurching while the camera is close to it.
-        controls.target.lerpVectors(fromTarget, to.target, e);
+        camTarget.lerpVectors(fromTarget, to.target, e);
+        controls?.target.copy(camTarget);
         direction.lerpVectors(fromOffset, toOffset, e).normalize();
-        camera.position.copy(controls.target).addScaledVector(direction, fromDistance * (toDistance / fromDistance) ** e);
-        camera.lookAt(controls.target);
+        camera.position.copy(camTarget).addScaledVector(direction, fromDistance * (toDistance / fromDistance) ** e);
+        camera.lookAt(camTarget);
         // The glass comes in over the first third of the flight out, and goes in the last third back.
         const g = glassTo > glassFrom ? Math.min(1, t * 3) : Math.max(0, (t - 2 / 3) * 3);
         glass.uniforms.uStrength.value = glassFrom + (glassTo - glassFrom) * g;
@@ -634,7 +926,8 @@ export async function createDesk(opts: {
 
   const place = (pose: { position: Vector3; target: Vector3 }) => {
     camera.position.copy(pose.position);
-    controls.target.copy(pose.target);
+    camTarget.copy(pose.target);
+    controls?.target.copy(pose.target);
     camera.lookAt(pose.target);
   };
 
@@ -810,6 +1103,7 @@ export async function createDesk(opts: {
   });
 
   // The Disk II: its slot from the drive's own mesh. Two drives are stacked; disks go in the top one.
+  root.updateMatrixWorld(true);
   const drive = ((): Drive | null => {
     let mesh: Mesh | undefined;
     root.traverse((x) => {
@@ -829,6 +1123,24 @@ export async function createDesk(opts: {
     scene.add(led);
     return { slot, out, quaternion, led };
   })();
+  const computerOccluders: Box3[] = [];
+  root.traverse((x) => {
+    const m = x as Mesh;
+    if (m.isMesh && m !== loaded?.tube) computerOccluders.push(new Box3().setFromObject(m));
+  });
+  mergeStaticLeaves("computer", root, (o) => o === loaded?.tube);
+
+  if (editing) {
+    const { OrbitControls } = await import("three/examples/jsm/controls/OrbitControls.js");
+    controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.enablePan = false;
+    controls.zoomSpeed = 0.6;
+    controls.enabled = false;
+    controls.target.copy(camTarget);
+    controls.addEventListener("change", request);
+  }
 
   if (import.meta.env.DEV) Object.assign(window, { __desk: { scene, renderer, camera } }); // for poking at it from devtools
   const touch = createInteractions({
@@ -855,6 +1167,7 @@ export async function createDesk(opts: {
     },
   });
 
+  let nightWarmed = false;
   const api: Desk = {
     hasModel: Boolean(loaded),
     get ready() {
@@ -867,6 +1180,7 @@ export async function createDesk(opts: {
 
     async stepBack() {
       if (!seated || transitioning) return;
+      await ready;
       transitioning = true;
       seated = false;
       host.hidden = false;
@@ -893,7 +1207,7 @@ export async function createDesk(opts: {
       opts.sound?.setInside(0);
       const wide = widePose();
       await fly(wide, 1700, 1, easeOut);
-      if (editing) controls.enabled = true; // the layout editor's free camera
+      if (editing && controls) controls.enabled = true; // the layout editor's free camera
       else {
         sitAt(wide);
         Object.assign(look, { active: true, yaw: 0, pitch: 0, lean: 0, toYaw: 0, toPitch: 0, toLean: 0 });
@@ -902,14 +1216,21 @@ export async function createDesk(opts: {
       if (hint) hint.hidden = editing; // the editor panel has its own help
       if (credit && loaded) credit.hidden = false;
       transitioning = false;
+      if (!nightWarmed) {
+        nightWarmed = true;
+        const onIdle = window.requestIdleCallback ?? ((fn: () => void) => setTimeout(fn, 600));
+        onIdle(() => room.warmNight(), { timeout: 2000 });
+      }
     },
 
     async sitDown() {
       if (seated || transitioning) return;
       transitioning = true;
-      controls.enabled = false;
+      if (controls) controls.enabled = false;
       if (look.active) {
-        controls.target.copy(lookTarget()); // the flight starts from where you're looking
+        const at = lookTarget(); // the flight starts from where you're looking
+        camTarget.copy(at);
+        controls?.target.copy(at);
         look.active = false;
       }
       if (hint) hint.hidden = true;
@@ -933,43 +1254,65 @@ export async function createDesk(opts: {
     },
   };
 
-  // The rest of the desk streams in after the computer; each piece just asks for a frame.
-  const props = new Map<string, Object3D>();
-  // Everything is loaded before the first step back now, so this runs behind the fullscreen terminal.
-  const prepare = async (arrivals: Object3D) => {
-    await renderer.compileAsync(arrivals, camera, scene);
-    for (const t of textures(arrivals)) {
+  /** Uploads textures to WebGL in <= 6 ms slices so the fullscreen terminal stays responsive without burning 140 frames. */
+  const uploadTextures = async (set: Iterable<Texture>) => {
+    let slice = performance.now();
+    for (const t of set) {
       renderer.initTexture(t);
-      await nextFrame();
+      if (performance.now() - slice > 6) {
+        await nextFrame();
+        slice = performance.now();
+      }
     }
   };
+
+  // The rest of the desk streams in after the computer; everything prepares behind the fullscreen terminal.
+  const props = new Map<string, Object3D>();
+  resize();
+  place(closeUp());
+  const prepare = async (_arrivals: Object3D) => {
+    for (const [name, prop] of props) mergeStaticLeaves(name, prop);
+  };
   const propsReady = loaded ? addProps(scene, roomLoader, bounds, room, lamp, props, prepare, relight, featuredDisks(), (f) => opts.onProgress(0.35 + f * 0.6)) : Promise.resolve();
-  void propsReady.then(() => {
-    const parts: Box3[] = [];
-    root.traverse((x) => {
-      const m = x as Mesh;
-      if (m.isMesh && m !== loaded?.tube) parts.push(new Box3().setFromObject(m));
-    });
-    touch.setTargets([...props.values(), room.windowFrame], parts);
-  });
-  void propsReady.then(() => {
-    if (lamp.intensity) return;
-    lamp.intensity = 14;
-    relight();
-  });
   // `?edit`: the layout editor, for arranging the props (never loaded otherwise).
-  if (editing && loaded) {
+  if (editing && loaded && controls) {
+    const editorControls = controls;
     void Promise.all([import("./editor"), propsReady]).then(([{ startEditor }]) =>
-      startEditor({ scene, camera, canvas, controls, props, request: relight, sitDown: () => api.sitDown(), wideDistance }),
+      startEditor({ scene, camera, canvas, controls: editorControls, props, request: relight, sitDown: () => api.sitDown(), wideDistance }),
     );
   }
 
-  const ready = propsReady.then(() => opts.onProgress(1));
-  resize();
-  // Compile every shader now, behind the fullscreen terminal, so the flight out never hitches.
-  place(closeUp());
-  await renderer.compileAsync(scene, camera);
-  for (const t of textures(scene)) renderer.initTexture(t); // the painted props, before the first frame
+  const ready = propsReady.then(async () => {
+    // Share one 64x64 radial-gradient blob shadow material across all placed props instead of 38 identical textures.
+    let sharedBlobMat: MeshBasicMaterial | null = null;
+    for (const [name, prop] of props) {
+      mergeStaticLeaves(name, prop);
+      for (const child of prop.children) {
+        const m = child as Mesh;
+        const mat = m.material as MeshBasicMaterial | undefined;
+        const img = mat?.map?.image as { width?: number; height?: number } | undefined;
+        if (m.isMesh && mat?.isMeshBasicMaterial && mat.transparent && mat.polygonOffset && img?.width === 64 && img?.height === 64 && Math.abs(m.position.y - 0.0006) < 1e-4) {
+          if (!sharedBlobMat) sharedBlobMat = mat;
+          else if (mat !== sharedBlobMat) {
+            mat.map?.dispose();
+            mat.dispose();
+            m.material = sharedBlobMat;
+          }
+        }
+      }
+    }
+    touch.setTargets([...props.values(), room.windowFrame], computerOccluders);
+    if (!lamp.intensity) {
+      lamp.intensity = 14;
+      relight();
+    }
+    // Let any cached TextureLoader callbacks (world-map.webp) attach their maps before final shader compile.
+    await new Promise((r) => setTimeout(r, 0));
+    await renderer.compileAsync(scene, camera);
+    await uploadTextures(textures(scene));
+    while (blobUrls.length) URL.revokeObjectURL(blobUrls.pop()!);
+    opts.onProgress(1);
+  });
 
   return api;
 }

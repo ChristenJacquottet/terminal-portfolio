@@ -24,15 +24,16 @@ const bar = (f: number, label: string): Line => {
   return [s("desk  ", "dim"), s(`[${"█".repeat(full)}${"░".repeat(n - full)}]`, "accent"), s(` ${String(Math.round(f * 100)).padStart(3)}%  `), s(label, "dim")];
 };
 
-// The first time, everything loads behind a progress line before you step back, so nothing on the
-// desk pops in afterwards. Later exits are instant.
+// The first time, everything prepares behind a progress line before you step back, so nothing on
+// the desk pops in afterwards. Idle prefetch usually brings `fraction` to 100% beforehand.
 let fraction = 0;
+let deskReady = false;
 let show: ((next: Line) => void) | null = null;
 
 function stepBack() {
   // printed on the next frame, under the command's "logout"
   requestAnimationFrame(() => {
-    if (fraction < 1 && !show) show = term.live(bar(fraction, "mounting /dev/desk"));
+    if (!deskReady && !show) show = term.live(bar(fraction, fraction >= 1 ? "ready" : "mounting /dev/desk"));
   });
   desk ??= loadDesk().then(({ createDesk }) =>
     createDesk({
@@ -40,8 +41,8 @@ function stepBack() {
       screenEl: $("screen"),
       glow: currentScheme().fg,
       onProgress: (f) => {
-        fraction = f;
-        show?.(bar(f, f < 0.35 ? "apple-ii.glb" : f < 1 ? "props.glb" : "ready"));
+        fraction = Math.max(fraction, f);
+        show?.(bar(fraction, fraction < 0.35 ? "apple-ii.glb" : fraction < 1 ? "props.glb" : "ready"));
       },
       onSitDown: () => {
         term.print([[s(`Last login: ${stamp(new Date())} on ttys000`, "dim")]]);
@@ -63,6 +64,8 @@ function stepBack() {
     .then(async (d) => {
       await d.ready;
       fraction = 1;
+      deskReady = true;
+      show?.(bar(1, "ready"));
       show = null;
       return d.stepBack();
     })
@@ -79,11 +82,35 @@ onDisplayChange(() => {
 
 const term = new Terminal($("term"), $("output"), $("prompt-line"), $("prompt"), $("mirror"), $<HTMLInputElement>("input"), stepBack);
 
-// Warm the desk code (not the model) once the page is idle, unless the visitor is saving data.
-const connection = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection;
-if (!connection?.saveData) {
-  const idle = window.requestIdleCallback ?? ((fn: () => void) => setTimeout(fn, 2500));
-  idle(() => void loadDesk(), { timeout: 6000 });
+type NetworkInfo = { saveData?: boolean; effectiveType?: string; downlink?: number };
+
+function shouldPrefetchDesk(): boolean {
+  const conn = (navigator as Navigator & { connection?: NetworkInfo }).connection;
+  if (conn?.saveData) return false;
+  if (conn?.effectiveType && ["slow-2g", "2g", "3g"].includes(conn.effectiveType)) return false;
+  if (typeof conn?.downlink === "number" && conn.downlink > 0 && conn.downlink < 1.5) return false;
+  if (new URLSearchParams(location.search).has("edit")) return false;
+  // Phones stay terminal-first: zero background 3D download unless the visitor runs `exit`.
+  if (window.matchMedia("(max-width: 640px) and (pointer: coarse)").matches) return false;
+  return true;
+}
+
+function scheduleDeskPrefetch() {
+  if (!shouldPrefetchDesk() || desk) return;
+  const idle = window.requestIdleCallback ?? ((fn: () => void) => setTimeout(fn, 900));
+  idle(
+    () => {
+      if (desk) return;
+      void loadDesk()
+        .then(({ prefetchDesk }) =>
+          prefetchDesk((f) => {
+            if (!desk) fraction = Math.max(fraction, f);
+          }),
+        )
+        .catch(() => {});
+    },
+    { timeout: 2400 },
+  );
 }
 
 async function boot() {
@@ -119,6 +146,7 @@ async function boot() {
   // `?edit` opens the desk's layout editor (editor.ts), so go straight to the desk.
   if (new URLSearchParams(location.search).has("edit")) await term.type("exit", 10);
   term.focus();
+  scheduleDeskPrefetch();
 }
 
 // `?soundtest`: dev-only audition panel for every cue and loop (never loaded otherwise).
