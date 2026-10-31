@@ -39,4 +39,9 @@ function layoutWriter(): Plugin {
   };
 }
 
-export default defineConfig({ plugins: [layoutWriter()] });
+export default defineConfig({
+  plugins: [layoutWriter()],
+  // The desk chunk is mostly three.js. It never blocks the terminal: it's prefetched at low priority
+  // after the page loads and only runs on `exit`, so its size is a budget, not a warning.
+  build: { chunkSizeWarningLimit: 900 },
+});
