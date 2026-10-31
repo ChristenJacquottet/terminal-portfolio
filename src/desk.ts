@@ -151,6 +151,13 @@ function parseGltfCached(url: string, lowPriority: boolean): Promise<GLTF | null
   });
 }
 
+/** Starts downloading the desk's files at low priority (network only; parsing waits for idle). */
+export function preloadDeskFiles() {
+  void fetchBinaryCached(MODEL.url, true);
+  void fetchBinaryCached(PROPS_URL, true);
+  for (const url of ROOM_TEXTURES) void fetchImageCached(url, true);
+}
+
 let warmJob: Promise<void> | null = null;
 
 /** Quietly warms THREE.Cache, decodes textures, and pre-parses GLBs at low priority once the terminal is idle. */
@@ -686,12 +693,12 @@ export async function createDesk(opts: {
     const dusk = next === "dusk";
     fill.color.set(dusk ? "#e6d5bf" : "#4d6fb8");
     fill.groundColor.set(dusk ? "#2e1d12" : "#101524");
-    fill.intensity = dusk ? 0.21 : 0.13;
-    scene.environmentIntensity = dusk ? 0.11 : 0.055;
+    fill.intensity = dusk ? 0.21 : 0.2;
+    scene.environmentIntensity = dusk ? 0.11 : 0.08;
     renderer.toneMappingExposure = dusk ? 0.94 : 0.88;
     labLight.color.set(dusk ? "#ffd19c" : "#5f83cc");
     labLight.intensity = dusk ? 1.65 : 0.62;
-    if (screenGlow) screenGlow.intensity = dusk ? 0.25 : 0.95;
+    if (screenGlow) screenGlow.intensity = dusk ? 0.25 : 0.55;
   };
   setTime(time);
 
@@ -716,7 +723,8 @@ export async function createDesk(opts: {
   // The screen lights the room in the theme's colour: the keys, the desk in front, the drives.
   // Low at dusk (the sun and the lamp do the work), stronger at night (see setTime).
   const glow = new PointLight(opts.glow, 0.25, 1.7, 2);
-  glow.position.copy(screen.center).addScaledVector(screen.normal, 0.12);
+  // out in front, so it washes the keys and the desk instead of blowing out the bezel around it
+  glow.position.copy(screen.center).addScaledVector(screen.normal, 0.32);
   scene.add(glow);
   screenGlow = glow;
 
@@ -812,6 +820,8 @@ export async function createDesk(opts: {
   const widePose = () => {
     const dir = new Vector3(...((savedView?.dir ?? [0.7, 0.57, 2.05]) as [number, number, number])).normalize();
     const at = savedView ? new Vector3(...(savedView.target as [number, number, number])) : target.clone();
+    // Tall screens crop the sides: centre on the machine so it isn't cut off.
+    if (camera.aspect < 1) at.x = bounds.getCenter(new Vector3()).x;
     return { position: at.clone().addScaledVector(dir, wideDistance() * (savedView?.k ?? 1)), target: at };
   };
 

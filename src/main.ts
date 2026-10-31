@@ -116,6 +116,8 @@ function scheduleDeskPrefetch() {
 async function boot() {
   const promptLine = $("prompt-line");
   promptLine.hidden = true;
+  // Start the desk's downloads while the banner draws, so slow connections are done sooner.
+  if (shouldPrefetchDesk()) void loadDesk().then((m) => m.preloadDeskFiles()).catch(() => {});
   const skip = () => (term.skip = true);
   window.addEventListener("pointerdown", skip, { once: true });
   window.addEventListener("keydown", skip, { once: true });
