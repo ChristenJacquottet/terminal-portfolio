@@ -24,7 +24,6 @@ import {
   type SpotLight,
 } from "three";
 
-type Area = { x: number; y: number; w: number; h: number; place: string };
 export type Hotspot = {
   kind: string;
   label: string;
@@ -32,8 +31,6 @@ export type Hotspot = {
   /** Leads somewhere (a project, contact): a stronger cue than the toys. */
   nav?: boolean;
   command?: string;
-  areas?: Area[];
-  size?: [number, number];
 };
 
 /** The props that don't bring their own hotspot. Labels in my words; the hint says what a click does. */
@@ -72,12 +69,13 @@ const BY_NAME: Record<string, Hotspot> = {
   pens: { kind: "wiggle", label: "pen cup" },
   clock: { kind: "swing", label: "the clock", hint: "it's late" },
   worldmap: { kind: "swing", label: "the world map", hint: "the one from my room" },
+  corkboard: { kind: "swing", label: "the pinboard", hint: "workbench notes" },
   books: { kind: "wiggle", label: "books" },
   rack: { kind: "wiggle", label: "the home lab", hint: "it hums" },
-  crt: { kind: "wiggle", label: "a Sony PVM", hint: "the lab's monitor" },
-  mac128k: { kind: "hop", label: "Macintosh 128K", hint: "the other old one" },
-  c64: { kind: "wiggle", label: "Commodore 64" },
-  switch: { kind: "wiggle", label: "the switch" },
+  crt: { kind: "crt", label: "Sony PVM", hint: "lab status · run neofetch", nav: true, command: "neofetch" },
+  mac128k: { kind: "hop", label: "Macintosh 128K", hint: "1984 · 128 kilobytes" },
+  c64: { kind: "wiggle", label: "Commodore 64", hint: "1982 · 64 kilobytes" },
+  switch: { kind: "wiggle", label: "8-port switch", hint: "link lights on" },
   nas: { kind: "wiggle", label: "the NAS", hint: "backups" },
   thinkpad: { kind: "wiggle", label: "laptops", hint: "a few generations of them" },
   macbook: { kind: "wiggle", label: "laptops", hint: "a few generations of them" },
@@ -93,7 +91,7 @@ const BY_NAME: Record<string, Hotspot> = {
 };
 
 /** Where each postcard's place sits in my story; the rest just say "home, once". */
-const PLACES: Record<string, string> = { "LA RÉUNION": "where I was born", INDIANA: "college", DALLAS: "home now" };
+export const PLACES: Record<string, string> = { "LA RÉUNION": "where I was born", INDIANA: "college", DALLAS: "home now" };
 
 /** The Disk II: the middle of its slot, the way out of it, a disk's pose inside it, and its IN USE light. */
 export type Drive = { slot: Vector3; out: Vector3; quaternion: Quaternion; led: Mesh };
@@ -255,13 +253,6 @@ export function createInteractions(o: {
     if (spot.kind === "walkman") return [spot.label, tapeIn ? (playing ? "pause" : "play") : "no tape in it"];
     if (spot.kind === "tape") return [spot.label, tapeIn ? "take it out" : spot.hint];
     if (spot.kind === "disk" && t.object === inDrive) return [spot.label, "it's in the drive: open it"];
-    if (spot.kind === "places" && spot.areas && spot.size && t.hit.uv) {
-      const [w, h] = spot.size;
-      const x = t.hit.uv.x * w;
-      const y = (1 - t.hit.uv.y) * h;
-      const card = spot.areas.find((a) => x >= a.x && x <= a.x + a.w && y >= a.y && y <= a.y + a.h);
-      if (card) return [card.place, PLACES[card.place] ?? "home, once"];
-    }
     return [spot.label, spot.hint];
   };
 
@@ -554,6 +545,28 @@ export function createInteractions(o: {
         o.sfx("lidClose"); // the blinds
         o.setTime(o.time() === "dusk" ? "night" : "dusk");
         return;
+      case "paper":
+        o.sfx("paper");
+        void once(object, async () => {
+          leave();
+          if (object.getWorldPosition(new Vector3()).y > 0.1) {
+            const z0 = object.rotation.z;
+            await o.animate(260, (t) => (object.rotation.z = z0 + 0.04 * wobble(t, 2, 3.5)));
+            object.rotation.z = z0;
+          } else {
+            await hop(object, 0.012, 260);
+          }
+          await o.sitDownAndRun(spot.command ?? "projects");
+        });
+        return;
+      case "crt":
+        o.sfx("switch");
+        void once(object, async () => {
+          leave();
+          await wiggle(object, 0.03);
+          await o.sitDownAndRun(spot.command ?? "neofetch");
+        });
+        return;
       case "answering":
         o.sfx("click");
         void once(object, async () => {
@@ -589,9 +602,6 @@ export function createInteractions(o: {
         o.sfx("tapeButton");
         playing = !playing;
         o.music(playing);
-        return;
-      case "places":
-        o.sfx("paper");
         return;
       case "flash":
         void once(object, () => camera35(object));
