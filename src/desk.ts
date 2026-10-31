@@ -659,6 +659,8 @@ export async function createDesk(opts: {
     onProgress?.(new ProgressEvent("progress", { lengthComputable: true, loaded: 1, total: 1 }));
     return gltf;
   };
+  Cache.enabled = true;
+  if (imageFlights.size) await Promise.all([...imageFlights.values()]);
   const roomAssets = loadRoom();
   // Progress: the computer is the first third, the props the rest.
   const loaded = await loadModel((f) => opts.onProgress(f * 0.35));
@@ -840,7 +842,7 @@ export async function createDesk(opts: {
   }
   const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
   // Portrait screens crop horizontally, so let the head turn a bit further left to the window and right to the rack.
-  const yawBounds = () => (camera.aspect < 1 ? ([-0.7, 0.82] as const) : ([-LIMITS.yaw, LIMITS.yaw] as const));
+  const yawBounds = () => (camera.aspect < 1 ? ([-0.68, 0.72] as const) : ([-LIMITS.yaw, LIMITS.yaw] as const));
   function turnHead(dx: number, dy: number) {
     // a full drag across the window turns the head about as far as it goes
     const [minYaw, maxYaw] = yawBounds();
@@ -1090,6 +1092,7 @@ export async function createDesk(opts: {
   };
   canvas.addEventListener("pointerdown", (e) => {
     clearTouchChip();
+    if (e.pointerType === "touch" && e.isPrimary) activePointers.clear();
     activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (look.active) {
       try {
@@ -1303,8 +1306,14 @@ export async function createDesk(opts: {
       transitioning = false;
       if (!nightWarmed) {
         nightWarmed = true;
-        const onIdle = window.requestIdleCallback ?? ((fn: () => void) => setTimeout(fn, 600));
-        onIdle(() => room.warmNight(), { timeout: 2000 });
+        const scheduleWarmNight = () => {
+          const onIdle = window.requestIdleCallback ?? ((fn: () => void) => setTimeout(fn, 900));
+          onIdle(() => {
+            if (running || transitioning) scheduleWarmNight();
+            else room.warmNight();
+          });
+        };
+        scheduleWarmNight();
       }
     },
 
