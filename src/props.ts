@@ -44,7 +44,15 @@ import {
   type Scene,
 } from "three";
 import type { GLTF, GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import { addMapPostcards, fitCrtScreen } from "./alive";
+import {
+  addMapPostcards,
+  avocadoSheet,
+  converterPinout,
+  crawlerPrintout,
+  fitCrtScreen,
+  pantryMap,
+  voiceStrip,
+} from "./alive";
 import { applyPose, currentLayout, poseOf } from "./layout";
 import type { Room } from "./room";
 
@@ -961,6 +969,25 @@ export async function addProps(
   put("pixelart", onSill(portrait, sill.x0 + 0.42, { height: 0.15 }));
   put("corkboard", onWall(corkboard(), shelfX, 0.32, 0.3));
   put("mortarboard", onSill(mortarboard(), sill.x1 - 0.2, { width: 0.18, rotY: 0.3 }));
+
+  // Period paper props from published work: one opaque material each, hoisted onto their holder.
+  const hoistSpot = (sheet: Mesh, holder: Group) => {
+    if (sheet.userData.hotspot) {
+      holder.userData.hotspot = sheet.userData.hotspot;
+      delete sheet.userData.hotspot;
+    }
+    return holder;
+  };
+  const paperOnDesk = (sheet: Mesh, x: number, z: number, opts: PlaceOpts) =>
+    hoistSpot(sheet, place(sheet, x, z, { shadow: false, ...opts }));
+  const paperOnWall = (sheet: Mesh, x: number, y: number, z: number, height: number) =>
+    hoistSpot(sheet, hang(sheet, x, y, z, height));
+
+  put("crawler", paperOnDesk(crawlerPrintout(), 0.145, 0.395, { width: 0.195, rotY: -0.14, y: 0.0018 }));
+  put("converter", paperOnWall(converterPinout(), shelfX - 0.065, 0.315, wall + 0.006, 0.205));
+  put("avocados", paperOnDesk(avocadoSheet(), -0.462, 0.095, { width: 0.138, rotY: 0.18, y: 0.0014 }));
+  put("voicestrip", paperOnDesk(voiceStrip(), 0.695, 0.242, { width: 0.164, rotY: -0.45, y: 0.0014 }));
+  put("pantrymap", paperOnDesk(pantryMap(), -0.635, 0.478, { width: 0.182, rotY: 0.22, y: 0.0014 }));
   onChange();
 
   let gltf: GLTF;

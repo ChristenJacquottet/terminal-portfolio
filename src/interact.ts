@@ -545,6 +545,20 @@ export function createInteractions(o: {
         o.sfx("lidClose"); // the blinds
         o.setTime(o.time() === "dusk" ? "night" : "dusk");
         return;
+      case "paper":
+        o.sfx("paper");
+        void once(object, async () => {
+          leave();
+          if (object.getWorldPosition(new Vector3()).y > 0.1) {
+            const z0 = object.rotation.z;
+            await o.animate(260, (t) => (object.rotation.z = z0 + 0.04 * wobble(t, 2, 3.5)));
+            object.rotation.z = z0;
+          } else {
+            await hop(object, 0.012, 260);
+          }
+          await o.sitDownAndRun(spot.command ?? "projects");
+        });
+        return;
       case "crt":
         o.sfx("switch");
         void once(object, async () => {
