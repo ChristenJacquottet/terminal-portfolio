@@ -588,9 +588,11 @@ export async function createDesk(opts: {
   };
 }): Promise<Desk> {
   const { host, screenEl } = opts;
+  const coarsePointer = window.matchMedia("(pointer: coarse)").matches;
+  const isPhone = window.matchMedia("(max-width: 640px) and (pointer: coarse)").matches;
 
   const renderer = new WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, isPhone ? 1.25 : 1.5));
   renderer.outputColorSpace = SRGBColorSpace;
   renderer.toneMapping = ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.85;
@@ -618,7 +620,8 @@ export async function createDesk(opts: {
   // without the model, it comes on here, over the desk.
   const lamp = new SpotLight("#ffb36b", 0, 6, 0.55, 0.6, 2);
   lamp.castShadow = true;
-  lamp.shadow.mapSize.set(1024, 1024);
+  const lampMapSize = isPhone ? 512 : 1024;
+  lamp.shadow.mapSize.set(lampMapSize, lampMapSize);
   lamp.shadow.camera.near = 0.05;
   lamp.shadow.bias = -0.0006;
   lamp.shadow.normalBias = 0.01;
@@ -663,6 +666,8 @@ export async function createDesk(opts: {
   scene.add(root);
   const room = buildRoom(scene, await roomAssets, new Box3().setFromObject(root), {
     initTexture: (t) => renderer.initTexture(t),
+    skyScale: isPhone ? 0.5 : 1,
+    sunMapSize: isPhone ? 1024 : 2048,
   });
   // The home-lab corner, past the right end of the desk, sits in the wall's shadow from the low
   // left sun; place a soft room fill out in front of the angled rack so every shelf and tool reads.
@@ -756,6 +761,8 @@ export async function createDesk(opts: {
     // At the desk, keep where you're looking but sit where the new window shape puts you.
     if (!seated && !transitioning && !editing && look.active) {
       sitAt(widePose());
+      const [minYaw, maxYaw] = yawBounds();
+      look.toYaw = clamp(look.toYaw, minYaw, maxYaw);
       updateLook(true);
     }
     request();
@@ -832,9 +839,12 @@ export async function createDesk(opts: {
     return Math.abs(look.toYaw - look.yaw) + Math.abs(look.toPitch - look.pitch) + Math.abs(look.toLean - look.lean) > 1e-4;
   }
   const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+  // Portrait screens crop horizontally, so let the head turn a bit further left to the window and right to the rack.
+  const yawBounds = () => (camera.aspect < 1 ? ([-0.7, 0.82] as const) : ([-LIMITS.yaw, LIMITS.yaw] as const));
   function turnHead(dx: number, dy: number) {
     // a full drag across the window turns the head about as far as it goes
-    look.toYaw = clamp(look.toYaw + (dx / vw) * 1.6, -LIMITS.yaw, LIMITS.yaw);
+    const [minYaw, maxYaw] = yawBounds();
+    look.toYaw = clamp(look.toYaw + (dx / vw) * 1.6, minYaw, maxYaw);
     look.toPitch = clamp(look.toPitch + (dy / vh) * 1.2, -LIMITS.down, LIMITS.up);
     request();
   }
@@ -1038,8 +1048,13 @@ export async function createDesk(opts: {
     for (const p of ["width", "height", "inset", "transform", "transition", "opacity"] as const) screenEl.style.removeProperty(p === "inset" ? "inset" : p);
   };
 
-  opts.sound?.mount(host); // the mute button, shown with the desk
+  opts.sound?.mount(host); // the mute button, shown with the desk once stepped back
+  const soundToggle = host.querySelector<HTMLElement>(".sound-toggle");
+  if (soundToggle) soundToggle.hidden = true;
   const hint = document.getElementById("desk-hint");
+  if (hint && coarsePointer) {
+    hint.textContent = "drag to look · pinch to lean · tap anything · tap screen to sit";
+  }
   const credit = document.getElementById("credit");
   if (credit && loaded) {
     const c = MODEL_CREDIT;
@@ -1056,38 +1071,104 @@ export async function createDesk(opts: {
     ray.setFromCamera(pointer, camera);
     return ray.intersectObject(loaded.tube, false).length > 0;
   };
-  let down: { x: number; y: number } | null = null;
   const canvas = renderer.domElement;
-  let last: { x: number; y: number } | null = null;
+  const activePointers = new Map<number, { x: number; y: number }>();
+  let down: { id: number; x: number; y: number } | null = null;
+  let gestureMoved = false;
+  let pinchDist = 0;
+  let touchChipTimer = 0;
+  const clearTouchChip = () => {
+    if (touchChipTimer) {
+      clearTimeout(touchChipTimer);
+      touchChipTimer = 0;
+      if (touch.leave()) request();
+    }
+  };
+  const pairDistance = () => {
+    const [a, b] = [...activePointers.values()];
+    return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : 0;
+  };
   canvas.addEventListener("pointerdown", (e) => {
-    down = { x: e.clientX, y: e.clientY };
-    last = { x: e.clientX, y: e.clientY };
-    if (look.active) canvas.setPointerCapture(e.pointerId);
+    clearTouchChip();
+    activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (look.active) {
+      try {
+        canvas.setPointerCapture(e.pointerId);
+      } catch {
+        /* synthetic or uncapturable pointer */
+      }
+    }
+    if (activePointers.size === 1) {
+      down = { id: e.pointerId, x: e.clientX, y: e.clientY };
+      gestureMoved = false;
+    } else {
+      down = null;
+      gestureMoved = true;
+      pinchDist = pairDistance();
+    }
   });
   canvas.addEventListener("wheel", (e) => {
     if (look.active) leanBy(-e.deltaY * 0.0006);
   }, { passive: true });
+  canvas.addEventListener("pointercancel", (e) => {
+    activePointers.delete(e.pointerId);
+    if (activePointers.size < 2) pinchDist = 0;
+    if (down?.id === e.pointerId) down = null;
+  });
   canvas.addEventListener("pointerup", (e) => {
-    const click = down && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 6;
+    activePointers.delete(e.pointerId);
+    if (activePointers.size < 2) pinchDist = 0;
+    const tol = e.pointerType === "touch" ? 10 : 6;
+    const click = down?.id === e.pointerId && !gestureMoved && Math.hypot(e.clientX - down.x, e.clientY - down.y) < tol;
     down = null;
     if (!click || seated || transitioning || editing) return;
     const target = touch.pick(e, vw, vh);
-    if (target) touch.click(target);
-    else if (onGlass(e)) void api.sitDown();
+    if (target) {
+      touch.click(target);
+      if (e.pointerType === "touch" && !target.spot.nav) {
+        if (touch.hover(target, e)) request();
+        const chip = host.querySelector<HTMLElement>(".prop-label");
+        if (chip && !chip.hidden) {
+          const r = chip.getBoundingClientRect();
+          const x = clamp(Math.round(e.clientX - r.width / 2), 12, Math.max(12, vw - r.width - 12));
+          const y = clamp(Math.round(e.clientY - r.height - 18), 52, Math.max(52, vh - r.height - 64));
+          chip.style.transform = `translate(${x}px, ${y}px)`;
+        }
+        touchChipTimer = window.setTimeout(() => {
+          touchChipTimer = 0;
+          if (touch.leave()) request();
+        }, 1800);
+      }
+    } else if (onGlass(e)) void api.sitDown();
   });
   // Hover: one raycast per frame at most, however fast the pointer moves.
   let hoverEvent: PointerEvent | null = null;
   canvas.addEventListener("pointermove", (e) => {
     if (seated || editing) return;
-    if (e.buttons) {
+    const prev = activePointers.get(e.pointerId);
+    if (prev) {
+      if (activePointers.size >= 2) {
+        activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        const dist = pairDistance();
+        if (look.active && pinchDist > 0 && dist > 0) leanBy((dist - pinchDist) * 0.0028);
+        pinchDist = dist;
+        if (touch.leave()) request();
+        return;
+      }
+      const dx = e.clientX - prev.x;
+      const dy = e.clientY - prev.y;
+      activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) >= (e.pointerType === "touch" ? 10 : 6)) {
+        gestureMoved = true;
+      }
       if (touch.leave()) request();
-      if (look.active && last) {
-        turnHead(e.clientX - last.x, e.clientY - last.y);
-        last = { x: e.clientX, y: e.clientY };
+      if (look.active && (dx !== 0 || dy !== 0)) {
+        turnHead(dx, dy);
         canvas.style.cursor = "grabbing";
       }
       return;
     }
+    if (e.pointerType === "touch") return;
     if (!hoverEvent) {
       requestAnimationFrame(() => {
         const ev = hoverEvent!;
@@ -1218,6 +1299,7 @@ export async function createDesk(opts: {
       }
       if (hint) hint.hidden = editing; // the editor panel has its own help
       if (credit && loaded) credit.hidden = false;
+      if (soundToggle) soundToggle.hidden = false;
       transitioning = false;
       if (!nightWarmed) {
         nightWarmed = true;
@@ -1229,6 +1311,9 @@ export async function createDesk(opts: {
     async sitDown() {
       if (seated || transitioning) return;
       transitioning = true;
+      clearTouchChip();
+      activePointers.clear();
+      down = null;
       if (controls) controls.enabled = false;
       if (look.active) {
         const at = lookTarget(); // the flight starts from where you're looking
@@ -1238,6 +1323,7 @@ export async function createDesk(opts: {
       }
       if (hint) hint.hidden = true;
       if (credit) credit.hidden = true;
+      if (soundToggle) soundToggle.hidden = true;
       const close = closeUp();
       opts.sound?.setInside(1);
       await fly(close, 1200, 0, easeIn);

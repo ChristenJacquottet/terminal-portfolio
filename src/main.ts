@@ -46,7 +46,7 @@ function stepBack() {
       },
       onSitDown: () => {
         term.print([[s(`Last login: ${stamp(new Date())} on ttys000`, "dim")]]);
-        term.focus();
+        if (!window.matchMedia("(pointer: coarse)").matches) term.focus();
       },
       run: (command) => void term.type(command, 12),
       sound: {
@@ -145,7 +145,7 @@ async function boot() {
   if (fromHash) await term.type(fromHash, 10);
   // `?edit` opens the desk's layout editor (editor.ts), so go straight to the desk.
   if (new URLSearchParams(location.search).has("edit")) await term.type("exit", 10);
-  term.focus();
+  if (!window.matchMedia("(pointer: coarse)").matches) term.focus();
   scheduleDeskPrefetch();
 }
 

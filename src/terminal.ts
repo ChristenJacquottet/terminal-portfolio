@@ -431,7 +431,8 @@ export class Terminal {
           return;
         }
         void this.type(button.dataset.run, 14);
-        this.focus();
+        // On touch screens, tapping inline command buttons shouldn't pop the virtual keyboard over the output.
+        if (!window.matchMedia("(pointer: coarse)").matches) this.focus();
         return;
       }
       if (target.closest("a")) return;
