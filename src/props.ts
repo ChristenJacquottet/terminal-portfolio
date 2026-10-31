@@ -46,6 +46,7 @@ import {
 import type { GLTF, GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import {
   addMapPostcards,
+  addSwitchLeds,
   avocadoSheet,
   converterPinout,
   crawlerPrintout,
@@ -1111,7 +1112,8 @@ export async function addProps(
     const crt = onRack("crt", 0, -0.14, { height: 0.28 });
     if (crt) fitCrtScreen(crt, onChange);
     onRack("mac128k", 0, 0.2, { height: 0.3, rotY: Math.PI - 0.15 }); // the model faces away
-    onRack("switch", 1, -0.13, { width: 0.24 });
+    const sw = onRack("switch", 1, -0.13, { width: 0.24 });
+    if (sw) addSwitchLeds(sw);
     onRack("nas", 1, 0.18, { height: 0.19 });
     onRack("c64", 2, 0, { width: 0.4 });
     const lowest = onRack("thinkpad", 3, -0.02, { width: 0.33 });

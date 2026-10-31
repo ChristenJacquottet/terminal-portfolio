@@ -2,13 +2,17 @@
 // place postcards pinned around the world map, period paper artifacts from published case
 // studies, and small status LEDs on the rack switch.
 import {
+  AdditiveBlending,
+  Box3,
   BufferGeometry,
   CanvasTexture,
   CatmullRomCurve3,
+  Color,
   Float32BufferAttribute,
   Group,
   Matrix3,
   Mesh,
+  MeshBasicMaterial,
   MeshStandardMaterial,
   PlaneGeometry,
   SphereGeometry,
@@ -1218,4 +1222,106 @@ export function pantryMap(): Mesh {
     "Minecraft Food Pantry",
   );
   return mesh;
+}
+
+// ── small life: tiny link/power LEDs on the home-lab rack switch ───────────────────────────
+
+/**
+ * Fits a single merged vertex-coloured LED mesh onto the front panel of the 8-port rack switch:
+ * power on the left bezel plus a handful of active RJ45 link/activity tabs (static, zero idle draws).
+ */
+export function addSwitchLeds(sw: Object3D): void {
+  sw.updateMatrixWorld(true);
+  const invSw = sw.matrixWorld.clone().invert();
+  const localBox = new Box3();
+  const v = new Vector3();
+
+  sw.traverse((o) => {
+    const m = o as Mesh;
+    if (!m.isMesh) return;
+    const mat = m.material as MeshStandardMaterial;
+    if (mat?.transparent) return;
+    const pos = m.geometry.getAttribute("position");
+    if (!pos) return;
+    const toSw = invSw.clone().multiply(m.matrixWorld);
+    for (let i = 0; i < pos.count; i++) {
+      localBox.expandByPoint(v.fromBufferAttribute(pos, i).applyMatrix4(toSw));
+    }
+  });
+  if (localBox.isEmpty()) return;
+
+  const w = localBox.max.x - localBox.min.x; // 0.24 m across the 8-port bezel
+  const h = localBox.max.y - localBox.min.y; // 0.0373 m tall
+  const frontZ = localBox.max.z;
+
+  // Soft 64×64 diode glow sprite: crisp pill core with a subtle optical halo on the dark bezel.
+  const { ctx: g, texture } = makeCanvas(64, 64);
+  g.fillStyle = "#000000";
+  g.fillRect(0, 0, 64, 64);
+  const halo = g.createRadialGradient(32, 32, 3, 32, 32, 30);
+  halo.addColorStop(0, "rgba(255, 255, 255, 1)");
+  halo.addColorStop(0.32, "rgba(255, 255, 255, 0.88)");
+  halo.addColorStop(0.62, "rgba(255, 255, 255, 0.22)");
+  halo.addColorStop(1, "rgba(0, 0, 0, 0)");
+  g.fillStyle = halo;
+  g.fillRect(0, 0, 64, 64);
+  g.fillStyle = "#ffffff";
+  g.beginPath();
+  g.roundRect(21, 23, 22, 18, 5);
+  g.fill();
+
+  // Port pitch and RJ45 shield LED lenses on the TP-Link TL-SG108E front bezel.
+  const port8Center = localBox.min.x + w * 0.8495;
+  const portPitch = w * 0.10225;
+  const portCenter = (port1To8: number) => port8Center - (8 - port1To8) * portPitch;
+  const leftTab = -w * 0.029;
+  const rightTab = w * 0.029;
+  const tabY = localBox.min.y + h * 0.715;
+
+  const leds: { x: number; y: number; hex: string; sx?: number; sy?: number }[] = [
+    // Left-bezel power LED inside its recessed window above "Power"
+    { x: localBox.min.x + w * 0.05, y: localBox.min.y + h * 0.375, hex: "#5ce87e", sx: 0.0036, sy: 0.003 },
+    // Port 1 (uplink): link + act
+    { x: portCenter(1) + leftTab, y: tabY, hex: "#72f592" },
+    { x: portCenter(1) + rightTab, y: tabY, hex: "#52d974" },
+    // Port 2 (NAS): link
+    { x: portCenter(2) + leftTab, y: tabY, hex: "#72f592" },
+    // Port 5 (lab monitor / 100M): amber link
+    { x: portCenter(5) + leftTab, y: tabY, hex: "#ffb845" },
+    // Port 7 (desk): link + act
+    { x: portCenter(7) + leftTab, y: tabY, hex: "#72f592" },
+    { x: portCenter(7) + rightTab, y: tabY, hex: "#52d974" },
+  ];
+
+  const quads: BufferGeometry[] = leds.map((led) => {
+    const q = new PlaneGeometry(led.sx ?? 0.0042, led.sy ?? 0.0033);
+    q.translate(led.x, led.y, frontZ + 0.00045);
+    const c = new Color(led.hex);
+    const count = q.getAttribute("position").count;
+    const cols = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      cols[i * 3] = c.r;
+      cols[i * 3 + 1] = c.g;
+      cols[i * 3 + 2] = c.b;
+    }
+    q.setAttribute("color", new Float32BufferAttribute(cols, 3));
+    return q;
+  });
+
+  const merged = mergeGeos(quads);
+
+  const mat = new MeshBasicMaterial({
+    map: texture,
+    vertexColors: true,
+    blending: AdditiveBlending,
+    transparent: true,
+    depthWrite: false,
+    toneMapped: false,
+  });
+  const mesh = new Mesh(merged, mat);
+  mesh.name = "switch_leds";
+  mesh.castShadow = false;
+  mesh.receiveShadow = false;
+  mesh.raycast = () => {};
+  sw.add(mesh);
 }
