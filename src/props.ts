@@ -44,7 +44,7 @@ import {
   type Scene,
 } from "three";
 import type { GLTF, GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import { fitCrtScreen } from "./alive";
+import { addMapPostcards, fitCrtScreen } from "./alive";
 import { applyPose, currentLayout, poseOf } from "./layout";
 import type { Room } from "./room";
 
@@ -750,94 +750,76 @@ function pixelPortrait(): Group {
   return framed(art, 0.15, 0.15, "#111", 0.02);
 }
 
-/** The cork board: postcards of every place home has been, joined by red string, like the fridge timeline. */
+/** The workbench cork board under the right shelf: cork grain, old pinholes and a ruled reference card. */
 function corkboard(): Group {
-  const W = 1024;
-  const H = 720;
-  const areas: { x: number; y: number; w: number; h: number; place: string }[] = [];
+  const W = 512;
+  const H = 360;
   const art = canvas(W, H, (g) => {
-    g.fillStyle = "#b98a5a";
+    g.fillStyle = "#a87a4f";
     g.fillRect(0, 0, W, H);
-    for (let i = 0; i < 9000; i++) {
-      g.fillStyle = `rgba(${Math.random() < 0.5 ? "90,55,25" : "235,200,150"},${0.12 + Math.random() * 0.18})`;
-      g.fillRect(Math.random() * W, Math.random() * H, 2 + Math.random() * 3, 2 + Math.random() * 3);
+    for (let i = 0; i < 4200; i++) {
+      g.fillStyle = `rgba(${Math.random() < 0.5 ? "82,48,22" : "232,196,148"},${0.11 + Math.random() * 0.16})`;
+      g.fillRect(Math.random() * W, Math.random() * H, 1.5 + Math.random() * 2.5, 1.5 + Math.random() * 2.5);
     }
-    type Card = { x: number; y: number; rot: number; place: string; paint: (g: CanvasRenderingContext2D) => void };
-    const cards: Card[] = [
-      { x: 150, y: 520, rot: -0.06, place: "LA RÉUNION", paint: (c) => {
-        c.fillStyle = "#8ccbe0"; c.fillRect(0, 0, 220, 100);
-        c.fillStyle = "#4c6b43"; c.beginPath(); c.moveTo(0, 100); c.lineTo(70, 30); c.lineTo(110, 55); c.lineTo(150, 20); c.lineTo(220, 100); c.fill();
-        c.fillStyle = "#2b6f95"; c.fillRect(0, 100, 220, 40);
-      } },
-      { x: 410, y: 560, rot: 0.05, place: "GUYANE", paint: (c) => {
-        c.fillStyle = "#cfe8d0"; c.fillRect(0, 0, 220, 140);
-        c.fillStyle = "#2f6b3a"; for (let i = 0; i < 14; i++) { c.beginPath(); c.arc(10 + i * 16, 110 - (i % 3) * 8, 22, 0, Math.PI * 2); c.fill(); }
-        c.fillStyle = "#f2f2f2"; c.fillRect(150, 20, 12, 70); c.beginPath(); c.moveTo(150, 20); c.lineTo(156, 4); c.lineTo(162, 20); c.fill();
-      } },
-      { x: 180, y: 250, rot: 0.04, place: "NORMANDIE", paint: (c) => {
-        c.fillStyle = "#c7d6e2"; c.fillRect(0, 0, 220, 140);
-        c.fillStyle = "#e8e4d6"; c.beginPath(); c.moveTo(0, 30); c.lineTo(120, 40); c.lineTo(140, 100); c.lineTo(110, 100); c.lineTo(100, 70); c.lineTo(80, 140); c.lineTo(0, 140); c.fill();
-        c.fillStyle = "#5f8aa3"; c.fillRect(0, 115, 220, 25);
-      } },
-      { x: 520, y: 170, rot: -0.04, place: "INDIANA", paint: (c) => {
-        c.fillStyle = "#bcdcf0"; c.fillRect(0, 0, 220, 140);
-        c.fillStyle = "#d8b24a"; c.fillRect(0, 80, 220, 60);
-        c.fillStyle = "#a83a2c"; c.fillRect(120, 45, 60, 45); c.beginPath(); c.moveTo(115, 45); c.lineTo(150, 20); c.lineTo(185, 45); c.fill();
-      } },
-      { x: 790, y: 300, rot: 0.06, place: "LONDON", paint: (c) => {
-        c.fillStyle = "#cfd4d8"; c.fillRect(0, 0, 220, 140);
-        c.fillStyle = "#7a6a52"; c.fillRect(95, 20, 30, 120); c.beginPath(); c.moveTo(95, 20); c.lineTo(110, 0); c.lineTo(125, 20); c.fill();
-        c.fillStyle = "#f2efe4"; c.beginPath(); c.arc(110, 45, 10, 0, Math.PI * 2); c.fill();
-        c.fillStyle = "#c8312a"; c.fillRect(20, 105, 60, 30);
-      } },
-      { x: 760, y: 560, rot: -0.05, place: "DALLAS", paint: (c) => {
-        const sky = c.createLinearGradient(0, 0, 0, 140); sky.addColorStop(0, "#f3a65f"); sky.addColorStop(1, "#f7dca0");
-        c.fillStyle = sky; c.fillRect(0, 0, 220, 140);
-        c.fillStyle = "#2d2a35"; [[20, 60], [50, 40], [80, 75], [130, 50], [165, 30], [195, 65]].forEach(([x, top]) => c.fillRect(x, top, 24, 140 - top));
-        c.fillRect(108, 30, 5, 110); c.beginPath(); c.arc(110, 28, 12, 0, Math.PI * 2); c.fill();
-      } },
-    ];
-    areas.push(...cards.map((c) => ({ x: c.x - 120, y: c.y - 80, w: 240, h: 180, place: c.place })));
-    // The string first, so the cards and pins sit on top of it.
-    g.strokeStyle = "#b3241c";
-    g.lineWidth = 3;
+    // Inner frame shadow along the cork edges
+    const inner = g.createLinearGradient(0, 0, 0, 26);
+    inner.addColorStop(0, "rgba(35,20,10,0.28)");
+    inner.addColorStop(1, "rgba(35,20,10,0)");
+    g.fillStyle = inner;
+    g.fillRect(0, 0, W, 26);
+
+    // Faint old pinholes scattered where earlier notes were tacked
+    g.fillStyle = "rgba(45,26,12,0.45)";
+    for (const [px, py] of [[76, 52], [218, 48], [94, 286], [268, 304], [430, 268]]) {
+      g.beginPath();
+      g.arc(px, py, 2.2, 0, Math.PI * 2);
+      g.fill();
+    }
+
+    // A small ruled index slip in the upper-right corner (unit & baud reference, no biographical claims)
+    g.save();
+    g.translate(414, 92);
+    g.rotate(0.05);
+    g.fillStyle = "rgba(0,0,0,0.22)";
+    g.fillRect(-64, -50, 132, 102);
+    g.fillStyle = "#ece2cc";
+    g.fillRect(-66, -52, 132, 102);
+    g.strokeStyle = "rgba(184,65,44,0.45)";
+    g.lineWidth = 1.5;
     g.beginPath();
-    cards.forEach((c, i) => (i ? g.lineTo(c.x, c.y - 70) : g.moveTo(c.x, c.y - 70)));
+    g.moveTo(-66, -28);
+    g.lineTo(66, -28);
     g.stroke();
-    for (const c of cards) {
-      g.save();
-      g.translate(c.x, c.y);
-      g.rotate(c.rot);
-      g.fillStyle = "rgba(0,0,0,0.25)";
-      g.fillRect(-116, -76, 240, 180);
-      g.fillStyle = "#f6f1e4";
-      g.fillRect(-120, -80, 240, 180);
-      g.save();
-      g.translate(-110, -70);
+    g.strokeStyle = "rgba(63,95,140,0.28)";
+    g.lineWidth = 1;
+    for (let y = -12; y <= 36; y += 16) {
       g.beginPath();
-      g.rect(0, 0, 220, 140);
-      g.clip();
-      c.paint(g);
-      g.restore();
-      g.fillStyle = "#2c2a30";
-      g.font = "bold 20px Georgia, serif";
-      g.textAlign = "center";
-      g.fillText(c.place, 0, 92);
-      g.restore();
-      g.fillStyle = "#d8342a";
-      g.beginPath();
-      g.arc(c.x, c.y - 70, 9, 0, Math.PI * 2);
-      g.fill();
-      g.fillStyle = "rgba(255,255,255,0.6)";
-      g.beginPath();
-      g.arc(c.x - 3, c.y - 73, 3, 0, Math.PI * 2);
-      g.fill();
+      g.moveTo(-66, y);
+      g.lineTo(66, y);
+      g.stroke();
     }
+    g.fillStyle = "#322b26";
+    g.font = "11px 'IBM Plex Mono', monospace";
+    g.textAlign = "left";
+    g.fillText("GRID / UNITS", -54, -34);
+    g.font = "10px 'IBM Plex Mono', monospace";
+    g.fillStyle = "rgba(50,43,38,0.8)";
+    g.fillText("1 in = 25.4 mm", -54, -1);
+    g.fillText("1 ft = 0.305 m", -54, 15);
+    g.fillText("9600  8-N-1", -54, 31);
+    g.restore();
+
+    // Brass push-pin holding the reference slip
+    g.fillStyle = "#b58b4c";
+    g.beginPath();
+    g.arc(416, 46, 5.5, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = "rgba(255,245,215,0.6)";
+    g.beginPath();
+    g.arc(414, 44, 2, 0, Math.PI * 2);
+    g.fill();
   });
-  const board = framed(art, 0.6, 0.42, "#8a6440", 0);
-  // Hovering a postcard names the place: interact.ts maps the hit's uv into these canvas rects.
-  board.userData.hotspot = { kind: "places", label: "every place home has been", areas, size: [W, H] };
-  return board;
+  return framed(art, 0.6, 0.42, "#5a3a28", 0);
 }
 
 /**
@@ -958,7 +940,9 @@ export async function addProps(
   put("ball", place(tennisBall(), room.desk.maxX - 0.3, back + 0.12, { height: 0.067 }));
   // The cutting mat under the computer, and the big world map behind it, like the one in my room.
   scene.add(cuttingMat(min.x - 0.12, max.x + 0.16, back + 0.03, max.z + 0.05));
-  put("worldmap", hang(wallMap(onChange), (min.x + max.x) / 2 - 0.02, 0.58, wall, 0.56));
+  const map = hang(wallMap(onChange), (min.x + max.x) / 2 - 0.02, 0.58, wall, 0.56);
+  addMapPostcards(map);
+  put("worldmap", map);
   put("cube", place(rubik(), min.x - 0.25, max.z + 0.2, { height: 0.057, rotY: 0.5 }));
   put("bitcoin", place(bitcoin(), max.x + 0.16, max.z + 0.03, { width: 0.04 }));
   // The right wall: a floating shelf (books, the framed things leaning on it, the grad cap), the cork

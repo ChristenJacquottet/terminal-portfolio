@@ -2,16 +2,23 @@
 // place postcards pinned around the world map, period paper artifacts from published case
 // studies, and small status LEDs on the rack switch.
 import {
+  BufferGeometry,
   CanvasTexture,
+  CatmullRomCurve3,
+  Float32BufferAttribute,
+  Group,
   Matrix3,
   Mesh,
   MeshStandardMaterial,
   PlaneGeometry,
+  SphereGeometry,
   SRGBColorSpace,
+  TubeGeometry,
   Vector3,
   type Object3D,
 } from "three";
 import { HOST } from "./content";
+import { PLACES } from "./interact";
 
 function makeCanvas(w: number, h: number) {
   const c = document.createElement("canvas");
@@ -308,4 +315,240 @@ export function fitCrtScreen(crt: Object3D, onChange: () => void) {
   window.setInterval(maybeUpdate, 60_000);
   document.addEventListener("visibilitychange", maybeUpdate);
   if (deskEl) new MutationObserver(maybeUpdate).observe(deskEl, { attributes: true, attributeFilter: ["hidden"] });
+}
+
+// ── geometry merge helper (keeps strings, pins and LED quads in single draw calls) ─────────
+
+export function mergeGeos(geos: BufferGeometry[]): BufferGeometry {
+  const flat = geos.map((g) => (g.index ? g.toNonIndexed() : g));
+  const out = new BufferGeometry();
+  for (const attr of ["position", "normal", "uv", "color"] as const) {
+    if (!flat.every((g) => Boolean(g.getAttribute(attr)))) continue;
+    const itemSize = flat[0].getAttribute(attr).itemSize;
+    const total = flat.reduce((n, g) => n + g.getAttribute(attr).count * itemSize, 0);
+    const data = new Float32Array(total);
+    let offset = 0;
+    for (const g of flat) {
+      const a = g.getAttribute(attr);
+      for (let i = 0; i < a.count; i++) {
+        for (let k = 0; k < itemSize; k++) data[offset++] = a.array[i * itemSize + k];
+      }
+    }
+    out.setAttribute(attr, new Float32BufferAttribute(data, itemSize));
+  }
+  return out;
+}
+
+// ── postcards around the world map (Miller projection from scripts/world-map.mjs) ──────────
+
+const MAP_W_PX = 4096;
+const MAP_H_PX = 2048;
+const MAP_TITLE_H = 114;
+const MAP_BODY_H = MAP_H_PX - MAP_TITLE_H;
+const LAT_NORTH = 84;
+const LAT_SOUTH = -80;
+const WALL_MAP_W = 1.12;
+const WALL_MAP_H = 0.56;
+
+const millerY = (phi: number) => 1.25 * Math.log(Math.tan(Math.PI / 4 + 0.4 * phi));
+const MILLER_NORTH = millerY((LAT_NORTH * Math.PI) / 180);
+const MILLER_SOUTH = millerY((LAT_SOUTH * Math.PI) / 180);
+
+/** Projects `(lon, lat)` in degrees onto the `1.12 × 0.56 m` wall map's local `(x, y)`. */
+export function projectMillerMap(lon: number, lat: number): [number, number] {
+  const px = ((lon + 180) / 360) * MAP_W_PX;
+  const clamped = Math.max(-89.9, Math.min(89.9, lat));
+  const py = MAP_TITLE_H + ((MILLER_NORTH - millerY((clamped * Math.PI) / 180)) / (MILLER_NORTH - MILLER_SOUTH)) * MAP_BODY_H;
+  const x = (px / MAP_W_PX - 0.5) * WALL_MAP_W;
+  const y = (0.5 - py / MAP_H_PX) * WALL_MAP_H;
+  return [x, y];
+}
+
+type PlaceCard = {
+  place: string;
+  lon: number;
+  lat: number;
+  cx: number;
+  cy: number;
+  rot: number;
+  paint: (c: CanvasRenderingContext2D) => void;
+};
+
+const PLACE_CARDS: PlaceCard[] = [
+  {
+    place: "LA RÉUNION",
+    lon: 55.53,
+    lat: -21.11,
+    cx: 0.395,
+    cy: -0.246,
+    rot: -0.05,
+    paint: (c) => {
+      c.fillStyle = "#8ccbe0"; c.fillRect(0, 0, 220, 100);
+      c.fillStyle = "#4c6b43"; c.beginPath(); c.moveTo(0, 100); c.lineTo(70, 30); c.lineTo(110, 55); c.lineTo(150, 20); c.lineTo(220, 100); c.fill();
+      c.fillStyle = "#2b6f95"; c.fillRect(0, 100, 220, 40);
+    },
+  },
+  {
+    place: "GUYANE",
+    lon: -53.2,
+    lat: 3.95,
+    cx: -0.373,
+    cy: -0.246,
+    rot: 0.05,
+    paint: (c) => {
+      c.fillStyle = "#cfe8d0"; c.fillRect(0, 0, 220, 140);
+      c.fillStyle = "#2f6b3a"; for (let i = 0; i < 14; i++) { c.beginPath(); c.arc(10 + i * 16, 110 - (i % 3) * 8, 22, 0, Math.PI * 2); c.fill(); }
+      c.fillStyle = "#f2f2f2"; c.fillRect(150, 20, 12, 70); c.beginPath(); c.moveTo(150, 20); c.lineTo(156, 4); c.lineTo(162, 20); c.fill();
+    },
+  },
+  {
+    place: "NORMANDIE",
+    lon: -0.85,
+    lat: 49.15,
+    cx: 0.195,
+    cy: 0.262,
+    rot: -0.04,
+    paint: (c) => {
+      c.fillStyle = "#c7d6e2"; c.fillRect(0, 0, 220, 140);
+      c.fillStyle = "#e8e4d6"; c.beginPath(); c.moveTo(0, 30); c.lineTo(120, 40); c.lineTo(140, 100); c.lineTo(110, 100); c.lineTo(100, 70); c.lineTo(80, 140); c.lineTo(0, 140); c.fill();
+      c.fillStyle = "#5f8aa3"; c.fillRect(0, 115, 220, 25);
+    },
+  },
+  {
+    place: "INDIANA",
+    lon: -85.5,
+    lat: 40.48,
+    cx: -0.335,
+    cy: 0.258,
+    rot: -0.04,
+    paint: (c) => {
+      c.fillStyle = "#bcdcf0"; c.fillRect(0, 0, 220, 140);
+      c.fillStyle = "#d8b24a"; c.fillRect(0, 80, 220, 60);
+      c.fillStyle = "#a83a2c"; c.fillRect(120, 45, 60, 45); c.beginPath(); c.moveTo(115, 45); c.lineTo(150, 20); c.lineTo(185, 45); c.fill();
+    },
+  },
+  {
+    place: "LONDON",
+    lon: -0.13,
+    lat: 51.51,
+    cx: -0.16,
+    cy: 0.262,
+    rot: 0.04,
+    paint: (c) => {
+      c.fillStyle = "#cfd4d8"; c.fillRect(0, 0, 220, 140);
+      c.fillStyle = "#7a6a52"; c.fillRect(95, 20, 30, 120); c.beginPath(); c.moveTo(95, 20); c.lineTo(110, 0); c.lineTo(125, 20); c.fill();
+      c.fillStyle = "#f2efe4"; c.beginPath(); c.arc(110, 45, 10, 0, Math.PI * 2); c.fill();
+      c.fillStyle = "#c8312a"; c.fillRect(20, 105, 60, 30);
+    },
+  },
+  {
+    place: "DALLAS",
+    lon: -96.8,
+    lat: 32.78,
+    cx: -0.45,
+    cy: 0.035,
+    rot: -0.05,
+    paint: (c) => {
+      const sky = c.createLinearGradient(0, 0, 0, 140); sky.addColorStop(0, "#f3a65f"); sky.addColorStop(1, "#f7dca0");
+      c.fillStyle = sky; c.fillRect(0, 0, 220, 140);
+      c.fillStyle = "#2d2a35"; [[20, 60], [50, 40], [80, 75], [130, 50], [165, 30], [195, 65]].forEach(([x, top]) => c.fillRect(x, top, 24, 140 - top));
+      c.fillRect(108, 30, 5, 110); c.beginPath(); c.arc(110, 28, 12, 0, Math.PI * 2); c.fill();
+    },
+  },
+];
+
+function postcardTexture(card: PlaceCard): CanvasTexture {
+  const { ctx: g, texture } = makeCanvas(256, 192);
+  g.save();
+  g.scale(256 / 240, 192 / 180);
+  g.fillStyle = "#f4ede0";
+  g.fillRect(0, 0, 240, 180);
+  g.strokeStyle = "rgba(74, 54, 38, 0.25)";
+  g.lineWidth = 2;
+  g.strokeRect(1, 1, 238, 178);
+
+  g.save();
+  g.translate(10, 10);
+  g.beginPath();
+  g.rect(0, 0, 220, 140);
+  g.clip();
+  card.paint(g);
+  g.restore();
+
+  g.strokeStyle = "rgba(54, 46, 39, 0.18)";
+  g.lineWidth = 1;
+  g.strokeRect(10, 10, 220, 140);
+
+  g.fillStyle = "#2c2a30";
+  g.font = "bold 19px Georgia, 'Times New Roman', serif";
+  g.textAlign = "center";
+  g.textBaseline = "alphabetic";
+  g.fillText(card.place, 120, 170);
+  g.restore();
+  return texture;
+}
+
+/**
+ * Pins the six place postcards around the world map's edges (attached after `hang()` so the
+ * `1.12 × 0.56 m` map keeps its exact scale), connecting each postcard pin to its place on the map.
+ */
+export function addMapPostcards(mapHolder: Object3D) {
+  const cardW = 0.116;
+  const cardH = 0.087;
+  const pinOffsetY = 0.035;
+  const cardGeo = new PlaneGeometry(cardW, cardH);
+  const cardPinGeo = new SphereGeometry(0.0038, 10, 8);
+  const pinMat = new MeshStandardMaterial({ color: "#b8412c", roughness: 0.42 });
+  const stringMat = new MeshStandardMaterial({ color: "#b8412c", roughness: 0.85 });
+
+  const mapPins: BufferGeometry[] = [];
+  const strings: BufferGeometry[] = [];
+
+  for (const card of PLACE_CARDS) {
+    const pinX = card.cx;
+    const pinY = card.cy + pinOffsetY;
+    const [mapX, mapY] = projectMillerMap(card.lon, card.lat);
+
+    // Pivot at the push-pin so clicking a postcard swings it gently on its pin.
+    const group = new Group();
+    group.name = `postcard:${card.place.toLowerCase()}`;
+    group.position.set(pinX, pinY, 0.0048);
+    group.rotation.z = card.rot;
+    group.userData.hotspot = {
+      kind: "swing",
+      label: card.place,
+      hint: PLACES[card.place] ?? "home, once",
+    };
+
+    const sheet = new Mesh(cardGeo, new MeshStandardMaterial({ map: postcardTexture(card), roughness: 0.9 }));
+    sheet.position.set(0, -pinOffsetY, 0);
+    const cardPin = new Mesh(cardPinGeo, pinMat);
+    cardPin.position.set(0, 0, 0.0028);
+    group.add(sheet, cardPin);
+    mapHolder.add(group);
+
+    // Pin on the map at the Miller-projected coordinates.
+    const placePin = new SphereGeometry(0.0033, 10, 8);
+    placePin.translate(mapX, mapY, 0.0038);
+    mapPins.push(placePin);
+
+    // Red twine with a gentle gravity sag between the two pins.
+    const dist = Math.hypot(mapX - pinX, mapY - pinY);
+    const sag = Math.min(0.016, dist * 0.06);
+    const pts = [0, 0.25, 0.5, 0.75, 1].map((t) => {
+      const k = 4 * t * (1 - t);
+      return new Vector3(
+        pinX + (mapX - pinX) * t,
+        pinY + (mapY - pinY) * t - sag * k,
+        0.0056 + (0.0038 - 0.0056) * t + 0.001 * k,
+      );
+    });
+    strings.push(new TubeGeometry(new CatmullRomCurve3(pts), 14, 0.00095, 5, false));
+  }
+
+  const pinsMesh = new Mesh(mergeGeos(mapPins), pinMat);
+  pinsMesh.raycast = () => {};
+  const stringsMesh = new Mesh(mergeGeos(strings), stringMat);
+  stringsMesh.raycast = () => {};
+  mapHolder.add(pinsMesh, stringsMesh);
 }
