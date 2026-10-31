@@ -74,7 +74,7 @@ const BY_NAME: Record<string, Hotspot> = {
   worldmap: { kind: "swing", label: "the world map", hint: "the one from my room" },
   books: { kind: "wiggle", label: "books" },
   rack: { kind: "wiggle", label: "the home lab", hint: "it hums" },
-  crt: { kind: "wiggle", label: "a Sony PVM", hint: "the lab's monitor" },
+  crt: { kind: "crt", label: "a Sony PVM", hint: "lab status · run neofetch", nav: true, command: "neofetch" },
   mac128k: { kind: "hop", label: "Macintosh 128K", hint: "the other old one" },
   c64: { kind: "wiggle", label: "Commodore 64" },
   switch: { kind: "wiggle", label: "the switch" },
@@ -553,6 +553,14 @@ export function createInteractions(o: {
       case "time":
         o.sfx("lidClose"); // the blinds
         o.setTime(o.time() === "dusk" ? "night" : "dusk");
+        return;
+      case "crt":
+        o.sfx("switch");
+        void once(object, async () => {
+          leave();
+          await wiggle(object, 0.03);
+          await o.sitDownAndRun(spot.command ?? "neofetch");
+        });
         return;
       case "answering":
         o.sfx("click");

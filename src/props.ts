@@ -44,6 +44,7 @@ import {
   type Scene,
 } from "three";
 import type { GLTF, GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { fitCrtScreen } from "./alive";
 import { applyPose, currentLayout, poseOf } from "./layout";
 import type { Room } from "./room";
 
@@ -1096,7 +1097,8 @@ export async function addProps(
       if (!o || y === undefined) return null;
       return put(name, place(o, labX + along.x * dx, labZ + along.z * dx, { ...opts, rotY: turn + (opts.rotY ?? 0), y, shadow: true }));
     };
-    onRack("crt", 0, -0.14, { height: 0.28 });
+    const crt = onRack("crt", 0, -0.14, { height: 0.28 });
+    if (crt) fitCrtScreen(crt, onChange);
     onRack("mac128k", 0, 0.2, { height: 0.3, rotY: Math.PI - 0.15 }); // the model faces away
     onRack("switch", 1, -0.13, { width: 0.24 });
     onRack("nas", 1, 0.18, { height: 0.19 });
