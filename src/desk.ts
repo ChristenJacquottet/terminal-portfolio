@@ -359,12 +359,14 @@ export async function createDesk(opts: {
   const roomLoader = new GLTFLoader();
   roomLoader.setMeshoptDecoder(MeshoptDecoder);
   MeshoptDecoder.useWorkers?.(2); // decode the models off the main thread
-  const roomAssets = loadRoom(roomLoader);
+  const roomAssets = loadRoom();
   // Progress: the computer is the first third, the props the rest.
   const loaded = await loadModel((f) => opts.onProgress(f * 0.35));
   const { root, screen } = loaded ?? standIn();
   scene.add(root);
-  const room = buildRoom(scene, await roomAssets, new Box3().setFromObject(root));
+  const room = buildRoom(scene, await roomAssets, new Box3().setFromObject(root), {
+    initTexture: (t) => renderer.initTexture(t),
+  });
   // The home lab's corner, past the end of the desk, gets its own small warm light.
   const labLight = new PointLight("#ffc488", 0.45, 1.6, 2);
   labLight.position.set(room.desk.maxX + 0.45, 0.75, room.wallZ + 0.6);

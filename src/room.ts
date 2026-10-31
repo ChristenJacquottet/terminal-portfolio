@@ -1,11 +1,12 @@
-// The room around the computer: a steel desk, a plaster wall with a window onto a 1980s Dallas
-// skyline at night, venetian blinds, a floor. Loaded alongside the computer.
-// Desk model and textures: Poly Haven (CC0). The skyline is drawn here, in code.
+// The room around the computer: an oak desk, a plaster wall with a window onto a 1980s Dallas
+// skyline, venetian blinds, a floor. Loaded alongside the computer.
+// Room textures: Poly Haven (CC0). The wooden desk and the skyline are built here, in code.
 import {
   Cache,
   ImageLoader,
   Box3,
   BoxGeometry,
+   type BufferGeometry,
   CanvasTexture,
   DirectionalLight,
   DoubleSide,
@@ -27,9 +28,9 @@ import {
   type Scene,
   type Texture,
 } from "three";
-import type { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
-export type RoomAssets = { desk: Group | null; floor: Texture | null };
+export type RoomAssets = { floor: Texture | null };
 
 /** What the props need to know about the room. Desk top is y = 0; the wall faces +z. */
 export type Room = {
@@ -44,13 +45,17 @@ export type Room = {
   windowFrame: Object3D;
   /** Golden hour or the middle of the night: the sky outside and the light it lets in. */
   setTime(time: Time): void;
+  /** Paints the 2 AM skyline on idle so clicking the window never stalls. */
+  warmNight(): void;
 };
 
 export type Time = "dusk" | "night";
 
 const PAINT = "#e8e0cc";
+/** Exact extents of the desk footprint (2 m × 0.78744 m × 0.94711 m) every prop was arranged on. */
+const DESK_SIZE = { w: 2, h: 0.78744, d: 0.94711 };
 
-export async function loadRoom(loader: GLTFLoader): Promise<RoomAssets> {
+export async function loadRoom(): Promise<RoomAssets> {
   const tex = new TextureLoader();
   const get = (url: string) => tex.loadAsync(url).catch(() => null);
   // The oak and the wall map are fetched now too (into three's cache), so they're there on the
@@ -58,12 +63,11 @@ export async function loadRoom(loader: GLTFLoader): Promise<RoomAssets> {
   Cache.enabled = true;
   const images = new ImageLoader();
   const warm = ["oak_diff", "oak_nor_gl", "oak_rough", "world-map"].map((n) => images.loadAsync(`/textures/${n}.webp`).catch(() => null));
-  const [desk, floor] = await Promise.all([
-    loader.loadAsync("/models/desk.glb").then((g) => g.scene, () => null),
+  const [floor] = await Promise.all([
     get("/textures/floor_diff.webp"),
     ...warm,
   ]);
-  return { desk: desk as Group | null, floor: floor as Texture | null };
+  return { floor: floor as Texture | null };
 }
 
 function tile(t: Texture | null, x: number, y: number, srgb = true) {
@@ -75,11 +79,15 @@ function tile(t: Texture | null, x: number, y: number, srgb = true) {
   return t;
 }
 
-const box = (w: number, h: number, d: number, mat: MeshStandardMaterial, x: number, y: number, z: number) => {
-  const m = new Mesh(new BoxGeometry(w, h, d), mat);
-  m.position.set(x, y, z);
-  return m;
-};
+const boxGeo = (w: number, h: number, d: number, x: number, y: number, z: number) => new BoxGeometry(w, h, d).translate(x, y, z);
+
+const box = (w: number, h: number, d: number, mat: MeshStandardMaterial, x: number, y: number, z: number) => new Mesh(boxGeo(w, h, d, x, y, z), mat);
+
+function merged(parts: BufferGeometry[], mat: MeshStandardMaterial) {
+  const geo = mergeGeometries(parts, false);
+  for (const p of parts) p.dispose();
+  return new Mesh(geo, mat);
+}
 
 /** Oak planks (Poly Haven, CC0), loaded now so the shaders are compiled with their maps. */
 function oak(repeatX: number, repeatY: number) {
@@ -95,55 +103,45 @@ function oak(repeatX: number, repeatY: number) {
 }
 
 /** A wooden desk: an oak top 4 cm thick, a drawer pedestal at each end, a modesty panel. */
-function woodDesk(box: Box3): Group {
+function woodDesk(bounds: Box3): Group {
   const g = new Group();
-  const w = box.max.x - box.min.x;
-  const d = box.max.z - box.min.z;
-  const h = box.max.y - box.min.y;
-  const cx = (box.min.x + box.max.x) / 2;
-  const cz = (box.min.z + box.max.z) / 2;
-  const top = new Mesh(new BoxGeometry(w + 0.04, 0.04, d + 0.03), oak(1.6, 0.8));
-  top.position.set(cx, -0.02, cz);
+  const w = bounds.max.x - bounds.min.x;
+  const d = bounds.max.z - bounds.min.z;
+  const h = bounds.max.y - bounds.min.y;
+  const cx = (bounds.min.x + bounds.max.x) / 2;
+  const cz = (bounds.min.z + bounds.max.z) / 2;
+  const top = box(w + 0.04, 0.04, d + 0.03, oak(1.6, 0.8), cx, -0.02, cz);
   const body = new MeshStandardMaterial({ color: "#5a3a28", roughness: 0.6 });
   const handle = new MeshStandardMaterial({ color: "#b58b4c", roughness: 0.35, metalness: 1 });
-  g.add(top);
+  const bodyParts: BufferGeometry[] = [];
+  const pullParts: BufferGeometry[] = [];
   for (const side of [-1, 1]) {
     const px = cx + side * (w / 2 - 0.22);
-    const ped = new Mesh(new BoxGeometry(0.42, h - 0.04, d - 0.06), body);
-    ped.position.set(px, -0.04 - (h - 0.04) / 2, cz - 0.01);
-    g.add(ped);
+    bodyParts.push(boxGeo(0.42, h - 0.04, d - 0.06, px, -0.04 - (h - 0.04) / 2, cz - 0.01));
     for (let i = 0; i < 3; i++) {
       const dh = (h - 0.1) / 3;
       const y = -0.07 - dh / 2 - i * dh;
-      const front = new Mesh(new BoxGeometry(0.39, dh - 0.012, 0.018), body);
-      front.position.set(px, y, cz + (d - 0.06) / 2);
-      const pull = new Mesh(new BoxGeometry(0.1, 0.012, 0.014), handle);
-      pull.position.set(px, y + dh * 0.25, cz + (d - 0.06) / 2 + 0.014);
-      g.add(front, pull);
+      bodyParts.push(boxGeo(0.39, dh - 0.012, 0.018, px, y, cz + (d - 0.06) / 2));
+      pullParts.push(boxGeo(0.1, 0.012, 0.014, px, y + dh * 0.25, cz + (d - 0.06) / 2 + 0.014));
     }
   }
-  const panel = new Mesh(new BoxGeometry(w - 0.9, h * 0.45, 0.02), body);
-  panel.position.set(cx, -0.04 - h * 0.225, box.min.z + 0.04);
-  g.add(panel);
+  bodyParts.push(boxGeo(w - 0.9, h * 0.45, 0.02, cx, -0.04 - h * 0.225, bounds.min.z + 0.04));
+  g.add(top, merged(bodyParts, body), merged(pullParts, handle));
   return g;
 }
 
-export function buildRoom(scene: Scene, assets: RoomAssets, computer: Box3): Room {
+export function buildRoom(
+  scene: Scene,
+  assets: RoomAssets,
+  computer: Box3,
+  opts?: { skyScale?: number; sunMapSize?: number; initTexture?: (t: Texture) => void },
+): Room {
   // ── the desk: 2 m of oak on two drawer pedestals, top at y = 0, the computer towards its left ─
-  // (The steel desk model only sets the size now: everything sits where it always did.)
-  let deskBox: Box3;
-  if (assets.desk) {
-    const desk = assets.desk;
-    const b = new Box3().setFromObject(desk);
-    desk.position.set(0.12 - (b.min.x + b.max.x) / 2, -b.max.y, computer.min.z - 0.1 - b.min.z);
-    deskBox = new Box3().setFromObject(desk);
-    scene.add(woodDesk(deskBox));
-  } else {
-    const top = box(2, 0.04, 0.95, new MeshStandardMaterial({ color: "#7a6a55", roughness: 0.6 }), 0.12, -0.02, computer.min.z - 0.1 + 0.475);
-    scene.add(top);
-    deskBox = new Box3().setFromObject(top);
-    deskBox.min.y = -0.79;
-  }
+  const deskBox = new Box3(
+    new Vector3(0.12 - DESK_SIZE.w / 2, -DESK_SIZE.h, computer.min.z - 0.1),
+    new Vector3(0.12 + DESK_SIZE.w / 2, 0, computer.min.z - 0.1 + DESK_SIZE.d),
+  );
+  scene.add(woodDesk(deskBox));
   const floorY = deskBox.min.y;
   const wallZ = deskBox.min.z - 0.03;
 
@@ -178,23 +176,28 @@ export function buildRoom(scene: Scene, assets: RoomAssets, computer: Box3): Roo
   const casing = 0.06;
   const frame = new Group();
   frame.add(
-    // casing on the wall face
-    box(w + casing * 2, casing, 0.02, paint, cx, win.y1 + casing / 2, wallZ + 0.01),
-    box(casing, h, 0.02, paint, win.x0 - casing / 2, cy, wallZ + 0.01),
-    box(casing, h, 0.02, paint, win.x1 + casing / 2, cy, wallZ + 0.01),
-    // jambs, so the wall has thickness
-    box(w, 0.01, depth, paint, cx, win.y1 - 0.005, wallZ - depth / 2),
-    box(0.01, h, depth, paint, win.x0 + 0.005, cy, wallZ - depth / 2),
-    box(0.01, h, depth, paint, win.x1 - 0.005, cy, wallZ - depth / 2),
-    box(w, 0.01, depth, paint, cx, win.y0 + 0.005, wallZ - depth / 2),
-    // the sash: a meeting rail and a frame at the glass line
-    box(w, 0.035, 0.03, paint, cx, cy, wallZ - depth + 0.03),
-    box(w, 0.03, 0.03, paint, cx, win.y1 - 0.025, wallZ - depth + 0.03),
-    box(w, 0.03, 0.03, paint, cx, win.y0 + 0.025, wallZ - depth + 0.03),
-    box(0.03, h, 0.03, paint, win.x0 + 0.025, cy, wallZ - depth + 0.03),
-    box(0.03, h, 0.03, paint, win.x1 - 0.025, cy, wallZ - depth + 0.03),
-    // sill
-    box(w + 0.16, 0.025, 0.07, paint, cx, win.y0 - 0.0125, wallZ + 0.03),
+    merged(
+      [
+        // casing on the wall face
+        boxGeo(w + casing * 2, casing, 0.02, cx, win.y1 + casing / 2, wallZ + 0.01),
+        boxGeo(casing, h, 0.02, win.x0 - casing / 2, cy, wallZ + 0.01),
+        boxGeo(casing, h, 0.02, win.x1 + casing / 2, cy, wallZ + 0.01),
+        // jambs, so the wall has thickness
+        boxGeo(w, 0.01, depth, cx, win.y1 - 0.005, wallZ - depth / 2),
+        boxGeo(0.01, h, depth, win.x0 + 0.005, cy, wallZ - depth / 2),
+        boxGeo(0.01, h, depth, win.x1 - 0.005, cy, wallZ - depth / 2),
+        boxGeo(w, 0.01, depth, cx, win.y0 + 0.005, wallZ - depth / 2),
+        // the sash: a meeting rail and a frame at the glass line
+        boxGeo(w, 0.035, 0.03, cx, cy, wallZ - depth + 0.03),
+        boxGeo(w, 0.03, 0.03, cx, win.y1 - 0.025, wallZ - depth + 0.03),
+        boxGeo(w, 0.03, 0.03, cx, win.y0 + 0.025, wallZ - depth + 0.03),
+        boxGeo(0.03, h, 0.03, win.x0 + 0.025, cy, wallZ - depth + 0.03),
+        boxGeo(0.03, h, 0.03, win.x1 - 0.025, cy, wallZ - depth + 0.03),
+        // sill
+        boxGeo(w + 0.16, 0.025, 0.07, cx, win.y0 - 0.0125, wallZ + 0.03),
+      ],
+      paint,
+    ),
   );
   scene.add(frame);
 
@@ -214,20 +217,40 @@ export function buildRoom(scene: Scene, assets: RoomAssets, computer: Box3): Roo
   }
   frame.add(
     slats,
-    box(slatW + 0.01, 0.03, 0.035, slatMat, cx, win.y1 - 0.02, wallZ - 0.035), // headrail
-    box(slatW, 0.012, 0.03, slatMat, cx, bottom - pitch, wallZ - 0.035), // bottom rail
+    merged(
+      [
+        boxGeo(slatW + 0.01, 0.03, 0.035, cx, win.y1 - 0.02, wallZ - 0.035), // headrail
+        boxGeo(slatW, 0.012, 0.03, cx, bottom - pitch, wallZ - 0.035), // bottom rail
+      ],
+      slatMat,
+    ),
   );
   // Clicking the window turns the time (interact.ts): dusk or the middle of the night.
   frame.name = "window";
   frame.userData.hotspot = { kind: "time", label: "the window" };
   const cord = new MeshStandardMaterial({ color: "#d8ceb6", roughness: 0.9 });
-  for (const x of [cx - slatW * 0.3, cx + slatW * 0.3]) scene.add(box(0.002, win.y1 - bottom, 0.002, cord, x, (win.y1 + bottom) / 2 - 0.02, wallZ - 0.022));
-  scene.add(box(0.003, 0.42, 0.003, cord, win.x1 - 0.06, win.y1 - 0.25, wallZ - 0.02)); // pull cord
+  const cords = merged(
+    [
+      boxGeo(0.002, win.y1 - bottom, 0.002, cx - slatW * 0.3, (win.y1 + bottom) / 2 - 0.02, wallZ - 0.022),
+      boxGeo(0.002, win.y1 - bottom, 0.002, cx + slatW * 0.3, (win.y1 + bottom) / 2 - 0.02, wallZ - 0.022),
+      boxGeo(0.003, 0.42, 0.003, win.x1 - 0.06, win.y1 - 0.25, wallZ - 0.02), // pull cord
+    ],
+    cord,
+  );
+  scene.add(cords);
 
-  // ── outside: Dallas, 2 AM ───────────────────────────────────────────────────────────────
+  // ── outside: Dallas, golden hour by default, 2 AM painted on demand ─────────────────────
   // A high floor, looking out and a little down: the painted horizon (55% down the canvas) sits in
   // the lower half of the window, and the city spreads out below it.
-  const skies: Record<Time, CanvasTexture> = { dusk: duskSky(), night: nightSky() };
+  const skyScale = opts?.skyScale ?? 1;
+  const skies: { dusk: CanvasTexture; night: CanvasTexture | null } = { dusk: duskSky(skyScale), night: null };
+  const ensureNight = () => {
+    if (!skies.night) {
+      skies.night = nightSky(skyScale);
+      opts?.initTexture?.(skies.night);
+    }
+    return skies.night;
+  };
   const view = new Mesh(new PlaneGeometry(5.5, 4.3), new MeshBasicMaterial({ map: skies.dusk, fog: false, toneMapped: false }));
   view.position.set(cx + 0.2, win.y0 - 0.28 + 4.3 * 0.05, wallZ - 2.2);
   scene.add(view);
@@ -242,7 +265,8 @@ export function buildRoom(scene: Scene, assets: RoomAssets, computer: Box3): Roo
   sun.position.copy(through).addScaledVector(through.clone().sub(patch), 2.5);
   sun.target.position.copy(patch);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
+  const sunMapSize = opts?.sunMapSize ?? 2048;
+  sun.shadow.mapSize.set(sunMapSize, sunMapSize);
   Object.assign(sun.shadow.camera, { left: -1.8, right: 1.8, top: 1.4, bottom: -1.4, near: 0.5, far: 6 });
   sun.shadow.bias = -0.0004;
   sun.shadow.normalBias = 0.015;
@@ -255,11 +279,11 @@ export function buildRoom(scene: Scene, assets: RoomAssets, computer: Box3): Roo
   scene.add(bounce);
 
   // Everything in the room takes shadows; the window and its blinds cast them, and so does the
-  // wall (from behind, so both sides). The painted view outside stays out of it.
+  // wall (from behind, so both sides). The painted view outside and thin cords stay out of it.
   scene.traverse((o) => {
     const mesh = o as Mesh;
     if (!mesh.isMesh || mesh === view || (mesh.material as MeshStandardMaterial).transparent) return;
-    mesh.castShadow = true;
+    mesh.castShadow = mesh !== cords;
     mesh.receiveShadow = true;
   });
   (wall.material as MeshStandardMaterial).shadowSide = DoubleSide;
@@ -271,6 +295,9 @@ export function buildRoom(scene: Scene, assets: RoomAssets, computer: Box3): Roo
     window: win,
     windowFrame: frame,
     desk: { minX: deskBox.min.x, maxX: deskBox.max.x, backZ: deskBox.min.z, frontZ: deskBox.max.z },
+    warmNight() {
+      ensureNight();
+    },
     setTime(time) {
       // Dusk: the low sun through the blinds, warm. Night: the moon and the city, cool and dim.
       const look = time === "dusk" ? { sun: ["#ffb46e", 3.4], bounce: ["#ffb780", 0.45], tint: "#d8d0c8" } : { sun: ["#6f8fc7", 0.55], bounce: ["#7d8fc4", 0.18], tint: "#ffffff" };
@@ -279,7 +306,11 @@ export function buildRoom(scene: Scene, assets: RoomAssets, computer: Box3): Roo
       bounce.color.set(look.bounce[0] as string);
       bounce.intensity = look.bounce[1] as number;
       const material = view.material as MeshBasicMaterial;
-      material.map = skies[time];
+      const nextMap = time === "night" ? ensureNight() : skies.dusk;
+      if (material.map !== nextMap) {
+        material.map = nextMap;
+        material.needsUpdate = true;
+      }
       material.color.set(look.tint);
     },
   };
@@ -318,13 +349,14 @@ function wallpaper(): CanvasTexture {
 }
 
 /** A 1980s Dallas skyline at 2 AM, painted once into a canvas. Seeded so it never changes. */
-function nightSky(): CanvasTexture {
+function nightSky(res = 1): CanvasTexture {
   const W = 2048;
   const H = 1600;
   const c = document.createElement("canvas");
-  c.width = W;
-  c.height = H;
+  c.width = Math.round(W * res);
+  c.height = Math.round(H * res);
   const g = c.getContext("2d")!;
+  if (res !== 1) g.scale(res, res);
   let seed = 7;
   const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
   const horizon = H * 0.55;
@@ -412,7 +444,7 @@ function nightSky(): CanvasTexture {
     g.strokeStyle = "rgba(90,255,140,0.95)";
     g.lineWidth = 3;
     g.shadowColor = "#5aff8c";
-    g.shadowBlur = 12;
+    g.shadowBlur = 12 * res;
     g.strokeRect(x + 2, y + 2, 92, 516);
     g.shadowBlur = 0;
   });
@@ -429,7 +461,7 @@ function nightSky(): CanvasTexture {
     g.fillRect(x + 28, y - 40, 6, 40);
     g.fillStyle = "#ff3b30";
     g.shadowColor = "#ff3b30";
-    g.shadowBlur = 14;
+    g.shadowBlur = 14 * res;
     g.beginPath();
     g.moveTo(x + 10, y - 44); g.lineTo(x + 40, y - 54); g.lineTo(x + 54, y - 70); g.lineTo(x + 50, y - 50); g.lineTo(x + 30, y - 42);
     g.fill();
@@ -444,7 +476,7 @@ function nightSky(): CanvasTexture {
   g.fill();
   g.fillStyle = "rgba(255,240,200,1)";
   g.shadowColor = "#ffe9b0";
-  g.shadowBlur = 8;
+  g.shadowBlur = 8 * res;
   for (let a = 0; a < Math.PI * 2; a += Math.PI / 9) {
     for (let r = 12; r < 42; r += 10) g.fillRect(rx + Math.cos(a) * r - 1.5, horizon - 360 + Math.sin(a) * r * 0.9 - 1.5, 3, 3);
   }
@@ -510,13 +542,14 @@ function nightSky(): CanvasTexture {
 }
 
 /** A 1980s Dallas skyline at golden hour, painted once into a canvas. Seeded so it never changes. */
-function duskSky(): CanvasTexture {
+function duskSky(res = 1): CanvasTexture {
   const W = 2048;
   const H = 1600;
   const c = document.createElement("canvas");
-  c.width = W;
-  c.height = H;
+  c.width = Math.round(W * res);
+  c.height = Math.round(H * res);
   const g = c.getContext("2d")!;
+  if (res !== 1) g.scale(res, res);
   let seed = 7;
   const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
   const horizon = H * 0.55;
@@ -609,7 +642,7 @@ function duskSky(): CanvasTexture {
     g.fillRect(x + 28, y - 40, 6, 40);
     g.fillStyle = "#ff3b30";
     g.shadowColor = "#ff3b30";
-    g.shadowBlur = 14;
+    g.shadowBlur = 14 * res;
     g.beginPath();
     g.moveTo(x + 10, y - 44); g.lineTo(x + 40, y - 54); g.lineTo(x + 54, y - 70); g.lineTo(x + 50, y - 50); g.lineTo(x + 30, y - 42);
     g.fill();
