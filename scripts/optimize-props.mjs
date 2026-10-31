@@ -76,6 +76,17 @@ const PROPS = [
   { name: "kiev", bc: 384, aux: 128, ratio: 0.24, error: 0.012 },
 ];
 
+// Detail over bytes: the first speed pass simplified so hard that edges went faceted. Meshopt
+// compresses geometry well, so keep near-full triangles and twice the texture size (capped at 1K).
+for (const prop of PROPS) {
+  if (prop.ratio < 1) {
+    prop.ratio = Math.max(prop.ratio, 0.3);
+    prop.error = Math.min(prop.error, 0.0015);
+  }
+  prop.bc = Math.min(1024, prop.bc * 2);
+  prop.aux = Math.min(512, prop.aux * 2);
+}
+
 function compactGlb(glb) {
   const buf = Buffer.from(glb.buffer, glb.byteOffset, glb.byteLength);
   const version = buf.readUInt32LE(4);

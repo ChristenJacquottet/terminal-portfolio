@@ -193,7 +193,8 @@ for (const mesh of root.listMeshes()) {
     const mName = prim.getMaterial()?.getName() ?? "";
     if (!/monitor_screen/i.test(mName)) {
       const isCable = /cable/i.test(mName);
-      simplifyAttr(prim, isCable ? 0.15 : 0.36, isCable ? 0.018 : 0.0045);
+      // The hero: keep its bevels (only near-invisible triangles go). The rear cable stays light.
+      simplifyAttr(prim, isCable ? 0.15 : 0.85, isCable ? 0.018 : 0.0008);
     }
     trisAfter += countTris();
   }
