@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Made with Natural Earth. Free vector and raster map data @ naturalearthdata.com.
 //
-// Renders public/textures/world-map.webp (4096×2048) and research/map/preview.png (1600×800)
+// Renders public/textures/world-map.webp (2048×1024, supersampled from 4096×2048) and research/map/preview.png (1600×800)
 // from Natural Earth 1:50m Admin-0 Countries in a rectangular Miller cylindrical projection (80°S–84°N).
 
 import fs from "node:fs";
@@ -971,16 +971,19 @@ async function main() {
   const svgBuf = Buffer.from(svg);
   const rawPng = await sharp(svgBuf).png().toBuffer();
 
-  const maxBytes = 900 * 1024;
+  const OUT_W = 2048;
+  const OUT_H = 1024;
+  const maxBytes = 200 * 1024;
   let webpBuf = null;
-  let usedQuality = 92;
-  for (const q of [92, 90, 86, 82, 78, 74, 70]) {
+  let usedQuality = 86;
+  for (const q of [86, 84, 80, 76, 72]) {
     const candidate = await sharp(rawPng)
+      .resize(OUT_W, OUT_H, { kernel: "lanczos3" })
       .webp({ quality: q, effort: 6, smartSubsample: true })
       .toBuffer();
     usedQuality = q;
     webpBuf = candidate;
-    if (candidate.length < maxBytes - 15 * 1024) break;
+    if (candidate.length < maxBytes - 10 * 1024) break;
   }
 
   fs.writeFileSync(outWebp, webpBuf);
@@ -992,7 +995,7 @@ async function main() {
 
   const kb = (webpBuf.length / 1024).toFixed(1);
   console.log(
-    `wrote ${path.relative(root, outWebp)} (${W}×${H}, ${kb} KB, q=${usedQuality}, ${labels.length} labels) and ${path.relative(root, outPreview)} (1600×800)`
+    `wrote ${path.relative(root, outWebp)} (${OUT_W}×${OUT_H}, ${kb} KB, q=${usedQuality}, ${labels.length} labels) and ${path.relative(root, outPreview)} (1600×800)`
   );
 }
 
