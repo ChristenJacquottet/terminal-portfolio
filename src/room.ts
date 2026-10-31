@@ -233,9 +233,20 @@ export function buildRoom(
       slatMat,
     ),
   );
-  // Clicking the window turns the time (interact.ts): dusk or the middle of the night.
+  // Clicking the window (frame, blinds, or glass) turns the time (interact.ts): dusk or 2 AM.
   frame.name = "window";
   frame.userData.hotspot = { kind: "time", label: "the window" };
+  const glassZ = wallZ - depth + 0.03;
+  frame.raycast = (raycaster, intersects) => {
+    const dz = raycaster.ray.direction.z;
+    if (Math.abs(dz) < 1e-6) return;
+    const distance = (glassZ - raycaster.ray.origin.z) / dz;
+    if (distance < raycaster.near || distance > raycaster.far) return;
+    const point = raycaster.ray.at(distance, new Vector3());
+    if (point.x >= win.x0 && point.x <= win.x1 && point.y >= win.y0 && point.y <= win.y1) {
+      intersects.push({ distance, point, object: frame });
+    }
+  };
   const cord = new MeshStandardMaterial({ color: "#d8ceb6", roughness: 0.9 });
   const cords = merged(
     [
@@ -275,15 +286,15 @@ export function buildRoom(
   sun.castShadow = true;
   const sunMapSize = opts?.sunMapSize ?? 2048;
   sun.shadow.mapSize.set(sunMapSize, sunMapSize);
-  Object.assign(sun.shadow.camera, { left: -1.8, right: 1.8, top: 1.4, bottom: -1.4, near: 0.5, far: 6 });
+  Object.assign(sun.shadow.camera, { left: -2.2, right: 2.2, top: 1.6, bottom: -1.6, near: 0.5, far: 6.5 });
   sun.shadow.bias = -0.0004;
   sun.shadow.normalBias = 0.015;
   sun.shadow.radius = 3;
   scene.add(sun, sun.target);
-  // The city glow on the wall around the window, so the far side of the room falls off into blue
-  // shadow instead of black.
-  const bounce = new PointLight("#7d8fc4", 0.18, 2.4, 1.6);
-  bounce.position.set(cx - 0.2, win.y0 + 0.1, wallZ + 0.45);
+  // The city glow on the wall and left desk around the window, so the far side of the room falls
+  // off into blue shadow instead of black and dark camera bodies still read at 2 AM.
+  const bounce = new PointLight("#7594d6", 0.82, 4.2, 1.4);
+  bounce.position.set(cx - 0.15, win.y0 + 0.22, wallZ + 0.72);
   scene.add(bounce);
 
   // Everything in the room takes shadows; the window and its blinds cast them, and so does the
@@ -307,8 +318,11 @@ export function buildRoom(
       ensureNight();
     },
     setTime(time) {
-      // Dusk: the low sun through the blinds, warm. Night: the moon and the city, cool and dim.
-      const look = time === "dusk" ? { sun: ["#ffb46e", 3.4], bounce: ["#ffb780", 0.45], tint: "#d8d0c8" } : { sun: ["#6f8fc7", 0.55], bounce: ["#7d8fc4", 0.18], tint: "#ffffff" };
+      // Dusk: the low sun through the blinds, warm. Night: the moon and the city, cool and moody.
+      const look =
+        time === "dusk"
+          ? { sun: ["#ffb46e", 3.4], bounce: ["#ffb780", 0.55], tint: "#d8d0c8" }
+          : { sun: ["#6892e8", 0.92], bounce: ["#5c82d6", 0.68], tint: "#ffffff" };
       sun.color.set(look.sun[0] as string);
       sun.intensity = look.sun[1] as number;
       bounce.color.set(look.bounce[0] as string);

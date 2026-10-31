@@ -664,9 +664,10 @@ export async function createDesk(opts: {
   const room = buildRoom(scene, await roomAssets, new Box3().setFromObject(root), {
     initTexture: (t) => renderer.initTexture(t),
   });
-  // The home lab's corner, past the end of the desk, gets its own small warm light.
-  const labLight = new PointLight("#ffc488", 0.45, 1.6, 2);
-  labLight.position.set(room.desk.maxX + 0.45, 0.75, room.wallZ + 0.6);
+  // The home-lab corner, past the right end of the desk, sits in the wall's shadow from the low
+  // left sun; place a soft room fill out in front of the angled rack so every shelf and tool reads.
+  const labLight = new PointLight("#ffd19c", 1.65, 4.2, 1.45);
+  labLight.position.set(room.desk.maxX + 0.36, 0.62, room.wallZ + 1.05);
   scene.add(labLight);
   /** Dusk (the default: warm, everything reads) or the middle of the night (the window toggles it). */
   let time: Time = "dusk";
@@ -675,12 +676,14 @@ export async function createDesk(opts: {
     time = next;
     room.setTime(next);
     const dusk = next === "dusk";
-    fill.color.set(dusk ? "#e3d2bd" : "#6a7aa6");
-    fill.groundColor.set(dusk ? "#2a1a10" : "#1a120b");
-    fill.intensity = dusk ? 0.16 : 0.06;
-    scene.environmentIntensity = dusk ? 0.09 : 0.04;
-    renderer.toneMappingExposure = dusk ? 0.92 : 0.85;
-    if (screenGlow) screenGlow.intensity = dusk ? 0.25 : 0.7;
+    fill.color.set(dusk ? "#e6d5bf" : "#4d6fb8");
+    fill.groundColor.set(dusk ? "#2e1d12" : "#101524");
+    fill.intensity = dusk ? 0.21 : 0.13;
+    scene.environmentIntensity = dusk ? 0.11 : 0.055;
+    renderer.toneMappingExposure = dusk ? 0.94 : 0.88;
+    labLight.color.set(dusk ? "#ffd19c" : "#5f83cc");
+    labLight.intensity = dusk ? 1.65 : 0.62;
+    if (screenGlow) screenGlow.intensity = dusk ? 0.25 : 0.95;
   };
   setTime(time);
 
@@ -704,7 +707,7 @@ export async function createDesk(opts: {
 
   // The screen lights the room in the theme's colour: the keys, the desk in front, the drives.
   // Low at dusk (the sun and the lamp do the work), stronger at night (see setTime).
-  const glow = new PointLight(opts.glow, 0.25, 1.4, 2);
+  const glow = new PointLight(opts.glow, 0.25, 1.7, 2);
   glow.position.copy(screen.center).addScaledVector(screen.normal, 0.12);
   scene.add(glow);
   screenGlow = glow;
