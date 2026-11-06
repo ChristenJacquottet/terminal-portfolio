@@ -5,7 +5,7 @@ const CUE_GROUPS: { label: string; cues: Cue[] }[] = [
   { label: "keyboard & system", cues: ["key", "keySpace", "keyReturn", "click", "switch", "boot"] },
   { label: "disk ii", cues: ["diskInsert", "diskRead", "diskEject"] },
   { label: "walkman & hinges", cues: ["tapeInsert", "tapeButton", "lidOpen", "lidClose"] },
-  { label: "desk props", cues: ["phoneUp", "phoneDown", "paper", "tap", "clapper", "shutter", "spin"] },
+  { label: "desk props", cues: ["phoneUp", "phoneDown", "paper", "tap", "clapper", "shutter", "spin", "slosh", "lampOn"] },
 ];
 
 const CSS = `
@@ -108,7 +108,7 @@ export function mountSoundTest() {
 
   panel.innerHTML = `
     <div class="soundtest-head">
-      <p class="soundtest-title">sound test <span>· 20 cues + loops</span></p>
+      <p class="soundtest-title">sound test <span>· 22 cues + loops</span></p>
       <div class="soundtest-row">
         <button type="button" data-mute></button>
         <button type="button" data-collapse title="minimise">–</button>

@@ -21,7 +21,6 @@ import {
   CylinderGeometry,
   DoubleSide,
   Group,
-  LatheGeometry,
   Matrix4,
   Mesh,
   MeshBasicMaterial,
@@ -36,9 +35,7 @@ import {
   PointLight,
   Raycaster,
   SpotLight,
-  TorusGeometry,
   TubeGeometry,
-  Vector2,
   Vector3,
   type Object3D,
   type Scene,
@@ -55,6 +52,8 @@ import {
   voiceStrip,
 } from "./alive";
 import { applyPose, currentLayout, poseOf } from "./layout";
+import { mug } from "./mug";
+import { cableColour, cableLoop, cableSpool, ethernetRun, partsDrawers, piCluster, powerCords, powerStrip, solderingStation, spareDrives, spot, steelRule, tapeRoll, ups, widthOf } from "./lab";
 import type { Room } from "./room";
 
 const PROPS_URL = "/models/props.glb";
@@ -178,22 +177,6 @@ function penCup(kit: Object3D): Group | null {
 }
 
 // ── made in code ──────────────────────────────────────────────────────────────────────────
-
-function mug(): Group {
-  const g = new Group();
-  const ceramic = new MeshStandardMaterial({ color: "#b8342b", roughness: 0.35 });
-  const profile = [
-    [0, 0], [0.036, 0], [0.04, 0.004], [0.04, 0.095], [0.036, 0.095], [0.035, 0.008], [0, 0.008],
-  ].map(([x, y]) => new Vector2(x, y));
-  g.add(new Mesh(new LatheGeometry(profile, 32), ceramic));
-  const handle = new Mesh(new TorusGeometry(0.025, 0.0055, 10, 20, Math.PI), ceramic);
-  handle.rotation.z = -Math.PI / 2;
-  handle.position.set(0.04, 0.05, 0);
-  const coffee = new Mesh(new CylinderGeometry(0.035, 0.035, 0.001, 32), new MeshStandardMaterial({ color: "#2a160b", roughness: 0.15 }));
-  coffee.position.y = 0.08;
-  g.add(handle, coffee);
-  return g;
-}
 
 /** One floppy per featured project: what the label says, what the hover says, what loading it runs. */
 export type Disk = { label: string; title: string; command: string };
@@ -1113,14 +1096,82 @@ export async function addProps(
     if (crt) fitCrtScreen(crt, onChange);
     onRack("mac128k", 0, 0.2, { height: 0.3, rotY: Math.PI - 0.15 }); // the model faces away
     const sw = onRack("switch", 1, -0.13, { width: 0.24 });
-    if (sw) addSwitchLeds(sw);
-    onRack("nas", 1, 0.18, { height: 0.19 });
+    const ports = sw ? addSwitchLeds(sw) : null;
+    const nas = onRack("nas", 1, 0.18, { height: 0.19 });
     onRack("c64", 2, 0, { width: 0.4 });
     const lowest = onRack("thinkpad", 3, -0.02, { width: 0.33 });
     if (lowest && byName.macbook) {
       const top = new Box3().setFromObject(lowest).max.y;
       put("macbook", place(byName.macbook, labX + along.x * 0.02, labZ + along.z * 0.02, { width: 0.31, rotY: turn + 0.12, y: top, shadow: false }));
     }
+
+    // ── the rest of the lab, made in code (lab.ts): fitted to the rack's width ─────────────────
+    const half = widthOf(rack.children[0]) / 2;
+    const fit = (dx: number, w: number) => Math.max(-(half - 0.03) + w / 2, Math.min(half - 0.03 - w / 2, dx));
+    const onLevel = (name: string, o: Object3D, level: number, dx: number, w: number, opts: PlaceOpts, hotspot: ReturnType<typeof spot>) => {
+      const y = tops[tops.length - 1 - level];
+      if (y === undefined) return null;
+      const d = fit(dx, w);
+      const holder = put(name, place(o, labX + along.x * d, labZ + along.z * d, { ...opts, rotY: turn + (opts.rotY ?? 0), y, shadow: true }));
+      holder.userData.hotspot = hotspot;
+      return holder;
+    };
+    /** The middle of a prop's footprint, `dy` above its base, pulled a little back into it. */
+    const at = (o: Object3D | null, dy = 0, back = 0.25) => {
+      if (!o) return null;
+      const b = new Box3().setFromObject(o);
+      return new Vector3((b.min.x + b.max.x) / 2, b.min.y + dy, (b.min.z + b.max.z) / 2 - (b.max.z - b.min.z) * back);
+    };
+    const pis = onLevel("picluster", piCluster(), 2, 0.31, 0.09, { width: 0.09, rotY: 0.2 }, spot("Pi cluster", "four nodes, one of them busy"));
+    onLevel("drawers", partsDrawers(), 2, -0.31, 0.136, { width: 0.136 }, spot("parts drawers", "resistors, mostly"));
+    // (the rack is 73 cm wide: the switch and the NAS have the middle shelf, so the station goes
+    // on the laptops' shelf and the spool squeezes in by the switch)
+    const iron = onLevel("soldering", solderingStation(), 3, 0.27, 0.14, { width: 0.14, rotY: -0.25 }, spot("soldering station", "the tip's cold"));
+    onLevel("spool", cableSpool(), 1, -0.37, 0.085, { height: 0.085, rotY: 0.6 }, spot("a spool of cat6", "for the next run"));
+    const upsBox = onLevel("ups", ups(), Math.min(4, tops.length - 1), 0.27, 0.1, { height: 0.165, rotY: 0.05 }, spot("the UPS", "for the Dallas storms"));
+    onLevel("drives", spareDrives(), 3, -0.3, 0.11, { width: 0.15, rotY: -0.15 }, spot("spare drives", "backups of the backups"));
+
+    // Ethernet from the lit ports: the uplink down the back, one to the NAS, one to the Pis, one up
+    // to the PVM, one off towards the desk. Drawn in world space, parented to the rack so the
+    // editor can move it as one thing.
+    if (sw && ports) {
+      sw.updateMatrixWorld(true);
+      const out = ports.out.clone().transformDirection(sw.matrixWorld);
+      const back = out.clone().negate();
+      const side = new Vector3().crossVectors(out, new Vector3(0, 1, 0)).normalize(); // along the shelf
+      const world = (v: Vector3) => sw.localToWorld(v.clone());
+      const runs: { from: Vector3; via: Vector3[] }[] = [];
+      const [p1, p2, p4, p5, p7] = ports.ports.map(world);
+      const drop = (p: Vector3, dy: number) => p.clone().addScaledVector(out, 0.06).add(new Vector3(0, dy, 0));
+      // the uplink and the desk run go down the back of the rack, against the wall
+      const rear = 0.3;
+      runs.push({ from: p1, via: [drop(p1, -0.03), p1.clone().addScaledVector(back, rear).add(new Vector3(0, -0.08, 0)), p1.clone().addScaledVector(back, rear + 0.02).setY(floor + 0.003)] });
+      const nasIn = at(nas, 0.05);
+      if (nasIn) runs.push({ from: p2, via: [drop(p2, -0.02), nasIn.clone().addScaledVector(out, 0.05).addScaledVector(side, -0.03), nasIn.clone().addScaledVector(back, 0.02)] });
+      const piIn = at(pis, 0.03);
+      if (piIn) runs.push({ from: p4, via: [drop(p4, -0.025), p4.clone().addScaledVector(back, 0.1).add(new Vector3(0, 0.08, 0)), piIn.clone().addScaledVector(back, 0.06).setY(piIn.y + 0.12), piIn.clone().addScaledVector(back, 0.04).add(new Vector3(0, 0.08, 0)), piIn.clone().addScaledVector(side, 0.01)] });
+      const crtIn = at(crt, 0.05);
+      if (crtIn) runs.push({ from: p5, via: [drop(p5, -0.02), p5.clone().addScaledVector(back, 0.11).add(new Vector3(0, 0.1, 0)), crtIn.clone().addScaledVector(back, 0.12), crtIn.clone().addScaledVector(back, 0.06)] });
+      const post = p7.clone().addScaledVector(back, rear);
+      runs.push({ from: p7, via: [drop(p7, -0.04), post.clone().add(new Vector3(0, -0.12, 0)), post.clone().setY(floor + 0.03), new Vector3(post.x, floor + 0.004, wall + 0.05), new Vector3(room.desk.maxX + 0.1, floor + 0.004, wall + 0.05), new Vector3(room.desk.maxX - 0.3, floor + 0.004, wall + 0.06)] });
+      const cables = new Group();
+      runs.forEach((r, i) => cables.add(ethernetRun(r.from, out, r.via, cableColour(i))));
+      cables.traverse((m) => {
+        const mesh = m as Mesh;
+        if (mesh.isMesh) mesh.raycast = () => {};
+      });
+      scene.attach(cables); // world space; keep it that way
+      rack.attach(cables);
+      cables.name = "cables";
+    }
+
+    // The power strip on the floor by the rack, three cords up into it.
+    const strip = put("powerstrip", place(powerStrip(), labX + along.x * -0.05 - Math.sin(turn) * -0.42, labZ + along.z * -0.05 - Math.cos(turn) * -0.42, { width: 0.3, rotY: turn + 0.3, y: floor, shadow: true }));
+    strip.userData.hotspot = spot("power strip", "everything on one switch");
+    const feeds = [at(upsBox, 0, 0), at(iron, 0, 0), new Vector3(labX + along.x * 0.3, 0, labZ + along.z * 0.3)]
+      .filter((v): v is Vector3 => Boolean(v))
+      .map((v) => v.setY(floor + 0.004));
+    powerCords(strip, feeds);
   }
   if (byName.pegboard) {
     const board = byName.pegboard;
@@ -1146,6 +1197,17 @@ export async function addProps(
     tool("pliers", -0.22, 0.86, 0.17, 0.2);
     tool("screwdrivers", -0.03, 0.82, 0.2);
     tool("cutters", 0.16, 0.86, 0.15, -0.3);
+    // and on the lower hooks: a roll of tape, a hank of cable, a steel rule
+    const pegX = room.desk.maxX + 0.62;
+    const onPeg = (name: string, o: Object3D, x: number, y: number, h: number, hotspot: ReturnType<typeof spot>) => {
+      const holder = put(name, hang(o, pegX + x, y, wall + 0.012, h));
+      holder.userData.hotspot = hotspot;
+      return holder;
+    };
+    // (the lower board is behind the PVM and the Mac from the chair, so these go along the top)
+    onPeg("tape", tapeRoll(), -0.125, 0.95, 0.058, spot("electrical tape", "black, always black"));
+    onPeg("cableloop", cableLoop("#1f1d1b"), 0.245, 0.985, 0.09, { ...spot("a hank of cable", "coiled, for once"), kind: "swing" });
+    onPeg("rule", steelRule(), 0.06, 0.985, 0.028, spot("steel rule", "twelve inches"));
   }
   // A trailing ivy on the end of the wall shelf, the vines hanging over its edge; the Kiev next to it.
   if (byName.ivy) {

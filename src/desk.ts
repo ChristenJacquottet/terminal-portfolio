@@ -61,6 +61,7 @@ import type { Cue } from "./audio";
 import { createInteractions, type Drive } from "./interact";
 import { addProps, type Disk } from "./props";
 import { ROOM_TEXTURES, buildRoom, loadRoom, type Time } from "./room";
+import { pulses } from "./alive";
 
 /** The tube's shape (4:3). In the monitor the terminal keeps the window's text size, see `fitTube`. */
 const SCREEN_W = 800;
@@ -586,7 +587,7 @@ export async function createDesk(opts: {
   run: (command: string) => void;
   /** The sound layer (audio.ts); the desk works silently without it. */
   sound?: {
-    play(cue: Cue): void;
+    play(cue: Cue, opts?: { pan?: number; volume?: number }): void;
     music(on: boolean): Promise<void>;
     loop(name: "room" | "hum", on: boolean): void;
     setInside(t: number): void;
@@ -600,7 +601,9 @@ export async function createDesk(opts: {
   const isPhone = window.matchMedia("(max-width: 640px) and (pointer: coarse)").matches;
 
   const renderer = new WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, isPhone ? 1.25 : 1.5));
+  // Crisp on retina desktops (the scene only draws while something moves, so idle costs nothing).
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, isPhone ? 1.25 : 2));
+  const maxAniso = Math.min(8, renderer.capabilities.getMaxAnisotropy());
   renderer.outputColorSpace = SRGBColorSpace;
   renderer.toneMapping = ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.85;
@@ -686,35 +689,52 @@ export async function createDesk(opts: {
   scene.add(labLight);
   /** Dusk (the default: warm, everything reads) or the middle of the night (the window toggles it). */
   let time: Time = "dusk";
+  let timeK = 0; // 0 dusk … 1 night, where the light is right now
   let screenGlow: PointLight | null = null; // made below, with the screen
+  const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
+  const fillDusk = new Color("#e6d5bf"), fillNight = new Color("#4d6fb8");
+  const groundDusk = new Color("#2e1d12"), groundNight = new Color("#101524");
+  const labDusk = new Color("#ffd19c"), labNight = new Color("#5f83cc");
+  /** Puts every light at `k` of the way from dusk to night. */
+  const applyTime = (k: number) => {
+    timeK = k;
+    room.blend(k);
+    fill.color.copy(fillDusk).lerp(fillNight, k);
+    fill.groundColor.copy(groundDusk).lerp(groundNight, k);
+    fill.intensity = lerp(0.21, 0.2, k);
+    scene.environmentIntensity = lerp(0.11, 0.08, k);
+    renderer.toneMappingExposure = lerp(0.94, 0.88, k);
+    labLight.color.copy(labDusk).lerp(labNight, k);
+    labLight.intensity = lerp(1.65, 0.62, k);
+    if (screenGlow) screenGlow.intensity = lerp(0.25, 0.55, k);
+  };
   const setTime = (next: Time) => {
     time = next;
-    room.setTime(next);
-    const dusk = next === "dusk";
-    fill.color.set(dusk ? "#e6d5bf" : "#4d6fb8");
-    fill.groundColor.set(dusk ? "#2e1d12" : "#101524");
-    fill.intensity = dusk ? 0.21 : 0.2;
-    scene.environmentIntensity = dusk ? 0.11 : 0.08;
-    renderer.toneMappingExposure = dusk ? 0.94 : 0.88;
-    labLight.color.set(dusk ? "#ffd19c" : "#5f83cc");
-    labLight.intensity = dusk ? 1.65 : 0.62;
-    if (screenGlow) screenGlow.intensity = dusk ? 0.25 : 0.55;
+    applyTime(next === "night" ? 1 : 0);
+  };
+  /** The window clicked: the sky turns and the light slides over, a second or so, not a cut. */
+  const fadeTime = (next: Time) => {
+    time = next;
+    const from = timeK;
+    const to = next === "night" ? 1 : 0;
+    return animate(1100, (t) => applyTime(lerp(from, to, ease(t))));
   };
   setTime(time);
 
   const glass = glassMaterial(screen, room.windowCenter.clone().sub(screen.center).normalize());
   if (loaded) {
     loaded.tube.material = glass;
-    // The model's plastics are near white; age them to the palette's beige so the machine sits in
-    // the warm room instead of glowing in it.
+    // The model's plastics are near white. Keep them that way (a clean machine, not a yellowed
+    // one): only a whisper of warmth, so the warm lamp and sun do the tinting, and a satin finish.
     loaded.root.traverse((o) => {
       const mesh = o as Mesh;
       if (!mesh.isMesh || mesh === loaded.tube) return;
       for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
         const mat = m as MeshStandardMaterial;
         if (!mat.color || /screen/i.test(mat.name)) continue;
-        mat.color.multiply(new Color("#cdbd9f"));
-        mat.roughness = Math.max(mat.roughness, 0.55);
+        mat.color.multiply(new Color("#f4f1ec"));
+        mat.roughness = Math.min(Math.max(mat.roughness, 0.5), 0.6);
+        mat.envMapIntensity = 1.6; // a little of the room in the plastic's sheen
       }
     });
     loaded.tube.renderOrder = 1;
@@ -876,14 +896,17 @@ export async function createDesk(opts: {
   let tween: ((now: number) => boolean) | null = null;
   /** Props in motion (interact.ts): each returns false when it's done. */
   const motions = new Set<(now: number) => boolean>();
+  let frameMs = 0; // how long the last frame took: the heartbeat stays away from a slow machine
   const frame = (now: number) => {
     const tweening = tween ? tween(now) : false;
     if (!tweening) tween = null;
     for (const m of motions) if (!m(now)) motions.delete(m);
     if (motions.size) renderer.shadowMap.needsUpdate = true; // moving things move their shadows
     const moving = controls?.enabled ? controls.update() : updateLook();
+    const t0 = performance.now();
     renderer.render(scene, camera);
     css.render(scene, camera);
+    frameMs = performance.now() - t0;
     if (tweening || moving || motions.size) requestAnimationFrame(frame);
     else running = false;
   };
@@ -915,6 +938,13 @@ export async function createDesk(opts: {
   window.addEventListener("resize", () => {
     if (!host.hidden) resize();
   });
+  // The heartbeat: about once a second while the desk is in view, the lab's activity lights
+  // re-roll and one frame is drawn. Nothing else runs between frames.
+  window.setInterval(() => {
+    if (host.hidden || seated || transitioning || document.hidden || reduced() || !pulses.size || running || frameMs > 40) return;
+    for (const pulse of pulses) pulse();
+    request();
+  }, 1100);
 
   const fly = (to: { position: Vector3; target: Vector3 }, ms: number, glassTo = glass.uniforms.uStrength.value as number, curve = ease) =>
     new Promise<void>((done) => {
@@ -1241,7 +1271,7 @@ export async function createDesk(opts: {
     controls.addEventListener("change", request);
   }
 
-  if (import.meta.env.DEV) Object.assign(window, { __desk: { scene, renderer, camera } }); // for poking at it from devtools
+  if (import.meta.env.DEV) Object.assign(window, { __desk: { scene, renderer, camera, look, three: { Raycaster, Vector2, Vector3, Box3 } } }); // for poking at it from devtools
   const touch = createInteractions({
     scene,
     camera,
@@ -1251,13 +1281,12 @@ export async function createDesk(opts: {
     lamp,
     flash,
     drive,
-    sfx: (cue) => opts.sound?.play(cue as Cue),
+    sfx: (cue, o) => opts.sound?.play(cue as Cue, o),
     music: (on) => void opts.sound?.music(on),
     muted: () => opts.sound?.muted() ?? null,
     time: () => time,
     setTime: (next) => {
-      setTime(next);
-      relight();
+      void fadeTime(next).then(relight);
     },
     setMuted: (m) => opts.sound?.setMuted(m),
     sitDownAndRun: async (command) => {
@@ -1316,6 +1345,7 @@ export async function createDesk(opts: {
       if (credit && loaded) credit.hidden = false;
       if (soundToggle) soundToggle.hidden = false;
       transitioning = false;
+      void touch.warm(6000); // the coffee's still warm
       if (!nightWarmed) {
         nightWarmed = true;
         const scheduleWarmNight = () => {
@@ -1418,8 +1448,17 @@ export async function createDesk(opts: {
     }
     // Let any cached TextureLoader callbacks (world-map.webp) attach their maps before final shader compile.
     await new Promise((r) => setTimeout(r, 0));
+    // Anisotropic filtering on everything seen at a grazing angle (the mat, the desk, the map, labels):
+    // the one cheap setting that separates a blurry render from a sharp one.
+    const all = textures(scene);
+    for (const t of all) {
+      if (t.anisotropy < maxAniso && t.generateMipmaps) {
+        t.anisotropy = maxAniso;
+        t.needsUpdate = true;
+      }
+    }
     await renderer.compileAsync(scene, camera);
-    await uploadTextures(textures(scene));
+    await uploadTextures(all);
     while (blobUrls.length) URL.revokeObjectURL(blobUrls.pop()!);
     opts.onProgress(1);
   });

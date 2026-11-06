@@ -3,6 +3,7 @@
 // goes into the Disk II and opens its project, the phone gets you in touch, the tape plays.
 // Props carry their hotspot in userData.hotspot (props.ts) or get one here by name. Everything you
 // can do here can also be done from the terminal; the desk is a shortcut, never the only door.
+import type { Liquid } from "./mug";
 import {
   AdditiveBlending,
   Box3,
@@ -15,6 +16,7 @@ import {
   ShaderMaterial,
   Vector2,
   Vector3,
+  type Camera,
   type Intersection,
   type MeshStandardMaterial,
   type Object3D,
@@ -62,7 +64,7 @@ const BY_NAME: Record<string, Hotspot> = {
   biplane: { kind: "wiggle", label: "toy plane" },
   suitcase: { kind: "hop", label: "the suitcase", hint: "always moving" },
   pixelart: { kind: "swing", label: "pixel portrait", hint: "collecting digital art" },
-  mug: { kind: "wiggle", label: "the mug", hint: "still warm" },
+  mug: { kind: "mug", label: "the mug", hint: "still warm" },
   cube: { kind: "twist", label: "Rubik's cube", hint: "give it a turn" },
   duck: { kind: "hop", label: "rubber duck", hint: "for debugging" },
   spectacles: { kind: "wiggle", label: "reading glasses" },
@@ -102,6 +104,10 @@ const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2
 const easeOut = (t: number) => 1 - (1 - t) ** 3;
 /** A damped wobble: starts at 0, rings `freq` times a second-ish, dies away. */
 const wobble = (t: number, freq: number, decay: number) => Math.sin(t * Math.PI * 2 * freq) * Math.exp(-decay * t);
+/** A toss: up fast, down under gravity, with one small bounce at the end (0 → 1 → 0, then a blip). */
+const toss = (t: number) => (t < 0.8 ? Math.sin((t / 0.8) * Math.PI) ** 0.9 : 0.14 * Math.sin(((t - 0.8) / 0.2) * Math.PI));
+/** Where a spring settles after a kick: overshoots once, then rests. */
+const settle = (t: number) => 1 - Math.exp(-6 * t) * Math.cos(t * Math.PI * 2 * 1.4);
 
 export function createInteractions(o: {
   scene: Scene;
@@ -115,7 +121,8 @@ export function createInteractions(o: {
   lamp: SpotLight;
   flash: PointLight;
   drive: Drive | null;
-  sfx: (cue: string) => void;
+  /** A cue, panned to where the prop is on screen. */
+  sfx: (cue: string, opts?: { pan?: number; volume?: number }) => void;
   music: (on: boolean) => void;
   /** The sound switch, for the headphones (null when there's no sound layer). */
   muted: () => boolean | null;
@@ -125,6 +132,13 @@ export function createInteractions(o: {
 }) {
   const { scene, camera } = o;
   const targets: Object3D[] = [];
+  /** Where a prop is across the screen, -1..1, for panning its sound. */
+  const ndc = new Vector3();
+  const panOf = (x: Object3D) => {
+    x.getWorldPosition(ndc).project(camera);
+    return Number.isFinite(ndc.x) ? Math.max(-0.8, Math.min(0.8, ndc.x * 0.7)) : 0;
+  };
+  const sfx = (cue: string, x?: Object3D, volume?: number) => o.sfx(cue, { pan: x ? panOf(x) : 0, volume });
   const ray = new Raycaster();
   const pointer = new Vector2();
 
@@ -289,63 +303,186 @@ export function createInteractions(o: {
       moving.delete(object);
     }
   }
-  const hop = (x: Object3D, height = 0.03, ms = 520) => {
+  const hop = (x: Object3D, height = 0.03, ms = 560) => {
     const y = x.position.y;
     const turn = x.rotation.y;
+    const tilt = x.rotation.z;
     return o.animate(ms, (t) => {
-      x.position.y = y + height * 4 * t * (1 - t);
-      x.rotation.y = turn + 0.25 * wobble(t, 1.2, 3);
+      x.position.y = y + height * toss(t);
+      x.rotation.y = turn + 0.22 * wobble(t, 1.1, 2.6);
+      // lands a touch off-square, then rights itself
+      x.rotation.z = tilt + (t > 0.8 ? 0.05 * Math.sin(((t - 0.8) / 0.2) * Math.PI) : 0);
+    }).then(() => {
+      x.position.y = y;
+      x.rotation.y = turn;
+      x.rotation.z = tilt;
+    });
+  };
+  const bounce = (x: Object3D) => {
+    const y = x.position.y;
+    const turn = x.rotation.y;
+    return o.animate(1150, (t) => {
+      // three bounces, each lower and shorter, and it rolls a little as it goes
+      const k = t < 0.45 ? t / 0.45 : t < 0.76 ? (t - 0.45) / 0.31 : (t - 0.76) / 0.24;
+      const h = t < 0.45 ? 0.06 : t < 0.76 ? 0.024 : 0.007;
+      x.position.y = y + h * Math.sin(k * Math.PI);
+      x.rotation.y = turn + 0.5 * easeOut(t);
     }).then(() => {
       x.position.y = y;
       x.rotation.y = turn;
     });
   };
-  const bounce = (x: Object3D) => {
-    const y = x.position.y;
-    return o.animate(1100, (t) => {
-      // three bounces, each lower
-      const k = t < 0.45 ? t / 0.45 : t < 0.78 ? (t - 0.45) / 0.33 : (t - 0.78) / 0.22;
-      const h = t < 0.45 ? 0.06 : t < 0.78 ? 0.025 : 0.008;
-      x.position.y = y + h * 4 * k * (1 - k);
-    }).then(() => (x.position.y = y));
-  };
   const spin = (x: Object3D) => {
     const turn = x.rotation.y;
-    return o.animate(1600, (t) => (x.rotation.y = turn + easeOut(t) * Math.PI * 2)).then(() => (x.rotation.y = turn));
-  };
-  const wiggle = (x: Object3D, amount = 0.08) => {
-    const turn = x.rotation.y;
-    return o.animate(700, (t) => (x.rotation.y = turn + amount * wobble(t, 2.5, 4))).then(() => (x.rotation.y = turn));
-  };
-  const swing = (x: Object3D) => {
     const tilt = x.rotation.z;
-    return o.animate(1400, (t) => (x.rotation.z = tilt + 0.05 * wobble(t, 1.6, 3.2))).then(() => (x.rotation.z = tilt));
-  };
-  const flip = (x: Object3D) => {
-    const y = x.position.y;
-    const roll = x.rotation.x;
-    return o.animate(800, (t) => {
-      x.position.y = y + 0.09 * 4 * t * (1 - t);
-      x.rotation.x = roll + t * Math.PI * 4;
+    return o.animate(1900, (t) => {
+      x.rotation.y = turn + easeOut(t) * Math.PI * 2;
+      // the axis nods as it spins up, and settles as it slows
+      x.rotation.z = tilt + 0.018 * wobble(t, 2.2, 2.4);
     }).then(() => {
-      x.position.y = y;
-      x.rotation.x = roll;
+      x.rotation.y = turn;
+      x.rotation.z = tilt;
     });
   };
+  /** A nudge: it turns a little, rocks on its base and lifts a hair, then comes to rest. */
+  const wiggle = (x: Object3D, amount = 0.08) => {
+    const turn = x.rotation.y;
+    const tilt = x.rotation.z;
+    const y = x.position.y;
+    return o.animate(760, (t) => {
+      x.rotation.y = turn + amount * wobble(t, 2.5, 4);
+      x.rotation.z = tilt + amount * 0.35 * wobble(t + 0.04, 3.1, 5);
+      x.position.y = y + 0.004 * Math.max(0, Math.sin(t * Math.PI * 1.6)) * (1 - t);
+    }).then(() => {
+      x.rotation.y = turn;
+      x.rotation.z = tilt;
+      x.position.y = y;
+    });
+  };
+  /** Something hung on a nail swings from the nail, not its middle. */
+  const swing = (x: Object3D) => {
+    const tilt = x.rotation.z;
+    const px = x.position.x;
+    const py = x.position.y;
+    // how far the top edge is above the holder's origin (the pin, for postcards: 0)
+    x.updateMatrixWorld(true);
+    const top = new Box3().setFromObject(x).max.y - x.getWorldPosition(new Vector3()).y;
+    const reach = Math.max(0, top) / Math.max(1e-6, x.getWorldScale(new Vector3()).y) * (x.parent ? 1 / Math.max(1e-6, x.parent.getWorldScale(new Vector3()).y) : 1);
+    return o.animate(1500, (t) => {
+      const a = 0.055 * wobble(t, 1.5, 2.6);
+      x.rotation.z = tilt + a;
+      x.position.x = px + reach * Math.sin(a);
+      x.position.y = py + reach * (1 - Math.cos(a));
+    }).then(() => {
+      x.rotation.z = tilt;
+      x.position.x = px;
+      x.position.y = py;
+    });
+  };
+  const flip = async (x: Object3D) => {
+    const y = x.position.y;
+    const roll = x.rotation.x;
+    const tilt = x.rotation.z;
+    await o.animate(820, (t) => {
+      x.position.y = y + 0.09 * Math.sin(t * Math.PI) ** 0.8;
+      x.rotation.x = roll + easeOut(t) * Math.PI * 4;
+    });
+    x.position.y = y;
+    x.rotation.x = roll;
+    // it lands on its edge and rocks flat
+    await o.animate(420, (t) => (x.rotation.z = tilt + 0.11 * wobble(t, 3.4, 4.5)));
+    x.rotation.z = tilt;
+  };
+  /** The coffee: knock the cup, the coffee sloshes and rings, steam rises while it's warm. */
+  const liquidOf = (x: Object3D): Liquid | null => {
+    let found: Liquid | null = null;
+    x.traverse((c) => {
+      if (!found && c.userData.liquid) found = c.userData.liquid as Liquid;
+    });
+    return found;
+  };
+  // One loop drives the coffee, however it was started (a knock, or stepping back from the screen),
+  // so a knock during the steam never runs the liquid twice.
+  const mugTilt = { x: 0, z: 0 };
+  let liquidRunning = false;
+  async function runLiquid(liquid: Liquid) {
+    if (liquidRunning) return;
+    liquidRunning = true;
+    try {
+      let last = performance.now();
+      let alive = true;
+      while (alive) {
+        await o.animate(400, () => {
+          const now = performance.now();
+          alive = liquid.step(Math.min(0.05, (now - last) / 1000), now, camera as Camera, mugTilt);
+          last = now;
+        });
+      }
+    } finally {
+      liquidRunning = false;
+    }
+  }
+  /** Knock the cup: it rocks on its base for a second, and the coffee answers. */
+  const nudgeMug = async (x: Object3D) => {
+    const liquid = liquidOf(x);
+    const rx = x.rotation.x;
+    const rz = x.rotation.z;
+    const y = x.position.y;
+    if (liquid) {
+      liquid.knock(0.9);
+      void runLiquid(liquid);
+    }
+    await o.animate(1000, (t) => {
+      mugTilt.z = 0.085 * wobble(t, 2.1, 4.2);
+      mugTilt.x = 0.03 * wobble(t + 0.05, 2.7, 5);
+      x.rotation.z = rz + mugTilt.z;
+      x.rotation.x = rx + mugTilt.x;
+      x.position.y = y + 0.003 * Math.max(0, Math.sin(t * Math.PI * 2.2)) * (1 - t);
+    });
+    mugTilt.x = mugTilt.z = 0;
+    x.rotation.x = rx;
+    x.rotation.z = rz;
+    x.position.y = y;
+  };
+  /** Steam off the coffee for a while (stepping back from the screen), without touching the cup. */
+  function steamMug(ms: number) {
+    const mug = scene.getObjectByName("mug");
+    const liquid = mug ? liquidOf(mug) : null;
+    if (!liquid) return Promise.resolve();
+    liquid.steam(ms);
+    return runLiquid(liquid);
+  }
 
+  /** The lamp at `k` of full: the cone, the spill inside the shade and the bulb's glow together. */
+  function lampLevel(k: number) {
+    const { lamp } = o;
+    lamp.intensity = ((lamp.userData.on as number | undefined) ?? 2.6) * k;
+    const spill = lamp.userData.spill as PointLight | undefined;
+    if (spill) spill.intensity = 0.35 * k;
+    const bulb = lamp.userData.bulb as MeshStandardMaterial | undefined;
+    if (bulb) bulb.emissiveIntensity = 2.5 * k;
+  }
   function setLamp(on: boolean) {
     lampOn = on;
-    const { lamp } = o;
-    lamp.intensity = on ? ((lamp.userData.on as number | undefined) ?? 2.6) : 0;
-    const spill = lamp.userData.spill as PointLight | undefined;
-    if (spill) spill.intensity = on ? 0.35 : 0;
-    const bulb = lamp.userData.bulb as MeshStandardMaterial | undefined;
-    if (bulb) bulb.emissiveIntensity = on ? 2.5 : 0;
-    o.relight();
+    void once(o.lamp, async () => {
+      if (on) {
+        // a filament: a flicker as it catches, an overshoot, then steady
+        await o.animate(260, (t) => {
+          const catching = t < 0.35 ? 0.45 + 0.55 * Math.abs(Math.sin(t * 52)) : 1;
+          lampLevel(Math.min(1.08, settle(t) * 1.08) * catching);
+        });
+        lampLevel(1);
+      } else {
+        // off: the filament cools over a few frames
+        await o.animate(140, (t) => lampLevel((1 - t) ** 2));
+        lampLevel(0);
+      }
+      o.relight();
+    });
   }
 
   async function camera35(x: Object3D) {
-    o.sfx("shutter");
+    sfx("shutter", x);
     x.updateMatrixWorld();
     o.flash.position.copy(x.getWorldPosition(new Vector3())).add(new Vector3(0, 0.08, 0.06));
     await o.animate(320, (t) => (o.flash.intensity = 6 * (1 - t) ** 2));
@@ -384,7 +521,7 @@ export function createInteractions(o: {
     home.rotation.set(slot.rotation.x, slot.rotation.y, slot.rotation.z);
     const to = worldPose(home);
     home.removeFromParent();
-    o.sfx("diskEject");
+    sfx("diskEject", disk);
     if (o.drive) await slide(disk, o.drive, 0, 1);
     await flyTo(disk, to, 650);
     box.attach(disk);
@@ -413,17 +550,17 @@ export function createInteractions(o: {
       if (inDrive !== disk && o.drive) {
         const { drive } = o;
         disk.userData.box ??= disk.parent;
-        o.sfx("click");
+        sfx("click", disk);
         const lifted = worldPose(disk);
         lifted.position.y += 0.1;
         await flyTo(disk, lifted, 260, 0);
         const outside = drive.slot.clone().addScaledVector(drive.out, 0.15);
         await flyTo(disk, { position: outside, quaternion: drive.quaternion, scale: lifted.scale }, 750, 0.06);
-        o.sfx("diskInsert");
+        sfx("diskInsert", disk);
         await slide(disk, drive, 1, 0);
         inDrive = disk;
         drive.led.visible = true;
-        o.sfx("diskRead");
+        sfx("diskRead", disk);
         await o.animate(300, () => {});
       }
       await o.sitDownAndRun(command);
@@ -446,7 +583,7 @@ export function createInteractions(o: {
     };
     await flyTo(tape, to, 700, 0.08);
     walkman.attach(tape);
-    o.sfx("tapeInsert");
+    sfx("tapeInsert", walkman);
     tapeIn = true;
     playing = true;
     o.music(true);
@@ -455,7 +592,7 @@ export function createInteractions(o: {
     if (!tapeHome) return;
     o.music(false);
     playing = false;
-    o.sfx("lidOpen");
+    sfx("lidOpen", tape);
     const home = tapeHome;
     const ghost = new Mesh();
     home.parent.add(ghost);
@@ -502,7 +639,7 @@ export function createInteractions(o: {
       void once(cube, async () => {
         while (turns.length) {
           const m = turns.pop()!;
-          o.sfx("click");
+          sfx("click", cube, 0.7);
           await turn(cubies, { ...m, dir: -m.dir }, 170);
         }
       });
@@ -518,7 +655,7 @@ export function createInteractions(o: {
         void load(object, spot.command ?? "projects");
         return;
       case "phone":
-        o.sfx("phoneUp");
+        sfx("phoneUp", object);
         void once(object, async () => {
           leave();
           const handset = object.getObjectByName("handset");
@@ -533,7 +670,7 @@ export function createInteractions(o: {
             void o.sitDownAndRun("contact").then(() => {
               handset.position.y = y;
               handset.rotation.x = tilt;
-              o.sfx("phoneDown");
+              sfx("phoneDown", object);
             });
             return;
           }
@@ -542,11 +679,15 @@ export function createInteractions(o: {
         });
         return;
       case "time":
-        o.sfx("lidClose"); // the blinds
+        sfx("lidClose", object); // the blinds
         o.setTime(o.time() === "dusk" ? "night" : "dusk");
         return;
+      case "mug":
+        sfx("slosh", object);
+        void once(object, () => nudgeMug(object));
+        return;
       case "paper":
-        o.sfx("paper");
+        sfx("paper", object);
         void once(object, async () => {
           leave();
           if (object.getWorldPosition(new Vector3()).y > 0.1) {
@@ -560,7 +701,7 @@ export function createInteractions(o: {
         });
         return;
       case "crt":
-        o.sfx("switch");
+        sfx("switch", object);
         void once(object, async () => {
           leave();
           await wiggle(object, 0.03);
@@ -568,7 +709,7 @@ export function createInteractions(o: {
         });
         return;
       case "answering":
-        o.sfx("click");
+        sfx("click", object);
         void once(object, async () => {
           leave();
           await hop(object, 0.01, 260);
@@ -579,12 +720,12 @@ export function createInteractions(o: {
         const now = o.muted();
         if (now === null) return;
         o.setMuted(!now);
-        if (now) o.sfx("tapeButton");
+        if (now) sfx("tapeButton", object);
         void once(object, () => hop(object, 0.015, 380));
         return;
       }
       case "lamp":
-        o.sfx("switch");
+        sfx(lampOn ? "switch" : "lampOn", object);
         setLamp(!lampOn);
         return;
       case "tape": {
@@ -595,11 +736,11 @@ export function createInteractions(o: {
       }
       case "walkman":
         if (!tapeIn) {
-          o.sfx("tap");
+          sfx("tap", object);
           void once(object, () => hop(object, 0.012, 360));
           return;
         }
-        o.sfx("tapeButton");
+        sfx("tapeButton", object);
         playing = !playing;
         o.music(playing);
         return;
@@ -607,14 +748,14 @@ export function createInteractions(o: {
         void once(object, () => camera35(object));
         return;
       case "twist":
-        o.sfx("click");
+        sfx("click", object);
         void once(object, () => twist(object));
         return;
     }
     const motions: Record<string, (x: Object3D) => Promise<unknown>> = { spin, hop: (x) => hop(x), bounce, wiggle: (x) => wiggle(x), swing, flip };
     const motion = motions[spot.kind];
     if (!motion) return;
-    o.sfx(spot.kind === "spin" ? "spin" : spot.kind === "hop" || spot.kind === "bounce" || spot.kind === "flip" ? "tap" : "paper");
+    sfx(spot.kind === "spin" ? "spin" : spot.kind === "hop" || spot.kind === "bounce" || spot.kind === "flip" ? "tap" : "paper", object);
     void once(object, () => motion(object) as Promise<void>);
   }
 
@@ -626,7 +767,7 @@ export function createInteractions(o: {
     return found;
   }
 
-  return { pick, hover, say, leave, click, setTargets, get busy() {
+  return { pick, hover, say, leave, click, setTargets, warm: steamMug, get busy() {
     return busy;
   } };
 }

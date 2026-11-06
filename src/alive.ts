@@ -25,6 +25,12 @@ import { HOST, fileName, projects } from "./content";
 import { display, findFile } from "./fs";
 import { PLACES, type Hotspot } from "./interact";
 
+/**
+ * Small life on the desk's heartbeat (desk.ts ticks these about once a second while the desk is
+ * in view): activity LEDs re-roll, nothing else. Each is cheap; together they cost one frame.
+ */
+export const pulses = new Set<() => void>();
+
 function makeCanvas(w: number, h: number) {
   const c = document.createElement("canvas");
   c.width = w;
@@ -1230,7 +1236,9 @@ export function pantryMap(): Mesh {
  * Fits a single merged vertex-coloured LED mesh onto the front panel of the 8-port rack switch:
  * power on the left bezel plus a handful of active RJ45 link/activity tabs (static, zero idle draws).
  */
-export function addSwitchLeds(sw: Object3D): void {
+export type SwitchPorts = { ports: Vector3[]; out: Vector3 };
+
+export function addSwitchLeds(sw: Object3D): SwitchPorts | null {
   sw.updateMatrixWorld(true);
   const invSw = sw.matrixWorld.clone().invert();
   const localBox = new Box3();
@@ -1248,7 +1256,7 @@ export function addSwitchLeds(sw: Object3D): void {
       localBox.expandByPoint(v.fromBufferAttribute(pos, i).applyMatrix4(toSw));
     }
   });
-  if (localBox.isEmpty()) return;
+  if (localBox.isEmpty()) return null;
 
   const w = localBox.max.x - localBox.min.x; // 0.24 m across the 8-port bezel
   const h = localBox.max.y - localBox.min.y; // 0.0373 m tall
@@ -1278,19 +1286,23 @@ export function addSwitchLeds(sw: Object3D): void {
   const rightTab = w * 0.029;
   const tabY = localBox.min.y + h * 0.715;
 
-  const leds: { x: number; y: number; hex: string; sx?: number; sy?: number }[] = [
+  const leds: { x: number; y: number; hex: string; sx?: number; sy?: number; act?: boolean }[] = [
     // Left-bezel power LED inside its recessed window above "Power"
     { x: localBox.min.x + w * 0.05, y: localBox.min.y + h * 0.375, hex: "#5ce87e", sx: 0.0036, sy: 0.003 },
     // Port 1 (uplink): link + act
     { x: portCenter(1) + leftTab, y: tabY, hex: "#72f592" },
-    { x: portCenter(1) + rightTab, y: tabY, hex: "#52d974" },
-    // Port 2 (NAS): link
+    { x: portCenter(1) + rightTab, y: tabY, hex: "#52d974", act: true },
+    // Port 2 (NAS): link + act
     { x: portCenter(2) + leftTab, y: tabY, hex: "#72f592" },
+    { x: portCenter(2) + rightTab, y: tabY, hex: "#52d974", act: true },
+    // Port 4 (the Pis): link + act
+    { x: portCenter(4) + leftTab, y: tabY, hex: "#72f592" },
+    { x: portCenter(4) + rightTab, y: tabY, hex: "#52d974", act: true },
     // Port 5 (lab monitor / 100M): amber link
     { x: portCenter(5) + leftTab, y: tabY, hex: "#ffb845" },
     // Port 7 (desk): link + act
     { x: portCenter(7) + leftTab, y: tabY, hex: "#72f592" },
-    { x: portCenter(7) + rightTab, y: tabY, hex: "#52d974" },
+    { x: portCenter(7) + rightTab, y: tabY, hex: "#52d974", act: true },
   ];
 
   const quads: BufferGeometry[] = leds.map((led) => {
@@ -1324,4 +1336,24 @@ export function addSwitchLeds(sw: Object3D): void {
   mesh.receiveShadow = false;
   mesh.raycast = () => {};
   sw.add(mesh);
+
+  // The activity lights flicker on the heartbeat: each quad's four vertices get the same brightness.
+  const colour = merged.getAttribute("color") as Float32BufferAttribute;
+  const base = (colour.array as Float32Array).slice();
+  const perLed = colour.count / leds.length;
+  const acts = leds.map((l, i) => (l.act ? i : -1)).filter((i) => i >= 0);
+  pulses.add(() => {
+    for (const i of acts) {
+      const k = Math.random() < 0.55 ? 1 : 0.1 + Math.random() * 0.25;
+      for (let v = 0; v < perLed; v++) {
+        const o = (i * perLed + v) * 3;
+        colour.setXYZ(i * perLed + v, base[o] * k, base[o + 1] * k, base[o + 2] * k);
+      }
+    }
+    colour.needsUpdate = true;
+  });
+
+  // Where a cable plugs in: the lit ports, just below their lights, in the switch's own space.
+  const portY = localBox.min.y + h * 0.42;
+  return { ports: [1, 2, 4, 5, 7].map((p) => new Vector3(portCenter(p), portY, frontZ)), out: new Vector3(0, 0, 1) };
 }

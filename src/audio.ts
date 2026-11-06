@@ -23,6 +23,8 @@ export type Cue =
   | "clapper"
   | "shutter"
   | "spin"
+  | "slosh"
+  | "lampOn"
   | "boot";
 
 type Engine = typeof import("./audio-engine");
@@ -105,7 +107,8 @@ function setMuted(m: boolean) {
 }
 
 export const audio: {
-  play(cue: Cue, opts?: { volume?: number; rate?: number }): void;
+  /** `pan` is -1 (left) … 1 (right), where the thing is on screen. */
+  play(cue: Cue, opts?: { volume?: number; rate?: number; pan?: number }): void;
   loop(name: "room" | "hum", on: boolean): void;
   music(on: boolean): Promise<void>;
   setInside(t: number): void;
@@ -118,8 +121,9 @@ export const audio: {
     const vol = clamp(opts?.volume ?? 1, 0, 2);
     if (vol <= 0) return;
     const rate = clamp(opts?.rate ?? 1, 0.25, 4);
-    if (engine) engine.playCue(cue, vol, rate);
-    else void loadEngine().then((m) => m.playCue(cue, vol, rate));
+    const pan = clamp(opts?.pan ?? 0, -1, 1);
+    if (engine) engine.playCue(cue, vol, rate, pan);
+    else void loadEngine().then((m) => m.playCue(cue, vol, rate, pan));
   },
 
   loop(name, on) {

@@ -50,7 +50,7 @@ function stepBack() {
       },
       run: (command) => void term.type(command, 12),
       sound: {
-        play: (cue) => audio.play(cue),
+        play: (cue, o) => audio.play(cue, o),
         music: (on) => audio.music(on),
         loop: (name, on) => audio.loop(name, on),
         setInside: (t) => audio.setInside(t),

@@ -8,6 +8,7 @@ import {
   BoxGeometry,
    type BufferGeometry,
   CanvasTexture,
+  Color,
   DirectionalLight,
   DoubleSide,
   PointLight,
@@ -45,6 +46,8 @@ export type Room = {
   windowFrame: Object3D;
   /** Golden hour or the middle of the night: the sky outside and the light it lets in. */
   setTime(time: Time): void;
+  /** Part way between them: 0 is dusk, 1 is night. The sky swaps half way; the light slides. */
+  blend(k: number): void;
   /** Paints the 2 AM skyline on idle so clicking the window never stalls. */
   warmNight(): void;
 };
@@ -318,22 +321,28 @@ export function buildRoom(
       ensureNight();
     },
     setTime(time) {
+      this.blend(time === "night" ? 1 : 0);
+    },
+    blend(k) {
       // Dusk: the low sun through the blinds, warm. Night: the moon and the city, cool and moody.
-      const look =
-        time === "dusk"
-          ? { sun: ["#ffb46e", 3.4], bounce: ["#ffb780", 0.55], tint: "#d8d0c8" }
-          : { sun: ["#6892e8", 0.92], bounce: ["#5c82d6", 0.68], tint: "#ffffff" };
-      sun.color.set(look.sun[0] as string);
-      sun.intensity = look.sun[1] as number;
-      bounce.color.set(look.bounce[0] as string);
-      bounce.intensity = look.bounce[1] as number;
+      // In between (the window being clicked), the light slides from one to the other.
+      const dusk = { sun: new Color("#ffb46e"), sunI: 3.4, bounce: new Color("#ffb780"), bounceI: 0.55, tint: new Color("#d8d0c8") };
+      const night = { sun: new Color("#6892e8"), sunI: 0.92, bounce: new Color("#5c82d6"), bounceI: 0.68, tint: new Color("#ffffff") };
+      // The sky's brightness drops faster than its colour turns, so the room never looks lit by nothing.
+      const e = k * k * (3 - 2 * k);
+      sun.color.copy(dusk.sun).lerp(night.sun, e);
+      sun.intensity = dusk.sunI + (night.sunI - dusk.sunI) * e;
+      bounce.color.copy(dusk.bounce).lerp(night.bounce, e);
+      bounce.intensity = dusk.bounceI + (night.bounceI - dusk.bounceI) * e;
       const material = view.material as MeshBasicMaterial;
-      const nextMap = time === "night" ? ensureNight() : skies.dusk;
+      const nextMap = k >= 0.5 ? ensureNight() : skies.dusk;
       if (material.map !== nextMap) {
         material.map = nextMap;
         material.needsUpdate = true;
       }
-      material.color.set(look.tint);
+      // Dip the painted view through dark around the swap so the two paintings never cut.
+      const dip = 1 - 0.85 * Math.max(0, 1 - Math.abs(k - 0.5) * 4);
+      material.color.copy(dusk.tint).lerp(night.tint, e).multiplyScalar(dip);
     },
   };
 }

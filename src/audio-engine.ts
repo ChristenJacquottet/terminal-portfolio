@@ -29,6 +29,8 @@ let inside = 0;
 
 let masterBus: GainNode | null = null;
 let cueBus: GainNode | null = null;
+let verbSend: GainNode | null = null;
+let verbReturn: GainNode | null = null;
 let ambFilter: BiquadFilterNode | null = null;
 let ambDuck: GainNode | null = null;
 let musicFilter: BiquadFilterNode | null = null;
@@ -98,23 +100,58 @@ function buildNoise(c: AudioContext) {
 }
 
 function applyInside(snap: boolean) {
-  if (!ctx || !ambFilter || !ambDuck || !musicFilter || !musicBus) return;
+  if (!ctx || !ambFilter || !ambDuck || !musicFilter || !musicBus || !verbReturn) return;
   const now = ctx.currentTime;
   const af = 14000 * (1150 / 14000) ** inside;
   const ag = 1 - 0.64 * inside;
   const mf = 13500 * (4800 / 13500) ** inside;
   const mg = 0.32 * (1 - 0.32 * inside);
+  // Close to the screen the room falls away: less of its reverb on the clicks.
+  const vg = VERB_LEVEL * (1 - 0.7 * inside);
   if (snap) {
     ambFilter.frequency.setValueAtTime(af, now);
     ambDuck.gain.setValueAtTime(ag, now);
     musicFilter.frequency.setValueAtTime(mf, now);
     musicBus.gain.setValueAtTime(mg, now);
+    verbReturn.gain.setValueAtTime(vg, now);
   } else {
     ambFilter.frequency.setTargetAtTime(af, now, 0.11);
     ambDuck.gain.setTargetAtTime(ag, now, 0.11);
     musicFilter.frequency.setTargetAtTime(mf, now, 0.11);
     musicBus.gain.setTargetAtTime(mg, now, 0.11);
+    verbReturn.gain.setTargetAtTime(vg, now, 0.11);
   }
+}
+
+const VERB_LEVEL = 0.2;
+
+/**
+ * The room, as an impulse response: 0.55 s of stereo noise that decays exponentially and loses its
+ * highs as it goes, with a few early reflections in front. A small room with a desk in it, not a hall.
+ */
+function roomImpulse(c: AudioContext): AudioBuffer {
+  const sr = c.sampleRate;
+  const len = Math.floor(sr * 0.55);
+  const buf = c.createBuffer(2, len, sr);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = buf.getChannelData(ch);
+    let lp = 0;
+    for (let i = 0; i < len; i++) {
+      const t = i / sr;
+      const env = Math.exp(-t * 9.5) * (1 - Math.exp(-t * 900));
+      const x = (Math.random() * 2 - 1) * env;
+      // darker as it decays: a one-pole low-pass whose cutoff falls with time
+      const k = 0.35 + 0.6 * Math.min(1, t * 2.4);
+      lp += (x - lp) * (1 - k);
+      d[i] = lp * 0.9;
+    }
+    // early reflections: the wall behind, the desk, the window
+    for (const [ms, g] of [[9, 0.5], [17, 0.35], [26, 0.3], [41, 0.22]] as const) {
+      const at = Math.floor(sr * (ms / 1000) * (ch ? 1.07 : 1));
+      if (at < len) d[at] += g * (ch ? -1 : 1);
+    }
+  }
+  return buf;
 }
 
 export function attach(
@@ -136,13 +173,36 @@ export function attach(
     lim.attack.value = 0.003;
     lim.release.value = 0.12;
     lim.connect(c.destination);
+    // nothing below 28 Hz reaches the speakers (plosive thumps from the key and disk cues)
+    const rumble = c.createBiquadFilter();
+    rumble.type = "highpass";
+    rumble.frequency.value = 28;
+    rumble.Q.value = 0.7;
+    rumble.connect(lim);
 
     masterBus = c.createGain();
     masterBus.gain.value = muted ? 0 : MASTER_GAIN;
-    masterBus.connect(lim);
+    masterBus.connect(rumble);
 
     cueBus = c.createGain();
     cueBus.connect(masterBus);
+
+    // The room on the cues: a short convolution, mixed in low, taken away inside the screen.
+    const verb = c.createConvolver();
+    verb.buffer = roomImpulse(c);
+    verb.normalize = true;
+    verbSend = c.createGain();
+    verbSend.gain.value = 1;
+    verbReturn = c.createGain();
+    verbReturn.gain.value = VERB_LEVEL;
+    const verbTone = c.createBiquadFilter();
+    verbTone.type = "lowpass";
+    verbTone.frequency.value = 5200;
+    cueBus.connect(verbSend);
+    verbSend.connect(verb);
+    verb.connect(verbTone);
+    verbTone.connect(verbReturn);
+    verbReturn.connect(masterBus);
 
     ambFilter = c.createBiquadFilter();
     ambFilter.type = "lowpass";
@@ -275,7 +335,7 @@ function td(
   osc.onended = () => env.disconnect();
 }
 
-function playSample(url: string, gain: number, rate: number, offset = 0) {
+function playSample(url: string, gain: number, rate: number, out: AudioNode, offset = 0) {
   if (!ctx || !cueBus) return;
   const fire = (buf: AudioBuffer) => {
     if (muted || !ctx || !cueBus) return;
@@ -285,7 +345,7 @@ function playSample(url: string, gain: number, rate: number, offset = 0) {
     const g = ctx.createGain();
     g.gain.value = gain;
     src.connect(g);
-    g.connect(cueBus);
+    g.connect(out);
     src.start(ctx.currentTime, offset);
     src.onended = () => g.disconnect();
   };
@@ -294,10 +354,22 @@ function playSample(url: string, gain: number, rate: number, offset = 0) {
   else void loadBuf(url).then((b) => b && fire(b));
 }
 
-export function playCue(cue: Cue, vol: number, rate: number) {
+/** A cue's own output: panned to where the thing is, then into the cue bus. Let go after it rings out. */
+function panned(c: AudioContext, into: AudioNode, pan: number): AudioNode {
+  if (!pan || !c.createStereoPanner) return into;
+  const p = c.createStereoPanner();
+  p.pan.value = clamp(pan, -1, 1);
+  p.connect(into);
+  setTimeout(() => p.disconnect(), 3000);
+  return p;
+}
+
+export function playCue(cue: Cue, vol: number, rate: number, pan = 0) {
   if (muted || !ctx || !cueBus) return;
   const c = ctx;
-  const out = cueBus;
+  // Typing is never dead centre: the keys spread a little, left to right, with the hands.
+  const spread = cue === "key" || cue === "keySpace" || cue === "keyReturn" ? (Math.random() * 2 - 1) * 0.14 : 0;
+  const out = panned(c, cueBus, pan + spread);
 
   switch (cue) {
     case "key": {
@@ -306,6 +378,8 @@ export function playCue(cue: Cue, vol: number, rate: number) {
       nb(c, out, pinkBuf, 0.0065, 0.105 * vol, [2050, 2280, 1920, 2460, 2150, 2360][v] * r, 2.1);
       nb(c, out, pinkBuf, 0.015, 0.065 * vol, 720 * r, 1.4, 0.002);
       td(c, out, [0.026, 0.024, 0.03, 0.022, 0.028, 0.025][v], [235, 255, 215, 270, 225, 248][v] * r, 102 * r, 0.11 * vol, "triangle", 0, 1100);
+      // the case: a low knock under every key, the sound of the whole machine on the desk
+      td(c, out, 0.05, 128 * r, 92 * r, 0.045 * vol, "sine", 0.003, 420, 0.004);
       break;
     }
     case "keySpace": {
@@ -380,12 +454,12 @@ export function playCue(cue: Cue, vol: number, rate: number) {
     }
     case "tapeInsert": {
       const v = pick(cue, 3);
-      playSample(URLS.tapeIn, 0.42 * vol, rate * [0.96, 1, 1.045][v] * jitter(25));
+      playSample(URLS.tapeIn, 0.42 * vol, rate * [0.96, 1, 1.045][v] * jitter(25), out);
       break;
     }
     case "tapeButton": {
       const v = pick(cue, 2);
-      playSample(v ? URLS.tapeBtn2 : URLS.tapeBtn1, 0.44 * vol, rate * jitter(40));
+      playSample(v ? URLS.tapeBtn2 : URLS.tapeBtn1, 0.44 * vol, rate * jitter(40), out);
       break;
     }
     case "lidOpen": {
@@ -408,21 +482,21 @@ export function playCue(cue: Cue, vol: number, rate: number) {
     case "phoneUp": {
       const v = pick(cue, 3);
       const r = rate * [0.97, 1, 1.035][v] * jitter(25);
-      playSample(URLS.phoneUp, 0.52 * vol, r);
+      playSample(URLS.phoneUp, 0.52 * vol, r, out);
       td(c, out, 0.055, 585 * r, 610 * r, 0.022 * vol, "sine", 0.04);
       break;
     }
     case "phoneDown": {
       const v = pick(cue, 3);
       const r = rate * [0.97, 1, 1.03][v] * jitter(25);
-      playSample(URLS.phoneDn, 0.5 * vol, r);
+      playSample(URLS.phoneDn, 0.5 * vol, r, out);
       td(c, out, 0.24, 1590 * r, 1590 * r, 0.018 * vol, "sine", 0.035, 0, 0.002);
       td(c, out, 0.17, 2410 * r, 2410 * r, 0.011 * vol, "sine", 0.035, 0, 0.002);
       break;
     }
     case "paper": {
       const v = pick(cue, 4);
-      playSample(URLS.paper, 0.55 * vol, rate * [0.94, 1, 1.06, 1.11][v] * jitter(30), [0, 0.03, 0.01, 0.05][v]);
+      playSample(URLS.paper, 0.55 * vol, rate * [0.94, 1, 1.06, 1.11][v] * jitter(30), out, [0, 0.03, 0.01, 0.05][v]);
       break;
     }
     case "tap": {
@@ -449,7 +523,26 @@ export function playCue(cue: Cue, vol: number, rate: number) {
     }
     case "shutter": {
       const v = pick(cue, 3);
-      playSample(URLS.shutter, 0.46 * vol, rate * [0.97, 1, 1.04][v] * jitter(22));
+      playSample(URLS.shutter, 0.46 * vol, rate * [0.97, 1, 1.04][v] * jitter(22), out);
+      break;
+    }
+    case "slosh": {
+      // the cup knocked: a ceramic tick, then the coffee moving in it, twice, lower the second time
+      const v = pick(cue, 3);
+      const r = rate * jitter(35);
+      nb(c, out, whiteBuf, 0.006, 0.09 * vol, 2700 * r, 2.4);
+      td(c, out, 0.045, [1180, 1260, 1120][v] * r, 980 * r, 0.05 * vol, "sine", 0, 0, 0.001);
+      nb(c, out, pinkBuf, 0.16, 0.12 * vol, 420 * r, 1.1, 0.02, 230 * r, 0.03);
+      td(c, out, 0.12, 560 * r, 320 * r, 0.035 * vol, "sine", 0.03, 900, 0.02);
+      nb(c, out, pinkBuf, 0.14, 0.07 * vol, 360 * r, 1.1, 0.24, 210 * r, 0.03);
+      break;
+    }
+    case "lampOn": {
+      // the switch, and the filament's ping as it takes the current
+      playCue("switch", vol, rate, pan);
+      const r = rate * jitter(20);
+      td(c, out, 0.07, 2350 * r, 2300 * r, 0.028 * vol, "sine", 0.028, 0, 0.001);
+      td(c, out, 0.05, 3900 * r, 3850 * r, 0.012 * vol, "sine", 0.03, 0, 0.001);
       break;
     }
     case "spin": {
@@ -617,8 +710,37 @@ function startHum() {
   bp.connect(ag);
   ag.connect(gain);
   air.start(now);
+  // the air moves: a slow swell on the hum so it never sits still
+  const sway = ctx.createOscillator();
+  sway.frequency.value = 0.09;
+  const swayDepth = ctx.createGain();
+  swayDepth.gain.value = 0.012;
+  sway.connect(swayDepth);
+  swayDepth.connect(ag.gain);
+  sway.start(now);
+  // the rack's fan, over in the corner: a thin rush, a little unsteady
+  const fan = ctx.createBufferSource();
+  fan.buffer = pinkBuf;
+  fan.loop = true;
+  const fbp = ctx.createBiquadFilter();
+  fbp.type = "bandpass";
+  fbp.frequency.value = 1150;
+  fbp.Q.value = 0.7;
+  const fg = ctx.createGain();
+  fg.gain.value = 0.009;
+  fan.connect(fbp);
+  fbp.connect(fg);
+  fg.connect(gain);
+  fan.start(now, Math.random() * 1.2);
+  const flutter = ctx.createOscillator();
+  flutter.frequency.value = 0.31;
+  const flutterDepth = ctx.createGain();
+  flutterDepth.gain.value = 0.0025;
+  flutter.connect(flutterDepth);
+  flutterDepth.connect(fg.gain);
+  flutter.start(now);
 
-  const srcs: AudioScheduledSourceNode[] = [air];
+  const srcs: AudioScheduledSourceNode[] = [air, sway, fan, flutter];
   for (const [f, v] of [
     [60, 0.011],
     [120, 0.006],
@@ -664,6 +786,25 @@ async function startMusic(): Promise<void> {
   src.loop = true;
   src.playbackRate.setValueAtTime(0.93, now);
   src.playbackRate.linearRampToValueAtTime(1, now + 0.055);
+  // A Walkman, not a file: a slow wow from the capstan and a faster flutter from the pinch roller.
+  const wow = ctx.createOscillator();
+  wow.frequency.value = 0.55;
+  const wowDepth = ctx.createGain();
+  wowDepth.gain.value = 0.0022;
+  const flut = ctx.createOscillator();
+  flut.frequency.value = 6.3;
+  const flutDepth = ctx.createGain();
+  flutDepth.gain.value = 0.0005;
+  wow.connect(wowDepth);
+  flut.connect(flutDepth);
+  wowDepth.connect(src.playbackRate);
+  flutDepth.connect(src.playbackRate);
+  wow.start(now);
+  flut.start(now);
+  src.onended = () => {
+    wow.stop();
+    flut.stop();
+  };
 
   const gain = ctx.createGain();
   gain.gain.setValueAtTime(0.0001, now);
