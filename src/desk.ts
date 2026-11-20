@@ -62,6 +62,8 @@ import { createInteractions, type Drive } from "./interact";
 import { addProps, type Disk } from "./props";
 import { ROOM_TEXTURES, buildRoom, loadRoom, type Time } from "./room";
 import { pulses } from "./alive";
+import { features } from "./features";
+import type { DeskApi, PvmScreen } from "./features/types";
 
 /** The tube's shape (4:3). In the monitor the terminal keeps the window's text size, see `fitTube`. */
 const SCREEN_W = 800;
@@ -585,6 +587,8 @@ export async function createDesk(opts: {
   onProgress: (fraction: number) => void;
   /** Types a command into the terminal (a floppy opens its project, the phone runs contact). */
   run: (command: string) => void;
+  /** Clears the terminal and boots it again (the power strip). */
+  reboot?: () => Promise<void>;
   /** The sound layer (audio.ts); the desk works silently without it. */
   sound?: {
     play(cue: Cue, opts?: { pan?: number; volume?: number }): void;
@@ -1095,6 +1099,16 @@ export async function createDesk(opts: {
   const soundToggle = host.querySelector<HTMLElement>(".sound-toggle");
   if (soundToggle) soundToggle.hidden = true;
   const hint = document.getElementById("desk-hint");
+  // The caption strip: what you're looking at, named (features set it; see DeskApi.caption).
+  const captionEl = document.createElement("p");
+  captionEl.className = "desk-caption";
+  captionEl.hidden = true;
+  host.append(captionEl);
+  let captionText: string | null = null;
+  const showCaption = () => {
+    captionEl.textContent = captionText ?? "";
+    captionEl.hidden = !captionText || seated || transitioning || editing;
+  };
   if (hint && coarsePointer) {
     hint.textContent = "drag to look · pinch to lean · tap anything · tap screen to sit";
   }
@@ -1272,7 +1286,9 @@ export async function createDesk(opts: {
   }
 
   if (import.meta.env.DEV) Object.assign(window, { __desk: { scene, renderer, camera, look, three: { Raycaster, Vector2, Vector3, Box3 } } }); // for poking at it from devtools
+  let deskApi: DeskApi | null = null;
   const touch = createInteractions({
+    desk: () => deskApi,
     scene,
     camera,
     host,
@@ -1345,6 +1361,7 @@ export async function createDesk(opts: {
       if (credit && loaded) credit.hidden = false;
       if (soundToggle) soundToggle.hidden = false;
       transitioning = false;
+      showCaption();
       void touch.warm(6000); // the coffee's still warm
       if (!nightWarmed) {
         nightWarmed = true;
@@ -1375,6 +1392,7 @@ export async function createDesk(opts: {
       if (hint) hint.hidden = true;
       if (credit) credit.hidden = true;
       if (soundToggle) soundToggle.hidden = true;
+      captionEl.hidden = true;
       const close = closeUp();
       opts.sound?.setInside(1);
       await fly(close, 1200, 0, easeIn);
@@ -1392,6 +1410,61 @@ export async function createDesk(opts: {
       transitioning = false;
       opts.onSitDown();
     },
+  };
+
+  // ── the desk, for features (src/features): built once the props map exists, below ──────────
+  const centreRay = new Raycaster();
+  const lookingAt = (): string | null => {
+    centreRay.setFromCamera(new Vector2(0, 0), camera);
+    const hit = centreRay.intersectObjects([...props.values()], true)[0];
+    if (!hit) return null;
+    for (let p: Object3D | null = hit.object; p; p = p.parent) if (p.name && props.get(p.name) === p) return p.name;
+    return null;
+  };
+  let blackoutRunning = false;
+  const blackout = async (ms: number, keep: Object3D[] = []) => {
+    if (blackoutRunning) return;
+    blackoutRunning = true;
+    const kept = new Set<Object3D>();
+    for (const k of keep) k.traverse((o) => kept.add(o));
+    const lights: { light: { intensity: number }; was: number }[] = [];
+    const emissives: { m: MeshStandardMaterial; was: number }[] = [];
+    const hidden: Object3D[] = [];
+    scene.traverse((o) => {
+      const l = o as unknown as { isLight?: boolean; intensity: number };
+      if (l.isLight && !kept.has(o)) lights.push({ light: l, was: l.intensity });
+      const mesh = o as Mesh;
+      if (!mesh.isMesh || kept.has(o)) return;
+      for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+        const std = m as MeshStandardMaterial;
+        if (std.isMeshStandardMaterial && std.emissiveIntensity > 0) emissives.push({ m: std, was: std.emissiveIntensity });
+      }
+      // LEDs and the like: additive, unlit, not tone mapped
+      const basic = mesh.material as MeshBasicMaterial;
+      if (basic.isMeshBasicMaterial && basic.transparent && !basic.toneMapped && mesh.visible) {
+        hidden.push(mesh);
+      }
+    });
+    for (const l of lights) l.light.intensity = 0;
+    for (const e of emissives) e.m.emissiveIntensity = 0;
+    for (const h of hidden) h.visible = false;
+    const exposure = renderer.toneMappingExposure;
+    const env = scene.environmentIntensity;
+    renderer.toneMappingExposure = 0.35;
+    scene.environmentIntensity = 0;
+    css.domElement.style.visibility = "hidden"; // the terminal under the glass goes dark
+    opts.sound?.loop("hum", false);
+    relight();
+    await animate(Math.max(1, ms), () => {});
+    for (const l of lights) l.light.intensity = l.was;
+    for (const e of emissives) e.m.emissiveIntensity = e.was;
+    for (const h of hidden) h.visible = true;
+    renderer.toneMappingExposure = exposure;
+    scene.environmentIntensity = env;
+    css.domElement.style.visibility = "";
+    opts.sound?.loop("hum", true);
+    relight();
+    blackoutRunning = false;
   };
 
   /** Uploads textures to WebGL in <= 6 ms slices so the fullscreen terminal stays responsive without burning 140 frames. */
@@ -1442,6 +1515,37 @@ export async function createDesk(opts: {
       }
     }
     touch.setTargets([...props.values(), room.windowFrame], computerOccluders);
+    deskApi = {
+      scene,
+      camera,
+      props,
+      request,
+      relight,
+      animate,
+      lights: { lamp, glow, fill, lab: labLight },
+      time: () => time,
+      setTime: (next) => void fadeTime(next).then(relight),
+      blackout,
+      caption: (text) => {
+        captionText = text;
+        showCaption();
+      },
+      lookingAt,
+      pulses,
+      sound: opts.sound
+        ? { play: (cue, o) => opts.sound!.play(cue as Cue, o), music: (on) => opts.sound!.music(on), loop: (name, on) => opts.sound!.loop(name, on), muted: () => opts.sound!.muted() }
+        : null,
+      terminal: { run: opts.run, reboot: opts.reboot ?? (async () => {}) },
+      sitDown: () => api.sitDown(),
+      pvm: () => (props.get("crt")?.userData.pvm as PvmScreen | undefined) ?? null,
+    };
+    for (const f of features) {
+      try {
+        f.onDesk?.(deskApi);
+      } catch (e) {
+        console.warn(`feature ${f.name}: onDesk failed`, e);
+      }
+    }
     if (!lamp.intensity) {
       lamp.intensity = 14;
       relight();

@@ -269,6 +269,7 @@ body {
 }
 
 .desk-hint,
+.desk-caption,
 .credit,
 .sound-toggle {
   position: fixed;
@@ -307,6 +308,13 @@ body {
 .credit code {
   font: inherit;
   color: #fff;
+}
+
+.desk-caption {
+  right: max(12px, env(safe-area-inset-right));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.6);
 }
 
 .desk-hint {

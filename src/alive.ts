@@ -24,6 +24,22 @@ import {
 import { HOST, fileName, projects } from "./content";
 import { display, findFile } from "./fs";
 import { PLACES, type Hotspot } from "./interact";
+import type { PvmScreen, PvmState } from "./features/types";
+
+/** What the PVM's status page shows. Features change it and call `repaint` (see PvmScreen). */
+export const pvmState: PvmState = {
+  services: [
+    ["terminal", "up", true],
+    ["desk", "up", true],
+    ["coffee", "low", false],
+  ],
+  meters: [
+    ["cpu", 0.34],
+    ["mem", 0.58],
+    ["nas", 0.72],
+  ],
+  footer: null,
+};
 
 /**
  * Small life on the desk's heartbeat (desk.ts ticks these about once a second while the desk is
@@ -54,7 +70,7 @@ function formatUptime(mins: number) {
   return h > 0 ? `${h}h ${two(m)}m` : `${m}m`;
 }
 
-function drawPvmStatus(g: CanvasRenderingContext2D, now: Date, upMins: number) {
+function drawPvmStatus(g: CanvasRenderingContext2D, now: Date, upMins: number, state: PvmState) {
   const W = g.canvas.width;
   const H = g.canvas.height;
 
@@ -99,12 +115,7 @@ function drawPvmStatus(g: CanvasRenderingContext2D, now: Date, upMins: number) {
   g.fillRect(36, 98, W - 72, 2);
 
   // Service lines.
-  const services: [string, string, boolean][] = [
-    ["terminal", "up", true],
-    ["desk", "up", true],
-    ["coffee", "low", false],
-  ];
-  services.forEach(([name, state, ok], i) => {
+  state.services.slice(0, 3).forEach(([name, state, ok], i) => {
     const y = 138 + i * 38;
     g.shadowBlur = ok ? 5 : 0;
     g.fillStyle = ok ? bright : mid;
@@ -134,11 +145,7 @@ function drawPvmStatus(g: CanvasRenderingContext2D, now: Date, upMins: number) {
   g.fillRect(36, 236, W - 72, 2);
 
   // Small bar meters across the bottom of the status page.
-  const meters: [string, number][] = [
-    ["cpu", 0.34],
-    ["mem", 0.58],
-    ["nas", 0.72],
-  ];
+  const meters = state.meters.slice(0, 3);
   const barX = 112;
   const barW = 278;
   const cells = 16;
@@ -160,6 +167,13 @@ function drawPvmStatus(g: CanvasRenderingContext2D, now: Date, upMins: number) {
     g.textAlign = "right";
     g.fillText(`${Math.round(fill * 100)}%`, W - 36, y);
   });
+  if (state.footer) {
+    g.fillStyle = bright;
+    g.font = `20px ${mono}`;
+    g.textAlign = "left";
+    g.shadowBlur = 4;
+    g.fillText(state.footer.slice(0, 30), 36, 374);
+  }
   g.restore();
 
   // Horizontal Trinitron aperture-grille scanlines.
@@ -290,11 +304,15 @@ export function fitCrtScreen(crt: Object3D, onChange: () => void) {
   let lastKey = "";
   const paint = () => {
     const { now, upMins, key } = stateNow();
-    drawPvmStatus(ctx, now, upMins);
+    if (pvm.override) pvm.override(ctx, performance.now());
+    else drawPvmStatus(ctx, now, upMins, pvmState);
     texture.needsUpdate = true;
     lastDraw = performance.now();
     lastKey = key;
   };
+  // The tube, for features: change `state` and `repaint`, or take it over with `override`.
+  const pvm: PvmScreen = { ctx, repaint: () => { paint(); onChange(); }, state: pvmState, override: null };
+  crt.userData.pvm = pvm;
   paint();
 
   const material = new MeshStandardMaterial({
@@ -316,7 +334,7 @@ export function fitCrtScreen(crt: Object3D, onChange: () => void) {
   const deskEl = document.getElementById("desk");
   const deskShowing = () => !document.hidden && Boolean(deskEl && !deskEl.hidden);
   const maybeUpdate = () => {
-    if (!deskShowing()) return;
+    if (!deskShowing() || pvm.override) return;
     if (performance.now() - lastDraw < 60_000) return;
     if (stateNow().key === lastKey) return;
     paint();

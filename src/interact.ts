@@ -4,6 +4,8 @@
 // Props carry their hotspot in userData.hotspot (props.ts) or get one here by name. Everything you
 // can do here can also be done from the terminal; the desk is a shortcut, never the only door.
 import type { Liquid } from "./mug";
+import { featureActions, featureHotspots, features } from "./features";
+import type { ActionCtx, DeskApi } from "./features/types";
 import {
   AdditiveBlending,
   Box3,
@@ -92,6 +94,9 @@ const BY_NAME: Record<string, Hotspot> = {
   chair: { kind: "wiggle", label: "my chair" },
 };
 
+/** The defaults, with every feature's labels over them (src/features). */
+const HOTSPOTS: Record<string, Hotspot> = { ...BY_NAME, ...featureHotspots };
+
 /** Where each postcard's place sits in my story; the rest just say "home, once". */
 export const PLACES: Record<string, string> = { "LA RÉUNION": "where I was born", INDIANA: "college", DALLAS: "home now" };
 
@@ -129,6 +134,8 @@ export function createInteractions(o: {
   setMuted: (m: boolean) => void;
   time: () => "dusk" | "night";
   setTime: (time: "dusk" | "night") => void;
+  /** The desk's API for features, once it exists. */
+  desk: () => DeskApi | null;
 }) {
   const { scene, camera } = o;
   const targets: Object3D[] = [];
@@ -219,7 +226,7 @@ export function createInteractions(o: {
   };
 
   // ── finding what's under the pointer ──────────────────────────────────────────────
-  const spotOf = (object: Object3D): Hotspot | undefined => (object.userData.hotspot as Hotspot | undefined) ?? (object.name ? BY_NAME[object.name] : undefined);
+  const spotOf = (object: Object3D): Hotspot | undefined => (object.name && featureHotspots[object.name]) || (object.userData.hotspot as Hotspot | undefined) || (object.name ? HOTSPOTS[object.name] : undefined);
   const shown = (object: Object3D) => {
     for (let p: Object3D | null = object; p; p = p.parent) if (!p.visible) return false;
     return true;
@@ -261,6 +268,10 @@ export function createInteractions(o: {
 
   const labelFor = (t: Target): [string, string | undefined] => {
     const { spot } = t;
+    for (const f of features) {
+      const custom = f.label?.(t.object, spot);
+      if (custom) return custom;
+    }
     if (spot.kind === "lamp") return [spot.label, lampOn ? "switch it off" : "switch it on"];
     if (spot.kind === "headphones") return [spot.label, o.muted() ? "sound on" : "sound off"];
     if (spot.kind === "time") return [spot.label, o.time() === "dusk" ? "wait for night" : "back to dusk"];
@@ -647,9 +658,35 @@ export function createInteractions(o: {
   }
 
   // ── clicks ─────────────────────────────────────────────────────────────────────────
+  /** What a feature's click handler gets (src/features/types.ts). */
+  const ctxFor = (t: Target): ActionCtx => ({
+    object: t.object,
+    spot: t.spot,
+    hit: t.hit,
+    scene,
+    camera,
+    animate: o.animate,
+    relight: o.relight,
+    sfx: (cue, at, volume) => sfx(cue, at, volume),
+    music: o.music,
+    sitDownAndRun: o.sitDownAndRun,
+    motions: { hop: (x, h, ms) => hop(x, h, ms), bounce, spin, wiggle: (x, a) => wiggle(x, a), swing, flip },
+    once,
+    lamp: { on: () => lampOn, set: setLamp },
+    time: o.time,
+    setTime: o.setTime,
+    desk: o.desk,
+    leave: () => void leave(),
+  });
+
   function click(t: Target) {
     const { object, spot } = t;
     if (busy) return;
+    const action = featureActions[spot.kind];
+    if (action) {
+      void action(ctxFor(t));
+      return;
+    }
     switch (spot.kind) {
       case "disk":
         void load(object, spot.command ?? "projects");

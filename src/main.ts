@@ -49,6 +49,10 @@ function stepBack() {
         if (!window.matchMedia("(pointer: coarse)").matches) term.focus();
       },
       run: (command) => void term.type(command, 12),
+      reboot: async () => {
+        term.clear();
+        await boot();
+      },
       sound: {
         play: (cue, o) => audio.play(cue, o),
         music: (on) => audio.music(on),

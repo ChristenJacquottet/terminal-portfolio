@@ -420,3 +420,7 @@ export const COMMANDS: Record<string, Command> = {
 
 /** Words `open` understands besides paths, for tab completion. */
 export const OPEN_TARGETS = Object.keys(OPEN_KEYS);
+
+// Commands from features (src/commands/*.ts, see the README there): merged in at build time.
+const extra = import.meta.glob<{ default?: Record<string, Command> }>("./commands/*.ts", { eager: true });
+for (const m of Object.values(extra)) Object.assign(COMMANDS, m.default ?? {});

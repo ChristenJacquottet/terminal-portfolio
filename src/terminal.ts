@@ -41,6 +41,11 @@ export class Terminal {
     new ResizeObserver(() => this.fitArt()).observe(this.term);
   }
 
+  /** Wipes the scrollback (the power strip reboots the machine). */
+  clear() {
+    this.output.replaceChildren();
+  }
+
   private get api(): TermApi {
     return {
       clear: () => {

@@ -52,6 +52,8 @@ import {
   voiceStrip,
 } from "./alive";
 import { applyPose, currentLayout, poseOf } from "./layout";
+import { features } from "./features";
+import type { PropCtx } from "./features/types";
 import { mug } from "./mug";
 import { cableColour, cableLoop, cableSpool, ethernetRun, partsDrawers, piCluster, powerCords, powerStrip, solderingStation, spareDrives, spot, steelRule, tapeRoll, ups, widthOf } from "./lab";
 import type { Room } from "./room";
@@ -897,6 +899,7 @@ export async function addProps(
   const wall = room.wallZ;
   const layout = currentLayout();
   let into: Object3D = scene;
+  let rackCtx: PropCtx["rack"] = null;
   const put = (name: string, o: Object3D) => {
     o.name = name;
     o.userData.home = poseOf(o); // where the code put it, for the editor's reset
@@ -1122,6 +1125,7 @@ export async function addProps(
       const b = new Box3().setFromObject(o);
       return new Vector3((b.min.x + b.max.x) / 2, b.min.y + dy, (b.min.z + b.max.z) / 2 - (b.max.z - b.min.z) * back);
     };
+    rackCtx = { x: labX, z: labZ, turn, along, tops, half, onLevel };
     const pis = onLevel("picluster", piCluster(), 2, 0.31, 0.09, { width: 0.09, rotY: 0.2 }, spot("Pi cluster", "four nodes, one of them busy"));
     onLevel("drawers", partsDrawers(), 2, -0.31, 0.136, { width: 0.136 }, spot("parts drawers", "resistors, mostly"));
     // (the rack is 73 cm wide: the switch and the NAS have the middle shelf, so the station goes
@@ -1235,6 +1239,15 @@ export async function addProps(
     });
     byName.frame.rotation.x = -0.1; // leaning on the shelf, against the wall
     put("frame", place(byName.frame, shelfX - 0.05, wall + 0.06, { height: 0.24, y: shelfY, shadow: true }));
+  }
+  // Features (src/features) add or re-dress their props here, so they're prepared with the rest.
+  const featureCtx: PropCtx = { scene, room, bounds, floor, wall, back, front, put, place, hang, byName, props, rack: rackCtx, lamp: light, onChange };
+  for (const f of features) {
+    try {
+      await f.props?.(featureCtx);
+    } catch (e) {
+      console.warn(`feature ${f.name}: props failed`, e);
+    }
   }
   await prepare(arrivals);
   for (const o of [...arrivals.children]) scene.add(o);
