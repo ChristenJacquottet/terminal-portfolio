@@ -1538,6 +1538,9 @@ export async function createDesk(opts: {
       terminal: { run: opts.run, reboot: opts.reboot ?? (async () => {}) },
       sitDown: () => api.sitDown(),
       pvm: () => (props.get("crt")?.userData.pvm as PvmScreen | undefined) ?? null,
+      activate: (object) => touch.activate(object),
+      seated: () => seated,
+      stepBack: () => api.stepBack(),
     };
     for (const f of features) {
       try {

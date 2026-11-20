@@ -58,6 +58,36 @@ let musicTok = 0;
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 const jitter = (cents: number) => 2 ** (((Math.random() * 2 - 1) * cents) / 1200);
 
+/** What a cue from src/cues/*.ts gets to make its sound with (see the README there). */
+export type CueKit = {
+  c: AudioContext;
+  /** Where to connect: already panned and in the room's reverb send. */
+  out: AudioNode;
+  vol: number;
+  rate: number;
+  pan: number;
+  white: AudioBuffer | null;
+  pink: AudioBuffer | null;
+  brown: AudioBuffer | null;
+  /** Band-passed noise burst: buffer, seconds, gain, Hz, Q, delay s, end Hz (sweep), attack s. */
+  noise: (buf: AudioBuffer | null, dur: number, gain: number, freq: number, q?: number, dt?: number, freqEnd?: number, atk?: number) => void;
+  /** A tone with a pitch sweep: seconds, start Hz, end Hz, gain, wave, delay s, low-pass Hz, attack s. */
+  tone: (dur: number, f0: number, f1: number, gain: number, type?: OscillatorType, dt?: number, lp?: number, atk?: number) => void;
+  /** One of the recordings in public/audio (fetched on first use). */
+  sample: (url: string, gain: number, rate: number, offset?: number) => void;
+  /** A variation index 0..n-1, never the same twice in a row. */
+  pick: (n: number) => number;
+  /** A random pitch ratio within ± cents. */
+  jitter: (cents: number) => number;
+  /** Another cue, built in or custom. */
+  play: (cue: Cue, vol?: number, rate?: number) => void;
+};
+
+const customCues: Record<string, (k: CueKit) => void> = Object.assign(
+  {},
+  ...Object.values(import.meta.glob<{ default?: Record<string, (k: CueKit) => void> }>("./cues/*.ts", { eager: true })).map((m) => m.default ?? {}),
+);
+
 function pick(cue: Cue, n: number): number {
   if (n <= 1) return 0;
   let v = (Math.random() * n) | 0;
@@ -370,6 +400,27 @@ export function playCue(cue: Cue, vol: number, rate: number, pan = 0) {
   // Typing is never dead centre: the keys spread a little, left to right, with the hands.
   const spread = cue === "key" || cue === "keySpace" || cue === "keyReturn" ? (Math.random() * 2 - 1) * 0.14 : 0;
   const out = panned(c, cueBus, pan + spread);
+
+  const custom = customCues[cue];
+  if (custom) {
+    custom({
+      c,
+      out,
+      vol,
+      rate,
+      pan,
+      white: whiteBuf,
+      pink: pinkBuf,
+      brown: brownBuf,
+      noise: (buf, dur, gain, freq, q, dt, freqEnd, atk) => nb(c, out, buf, dur, gain, freq, q, dt, freqEnd, atk),
+      tone: (dur, f0, f1, gain, type, dt, lp, atk) => td(c, out, dur, f0, f1, gain, type, dt, lp, atk),
+      sample: (url, gain, r, offset) => playSample(url, gain, r, out, offset),
+      pick: (n) => pick(cue, n),
+      jitter,
+      play: (next, v = vol, r = rate) => playCue(next, v, r, pan),
+    });
+    return;
+  }
 
   switch (cue) {
     case "key": {

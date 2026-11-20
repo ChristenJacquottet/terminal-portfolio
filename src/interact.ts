@@ -804,7 +804,24 @@ export function createInteractions(o: {
     return found;
   }
 
-  return { pick, hover, say, leave, click, setTargets, warm: steamMug, get busy() {
+  /** A click on `object` as if the visitor had made it (the terminal driving the desk). */
+  function activate(object: Object3D): boolean {
+    let p: Object3D | null = object;
+    while (p) {
+      const spot = spotOf(p);
+      if (!spot) {
+        p = p.parent;
+        continue;
+      }
+      const target: Object3D = p;
+      const point = target.getWorldPosition(new Vector3());
+      click({ object: target, spot, hit: { distance: point.distanceTo(camera.position), point, object: target } as Intersection });
+      return true;
+    }
+    return false;
+  }
+
+  return { pick, hover, say, leave, click, activate, setTargets, warm: steamMug, get busy() {
     return busy;
   } };
 }

@@ -25,7 +25,9 @@ export type Cue =
   | "spin"
   | "slosh"
   | "lampOn"
-  | "boot";
+  | "boot"
+  // Cues added by features live in src/cues/*.ts (see the README there); any name is allowed.
+  | (string & {});
 
 type Engine = typeof import("./audio-engine");
 

@@ -128,6 +128,12 @@ export type DeskApi = {
   sitDown: () => Promise<void>;
   /** The Sony PVM's screen, if the lab loaded (see alive.ts `PvmScreen`). */
   pvm: () => PvmScreen | null;
+  /** Clicks a prop (or anything with a hotspot) as if the visitor had: the terminal driving the desk. */
+  activate: (object: Object3D) => boolean;
+  /** Whether the visitor is at the screen (true) or stepped back looking at the desk. */
+  seated: () => boolean;
+  /** Steps back from the screen to the desk (loads nothing new: the desk is already here). */
+  stepBack: () => Promise<void>;
 };
 
 /** The PVM's phosphor canvas. Status lines come from `state`; `override` takes the whole tube. */
