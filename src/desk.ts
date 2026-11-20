@@ -950,6 +950,41 @@ export async function createDesk(opts: {
     request();
   }, 1100);
 
+  // ── framing a prop up close (DeskApi.frame), and coming back to the seat ─────────────────────
+  let framedNow = false;
+  const frameOn = async (target: Object3D | Box3, o: { dir?: Vector3; fill?: number; ms?: number } = {}) => {
+    if (seated || (transitioning && !framedNow)) return;
+    const box = target instanceof Box3 ? target.clone() : new Box3().setFromObject(target);
+    const centre = box.getCenter(new Vector3());
+    const radius = Math.max(0.03, box.getSize(new Vector3()).length() / 2);
+    if (look.active) {
+      camTarget.copy(lookTarget()); // the flight starts from where you're looking
+      look.active = false;
+    }
+    const dir = (o.dir?.clone() ?? camera.position.clone().sub(centre)).normalize();
+    const distance = radius / Math.tan(((FOV * Math.PI) / 360) * (o.fill ?? 0.6));
+    framedNow = true;
+    transitioning = true;
+    if (touch.leave()) request();
+    await fly({ position: centre.clone().addScaledVector(dir, distance), target: centre }, o.ms ?? 900, glass.uniforms.uStrength.value as number, ease);
+    transitioning = false;
+  };
+  const unframe = async (ms = 900) => {
+    if (!framedNow || seated) return;
+    transitioning = true;
+    const wide = widePose();
+    await fly(wide, ms, glass.uniforms.uStrength.value as number, ease);
+    sitAt(wide);
+    Object.assign(look, { active: true, yaw: 0, pitch: 0, lean: 0, toYaw: 0, toPitch: 0, toLean: 0 });
+    updateLook(true);
+    framedNow = false;
+    transitioning = false;
+    request();
+  };
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && framedNow && !seated && !transitioning) void unframe();
+  });
+
   const fly = (to: { position: Vector3; target: Vector3 }, ms: number, glassTo = glass.uniforms.uStrength.value as number, curve = ease) =>
     new Promise<void>((done) => {
       const glassFrom = glass.uniforms.uStrength.value as number;
@@ -1198,6 +1233,7 @@ export async function createDesk(opts: {
         }, 1800);
       }
     } else if (onGlass(e)) void api.sitDown();
+    else if (framedNow) void unframe(); // a click on nothing comes back from a close-up
   });
   // Hover: one raycast per frame at most, however fast the pointer moves.
   let hoverEvent: PointerEvent | null = null;
@@ -1377,8 +1413,9 @@ export async function createDesk(opts: {
     },
 
     async sitDown() {
-      if (seated || transitioning) return;
+      if (seated || (transitioning && !framedNow)) return;
       transitioning = true;
+      framedNow = false;
       clearTouchChip();
       activePointers.clear();
       down = null;
@@ -1539,6 +1576,9 @@ export async function createDesk(opts: {
       sitDown: () => api.sitDown(),
       pvm: () => (props.get("crt")?.userData.pvm as PvmScreen | undefined) ?? null,
       activate: (object) => touch.activate(object),
+      frame: frameOn,
+      unframe,
+      framed: () => framedNow,
       seated: () => seated,
       stepBack: () => api.stepBack(),
     };

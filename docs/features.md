@@ -36,7 +36,11 @@ What a feature can do:
   with `put`/`place`/`hang`, the room, the computer's box, the loaded models (`byName`) and the
   rack's shelves (`rack.onLevel`). Anything added with `put` can be arranged in `?edit`.
 - **`onDesk`**: the desk exists. Wire up `bus` listeners, `pulses` (the ~1 Hz heartbeat),
-  `caption`, `blackout`, the PVM (`desk.pvm()`).
+  `caption`, `blackout`, the PVM (`desk.pvm()`), `frame`/`unframe` (fly the camera to a prop up
+  close and back; Escape or a click on nothing also comes back), `activate` (click a prop from
+  code), `seated`/`stepBack`.
+
+Sounds go in `src/cues/<name>.ts` (see the README there): no need to touch `audio-engine.ts`.
 
 Terminal commands go in `src/commands/<name>.ts` (default export `Record<string, Command>`), and
 **must not import three.js or anything under `src/features/`**. The terminal and the desk talk

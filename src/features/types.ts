@@ -134,6 +134,17 @@ export type DeskApi = {
   seated: () => boolean;
   /** Steps back from the screen to the desk (loads nothing new: the desk is already here). */
   stepBack: () => Promise<void>;
+  /**
+   * Flies the camera to frame `target` (a prop or a box) up close, the way c-na.dev re-frames its
+   * scene per section. `dir` is the direction from the target to the camera (default: from where
+   * the camera is now); `fill` is how much of the view's height the target takes (default 0.6).
+   * Head-turning is off while framed; Escape, a click on nothing, or `unframe` comes back.
+   */
+  frame: (target: Object3D | Box3, opts?: { dir?: Vector3; fill?: number; ms?: number }) => Promise<void>;
+  /** Back to the seat after `frame`. */
+  unframe: (ms?: number) => Promise<void>;
+  /** Whether the camera is framing something. */
+  framed: () => boolean;
 };
 
 /** The PVM's phosphor canvas. Status lines come from `state`; `override` takes the whole tube. */
