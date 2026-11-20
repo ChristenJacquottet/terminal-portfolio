@@ -32,6 +32,14 @@ npm run build      # static site in dist/
 - **Arrange it yourself.** Open `/?edit` (on `npm run dev`) and the desk comes up with a layout editor: click any prop, or pick it from the list, then move (G), rotate (R) or scale (S) it with the gizmo, or type exact numbers; H hides it, F flies the camera to it, shift snaps. The camera is free while you edit. Changes are kept as a draft in the browser; **save to layout.json** writes them into `src/layout.json`, which is what visitors get, and **copy json** puts the same thing on the clipboard. The editor is its own chunk and never loads outside edit mode.
 - **Shareable.** `/#cat ~/shipped/super-bowl-ai` opens the terminal and runs the command.
 
+## Deploy
+
+Vercel builds it as is (`vercel.json`): `npm ci`, `npm run build`, serve `dist/`. It's a static
+site, so any static host works the same way. Hashed bundles in `/assets` are cached forever;
+the models, textures and audio for an hour, then revalidated in the background, so a new
+`props.glb` reaches visitors within the hour. There's no CI: check locally with
+`npm run typecheck && npm run build && npm run preview`.
+
 ## Content
 
 `src/content/generated.json` is generated; don't edit it by hand.
