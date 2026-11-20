@@ -1,6 +1,7 @@
 // The room around the computer: an oak desk, a plaster wall with a window onto a 1980s Dallas
 // skyline, venetian blinds, a floor. Loaded alongside the computer.
-// Room textures: Poly Haven (CC0). The wooden desk and the skyline are built here, in code.
+// Room textures: Poly Haven and ambientCG (CC0; scripts/room-textures.mjs). The wooden desk and the
+// skyline are built here, in code.
 import {
   Cache,
   ImageLoader,
@@ -31,7 +32,7 @@ import {
 } from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
-export type RoomAssets = { floor: Texture | null };
+export type RoomAssets = { floor: Texture | null; floorNormal: Texture | null; wallNormal: Texture | null };
 
 /** What the props need to know about the room. Desk top is y = 0; the wall faces +z. */
 export type Room = {
@@ -58,11 +59,17 @@ const PAINT = "#e8e0cc";
 /** Exact extents of the desk footprint (2 m × 0.78744 m × 0.94711 m) every prop was arranged on. */
 const DESK_SIZE = { w: 2, h: 0.78744, d: 0.94711 };
 
+/** Phones get the room's surfaces at half size (public/textures/half, scripts/room-textures.mjs). */
+const HALF = typeof matchMedia === "function" && matchMedia("(max-width: 640px) and (pointer: coarse)").matches;
+const surface = (name: string) => `/textures/${HALF ? "half/" : ""}${name}.webp`;
+
 export const ROOM_TEXTURES = [
-  "/textures/floor_diff.webp",
-  "/textures/oak_diff.webp",
-  "/textures/oak_nor_gl.webp",
-  "/textures/oak_rough.webp",
+  surface("floor_diff"),
+  surface("floor_nor_gl"),
+  surface("wall_nor_gl"),
+  surface("oak_diff"),
+  surface("oak_nor_gl"),
+  surface("oak_rough"),
   "/textures/world-map.webp",
 ] as const;
 
@@ -73,12 +80,14 @@ export async function loadRoom(): Promise<RoomAssets> {
   // first frame instead of popping in after.
   Cache.enabled = true;
   const images = new ImageLoader();
-  const warm = ROOM_TEXTURES.slice(1).map((url) => images.loadAsync(url).catch(() => null));
-  const [floor] = await Promise.all([
+  const warm = ROOM_TEXTURES.slice(3).map((url) => images.loadAsync(url).catch(() => null));
+  const [floor, floorNormal, wallNormal] = await Promise.all([
     get(ROOM_TEXTURES[0]),
+    get(ROOM_TEXTURES[1]),
+    get(ROOM_TEXTURES[2]),
     ...warm,
   ]);
-  return { floor: floor as Texture | null };
+  return { floor: floor as Texture | null, floorNormal: floorNormal as Texture | null, wallNormal: wallNormal as Texture | null };
 }
 
 function tile(t: Texture | null, x: number, y: number, srgb = true) {
@@ -103,7 +112,7 @@ function merged(parts: BufferGeometry[], mat: MeshStandardMaterial) {
 /** Oak planks (Poly Haven, CC0), loaded now so the shaders are compiled with their maps. */
 function oak(repeatX: number, repeatY: number) {
   const load = (name: string, srgb = false) => {
-    const t = new TextureLoader().load(`/textures/oak_${name}.webp`);
+    const t = new TextureLoader().load(surface(`oak_${name}`));
     t.wrapS = t.wrapT = RepeatWrapping;
     t.repeat.set(repeatX, repeatY);
     t.anisotropy = 8;
@@ -161,6 +170,7 @@ export function buildRoom(
     new PlaneGeometry(7, 5),
     new MeshStandardMaterial({ map: tile(assets.floor, 3.5, 2.5), color: "#8a7560", roughness: 0.75 }),
   );
+  Object.assign(floor.material, { normalMap: tile(assets.floorNormal, 3.5, 2.5, false) });
   floor.rotation.x = -Math.PI / 2;
   floor.position.set(0, floorY, wallZ + 2.5);
   scene.add(floor);
@@ -173,6 +183,8 @@ export function buildRoom(
     new ShapeGeometry(wallShape),
     new MeshStandardMaterial({ map: tile(wallpaper(), 1 / 0.6, 1 / 0.6), roughness: 0.92 }),
   );
+  // Paper relief under the print (ambientCG Wallpaper001A), an 80 cm repeat: the low sun rakes it.
+  Object.assign(wall.material, { normalMap: tile(assets.wallNormal, 1 / 0.8, 1 / 0.8, false) });
   wall.position.z = wallZ;
   const skirting = box(7, 0.1, 0.015, new MeshStandardMaterial({ color: "#4a3626", roughness: 0.6 }), 0, floorY + 0.05, wallZ + 0.0075);
   scene.add(wall, skirting);
@@ -350,8 +362,9 @@ export function buildRoom(
 /** Early-80s wallpaper: warm beige with a faint pinstripe and a tiny diamond, 60 cm repeat. */
 function wallpaper(): CanvasTexture {
   const c = document.createElement("canvas");
-  c.width = c.height = 512;
+  c.width = c.height = HALF ? 512 : 1024; // drawn in 512 units: 1024 px keeps the pinstripes crisp up close
   const g = c.getContext("2d")!;
+  g.scale(c.width / 512, c.width / 512);
   g.fillStyle = "#b7a587";
   g.fillRect(0, 0, 512, 512);
   let seed = 3;
