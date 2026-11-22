@@ -4,6 +4,7 @@
 // Props carry their hotspot in userData.hotspot (props.ts) or get one here by name. Everything you
 // can do here can also be done from the terminal; the desk is a shortcut, never the only door.
 import type { Liquid } from "./mug";
+import { bus } from "./bus";
 import { featureActions, featureHotspots, features } from "./features";
 import type { ActionCtx, DeskApi } from "./features/types";
 import {
@@ -149,24 +150,69 @@ export function createInteractions(o: {
   const ray = new Raycaster();
   const pointer = new Vector2();
 
-  // ── the label chip, which follows the pointer ──────────────────────────────────────
+  // ── the label: a speech bubble over the hovered prop (c-na.dev's), its tail on the prop ──
   const chip = document.createElement("div");
   chip.className = "prop-label";
   chip.hidden = true;
+  const chipName = document.createElement("b");
+  const chipHint = document.createElement("span");
+  chip.append(chipName, chipHint);
   o.host.append(chip);
-  const showChip = (spot: Hotspot, label: string, hint: string | undefined, e: PointerEvent) => {
-    chip.classList.toggle("nav", Boolean(spot.nav));
-    chip.innerHTML = "";
-    const b = document.createElement("b");
-    b.textContent = label;
-    chip.append(b);
-    if (hint) {
-      const span = document.createElement("span");
-      span.textContent = hint;
-      chip.append(span);
+  /** What the bubble points at: a prop (above its box's top), or the pointer if there's no prop. */
+  let anchor: Object3D | null = null;
+  const anchorBox = new Box3();
+  const anchorAt = { x: 0, y: 0 };
+  let chipW = 0;
+  let chipH = 0;
+  const corner = new Vector3();
+  /** Puts the bubble over its anchor, kept on screen; runs after every frame, so it follows a turning head. */
+  function placeChip() {
+    if (chip.hidden) return;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    let ax = anchorAt.x;
+    let ay = anchorAt.y;
+    if (anchor) {
+      // the middle of the top of its box: the tail touches the top of the thing, not the air above it
+      corner.set((anchorBox.min.x + anchorBox.max.x) / 2, anchorBox.max.y, (anchorBox.min.z + anchorBox.max.z) / 2).project(camera);
+      if (corner.z > 1) return;
+      ax = (corner.x + 1) * 0.5 * vw;
+      ay = (1 - corner.y) * 0.5 * vh;
     }
-    chip.style.transform = `translate(${Math.round(e.clientX + 16)}px, ${Math.round(e.clientY + 18)}px)`;
-    chip.hidden = false;
+    const edge = 10;
+    const topEdge = vw < 560 ? 56 : 52; // clear of the sound switch and the credit
+    const x = Math.min(Math.max(edge, ax - chipW / 2), Math.max(edge, vw - chipW - edge));
+    const y = Math.min(Math.max(topEdge, ay - chipH - 12), Math.max(topEdge, vh - chipH - 58));
+    chip.style.translate = `${Math.round(x)}px ${Math.round(y)}px`;
+    chip.style.setProperty("--tail", `${Math.round(Math.min(Math.max(14, ax - x), chipW - 14))}px`);
+  }
+  const prevAfterRender = scene.onAfterRender;
+  scene.onAfterRender = function (...args) {
+    prevAfterRender.apply(this, args);
+    placeChip();
+  };
+  const showChip = (spot: Hotspot, label: string, hint: string | undefined, e: PointerEvent, object: Object3D | null) => {
+    const changed = chip.hidden || object !== anchor || chipName.textContent !== label || chipHint.textContent !== (hint ?? "");
+    if (object !== anchor || chip.hidden) {
+      anchor = object;
+      if (object) anchorBox.setFromObject(object);
+    }
+    anchorAt.x = e.clientX;
+    anchorAt.y = e.clientY - 8;
+    if (changed) {
+      chip.classList.toggle("nav", Boolean(spot.nav));
+      chipName.textContent = label;
+      chipHint.textContent = hint ?? "";
+      chipHint.hidden = !hint;
+      chip.hidden = false;
+      // a new bubble pops; the same one just moves
+      chip.classList.remove("pop");
+      void chip.offsetWidth;
+      chip.classList.add("pop");
+      chipW = chip.offsetWidth;
+      chipH = chip.offsetHeight;
+    }
+    placeChip();
   };
 
   // ── the rim: an additive fresnel shell over whatever is hovered ────────────────────
@@ -288,18 +334,19 @@ export function createInteractions(o: {
       return highlight(null, 0);
     }
     const [label, hint] = labelFor(t);
-    showChip(t.spot, label, hint, e);
+    showChip(t.spot, label, hint, e, t.object);
     return highlight(t.object, t.spot.nav ? 1 : 0.65);
   }
 
-  /** A label with no object behind it (the screen, which desk.ts handles itself). */
-  function say(label: string, hint: string, e: PointerEvent): boolean {
-    showChip({ kind: "screen", label, nav: true }, label, hint, e);
+  /** A label with no hotspot behind it (the screen, which desk.ts handles itself), over `at` if given. */
+  function say(label: string, hint: string, e: PointerEvent, at: Object3D | null = null): boolean {
+    showChip({ kind: "screen", label, nav: true }, label, hint, e, at);
     return highlight(null, 0);
   }
 
   function leave(): boolean {
     chip.hidden = true;
+    anchor = null;
     return highlight(null, 0);
   }
 
@@ -548,11 +595,28 @@ export function createInteractions(o: {
     });
   }
 
-  async function load(disk: Object3D, command: string) {
+  /**
+   * A navigation prop, clicked: the camera frames it up close and the caption names it, a beat,
+   * then it acts (c-na.dev re-frames its scene the same way). `also` widens the shot (the drive).
+   */
+  async function closeUp(object: Object3D, also?: Vector3) {
+    const desk = o.desk();
+    if (!desk || desk.seated()) return;
+    const box = new Box3().setFromObject(object);
+    if (also) box.expandByPoint(also);
+    const flight = desk.frame(box, { fill: also ? 0.62 : 0.5, ms: 460 });
+    bus.emit("desk:focus", { name: object.name || null }); // framed from here: the caption names it
+    await flight;
+    if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) await new Promise((r) => setTimeout(r, 130));
+  }
+
+  /** Into the drive; then sit down and open it, unless the terminal asked (`stay`: it's already open). */
+  async function load(disk: Object3D, command: string, stay = false) {
     if (busy) return;
     busy = true;
     leave();
     try {
+      if (!stay && inDrive !== disk) await closeUp(disk, o.drive?.slot);
       if (inDrive && inDrive !== disk) {
         const old = inDrive;
         inDrive = null;
@@ -574,7 +638,7 @@ export function createInteractions(o: {
         sfx("diskRead", disk);
         await o.animate(300, () => {});
       }
-      await o.sitDownAndRun(command);
+      if (!stay) await o.sitDownAndRun(command);
     } finally {
       if (o.drive) o.drive.led.visible = false;
       busy = false;
@@ -659,7 +723,7 @@ export function createInteractions(o: {
 
   // ── clicks ─────────────────────────────────────────────────────────────────────────
   /** What a feature's click handler gets (src/features/types.ts). */
-  const ctxFor = (t: Target): ActionCtx => ({
+  const ctxFor = (t: Target, stay = false): ActionCtx => ({
     object: t.object,
     spot: t.spot,
     hit: t.hit,
@@ -669,7 +733,7 @@ export function createInteractions(o: {
     relight: o.relight,
     sfx: (cue, at, volume) => sfx(cue, at, volume),
     music: o.music,
-    sitDownAndRun: o.sitDownAndRun,
+    sitDownAndRun: stay ? async () => {} : o.sitDownAndRun,
     motions: { hop: (x, h, ms) => hop(x, h, ms), bounce, spin, wiggle: (x, a) => wiggle(x, a), swing, flip },
     once,
     lamp: { on: () => lampOn, set: setLamp },
@@ -679,22 +743,24 @@ export function createInteractions(o: {
     leave: () => void leave(),
   });
 
-  function click(t: Target) {
+  /** `stay`: the terminal did it while you're stepped back: the prop answers, you stay where you are. */
+  function click(t: Target, stay = false) {
     const { object, spot } = t;
     if (busy) return;
     const action = featureActions[spot.kind];
     if (action) {
-      void action(ctxFor(t));
+      void action(ctxFor(t, stay));
       return;
     }
     switch (spot.kind) {
       case "disk":
-        void load(object, spot.command ?? "projects");
+        void load(object, spot.command ?? "projects", stay);
         return;
       case "phone":
-        sfx("phoneUp", object);
         void once(object, async () => {
           leave();
+          if (!stay) await closeUp(object);
+          sfx("phoneUp", object);
           const handset = object.getObjectByName("handset");
           if (handset) {
             const y = handset.position.y;
@@ -703,6 +769,16 @@ export function createInteractions(o: {
               handset.position.y = y + 0.18 * easeOut(t);
               handset.rotation.x = tilt - 0.35 * easeOut(t);
             });
+            if (stay) {
+              // the terminal dialled: hold it up a moment, then hang up
+              await new Promise((r) => setTimeout(r, 1600));
+              await o.animate(380, (t) => {
+                handset.position.y = y + 0.18 * (1 - ease(t));
+                handset.rotation.x = tilt - 0.35 * (1 - ease(t));
+              });
+              sfx("phoneDown", object);
+              return;
+            }
             // back in the cradle while you're in the screen
             void o.sitDownAndRun("contact").then(() => {
               handset.position.y = y;
@@ -712,7 +788,7 @@ export function createInteractions(o: {
             return;
           }
           await wiggle(object, 0.06);
-          await o.sitDownAndRun("contact");
+          if (!stay) await o.sitDownAndRun("contact");
         });
         return;
       case "time":
@@ -724,9 +800,10 @@ export function createInteractions(o: {
         void once(object, () => nudgeMug(object));
         return;
       case "paper":
-        sfx("paper", object);
         void once(object, async () => {
           leave();
+          if (!stay) await closeUp(object);
+          sfx("paper", object);
           if (object.getWorldPosition(new Vector3()).y > 0.1) {
             const z0 = object.rotation.z;
             await o.animate(260, (t) => (object.rotation.z = z0 + 0.04 * wobble(t, 2, 3.5)));
@@ -734,15 +811,16 @@ export function createInteractions(o: {
           } else {
             await hop(object, 0.012, 260);
           }
-          await o.sitDownAndRun(spot.command ?? "projects");
+          if (!stay) await o.sitDownAndRun(spot.command ?? "projects");
         });
         return;
       case "crt":
-        sfx("switch", object);
         void once(object, async () => {
           leave();
+          if (!stay) await closeUp(object);
+          sfx("switch", object);
           await wiggle(object, 0.03);
-          await o.sitDownAndRun(spot.command ?? "neofetch");
+          if (!stay) await o.sitDownAndRun(spot.command ?? "neofetch");
         });
         return;
       case "answering":
@@ -804,8 +882,8 @@ export function createInteractions(o: {
     return found;
   }
 
-  /** A click on `object` as if the visitor had made it (the terminal driving the desk). */
-  function activate(object: Object3D): boolean {
+  /** A click on `object` as if the visitor had made it (the terminal driving the desk; `stay`: see click). */
+  function activate(object: Object3D, opts: { stay?: boolean } = {}): boolean {
     let p: Object3D | null = object;
     while (p) {
       const spot = spotOf(p);
@@ -815,7 +893,7 @@ export function createInteractions(o: {
       }
       const target: Object3D = p;
       const point = target.getWorldPosition(new Vector3());
-      click({ object: target, spot, hit: { distance: point.distanceTo(camera.position), point, object: target } as Intersection });
+      click({ object: target, spot, hit: { distance: point.distanceTo(camera.position), point, object: target } as Intersection }, opts.stay);
       return true;
     }
     return false;
