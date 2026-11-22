@@ -1459,7 +1459,7 @@ export async function createDesk(opts: {
     return null;
   };
   let blackoutRunning = false;
-  const blackout = async (ms: number, keep: Object3D[] = []) => {
+  const blackout = async (ms: number, keep: Object3D[] = [], o: { terminal?: boolean } = {}) => {
     if (blackoutRunning) return;
     blackoutRunning = true;
     const kept = new Set<Object3D>();
@@ -1489,7 +1489,7 @@ export async function createDesk(opts: {
     const env = scene.environmentIntensity;
     renderer.toneMappingExposure = 0.35;
     scene.environmentIntensity = 0;
-    css.domElement.style.visibility = "hidden"; // the terminal under the glass goes dark
+    if (!o.terminal) css.domElement.style.visibility = "hidden"; // the terminal under the glass goes dark (unless a UPS keeps it up)
     opts.sound?.loop("hum", false);
     relight();
     await animate(Math.max(1, ms), () => {});
