@@ -54,7 +54,7 @@ bus.on("coffee:refill", () => refill());
 ```
 
 Bus names in use: `project:hover {slug|null}`, `project:open {slug}`, `contact:open`,
-`desk:look {name|null}`, `coffee:refill`, `power:cut`. Add yours to this list.
+`desk:look {name|null}`, `coffee:refill`, `power:cut`, `games:play {game, at}`. Add yours to this list.
 
 Rules that still apply (docs/art-direction.md): the scene only draws while something moves (use
 `animate`, never your own rAF loop); a click leads somewhere real, changes the room, or is a toy
