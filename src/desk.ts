@@ -225,6 +225,7 @@ const PROTECTED_SUBNODES = new Set([
   "handset",
   "Empty.001_4",
   "portable_cassette_player_lid",
+  "joystick-stick", // games-arcade.ts: the stick leans with the arrow keys
 ]);
 
 /** Coalesces multi-material geometry groups that point to the same Material (e.g. 6-face floppy sleeves -> 2 groups). */
