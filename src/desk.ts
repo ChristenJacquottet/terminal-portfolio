@@ -26,7 +26,6 @@ import {
   NoBlending,
   PerspectiveCamera,
   PlaneGeometry,
-  PMREMGenerator,
   PointLight,
   Raycaster,
   SRGBColorSpace,
@@ -51,7 +50,6 @@ import { GLTFLoader, type GLTF } from "three/examples/jsm/loaders/GLTFLoader.js"
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import { CSS3DObject, CSS3DRenderer } from "three/examples/jsm/renderers/CSS3DRenderer.js";
 import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { MODEL_CREDIT } from "./credit";
 import { editing, locked } from "./layout";
@@ -64,6 +62,8 @@ import { ROOM_TEXTURES, buildRoom, loadRoom, type Time } from "./room";
 import { pulses } from "./alive";
 import { features } from "./features";
 import type { DeskApi, PvmScreen } from "./features/types";
+import { createPost, createRoomProbe, postSupported, prepareGlow, settleMaterials, type Post } from "./post";
+import { createAtmosphere } from "./atmosphere";
 
 /** The tube's shape (4:3). In the monitor the terminal keeps the window's text size, see `fitTube`. */
 const SCREEN_W = 800;
@@ -604,7 +604,9 @@ export async function createDesk(opts: {
   const coarsePointer = window.matchMedia("(pointer: coarse)").matches;
   const isPhone = window.matchMedia("(max-width: 640px) and (pointer: coarse)").matches;
 
-  const renderer = new WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
+  // Desktops draw through the finishing pass (post.ts: AO, bloom, grade), which anti-aliases its own
+  // scene target, so the canvas needs none; phones keep the plain path and the canvas's MSAA.
+  const renderer = new WebGLRenderer({ antialias: isPhone, alpha: true, powerPreference: "high-performance" });
   // Crisp on retina desktops (the scene only draws while something moves, so idle costs nothing).
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, isPhone ? 1.25 : 2));
   const maxAniso = Math.min(8, renderer.capabilities.getMaxAnisotropy());
@@ -623,10 +625,8 @@ export async function createDesk(opts: {
   const scene = new Scene();
 
   scene.background = new Color("#05060a");
-  const pmrem = new PMREMGenerator(renderer);
-  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-  scene.environmentIntensity = 0.04; // a dark room: the lamp, the screen and the window do the lighting
-  pmrem.dispose();
+  // The environment is the room itself, captured once it's built and lit (see `captureRoom` below).
+  const post: Post | null = !isPhone && postSupported(renderer) ? createPost(renderer, scene) : null;
 
   // Just enough fill that the shadowed faces still read: cool from above (the night), warm from the desk.
   const fill = new HemisphereLight("#6a7aa6", "#1a120b", 0.06);
@@ -691,6 +691,13 @@ export async function createDesk(opts: {
   const labLight = new PointLight("#ffd19c", 1.65, 4.2, 1.45);
   labLight.position.set(room.desk.maxX + 0.36, 0.62, room.wallZ + 1.05);
   scene.add(labLight);
+  // Dust in the sunbeam (desktop only), and the room's own environment: one capture per time of
+  // day, swapped as the light turns (see `captureRoom`). Until the first capture it's black, at
+  // the capture's size, so the shaders compile once.
+  const atmosphere = post ? createAtmosphere(scene, room, lamp, renderer.getPixelRatio()) : null;
+  const probe = createRoomProbe(renderer, scene, new Vector3(0.1, 0.32, screen.center.z + 0.3), isPhone ? 64 : 128);
+  const envs: Record<Time, WebGLRenderTarget | null> = { dusk: probe.blank(), night: null };
+  scene.environment = envs.dusk!.texture;
   /** Dusk (the default: warm, everything reads) or the middle of the night (the window toggles it). */
   let time: Time = "dusk";
   let timeK = 0; // 0 dusk … 1 night, where the light is right now
@@ -705,12 +712,49 @@ export async function createDesk(opts: {
     room.blend(k);
     fill.color.copy(fillDusk).lerp(fillNight, k);
     fill.groundColor.copy(groundDusk).lerp(groundNight, k);
-    fill.intensity = lerp(0.21, 0.2, k);
-    scene.environmentIntensity = lerp(0.11, 0.08, k);
+    // The captured room is its own bounce light (so the flat fill can drop); the swap happens half
+    // way, when the sky dips.
+    fill.intensity = lerp(0.12, 0.14, k);
+    const env = (k >= 0.5 ? envs.night : envs.dusk) ?? envs.dusk ?? envs.night;
+    if (env && scene.environment !== env.texture) scene.environment = env.texture;
+    scene.environmentIntensity = lerp(0.75, 0.85, k);
     renderer.toneMappingExposure = lerp(0.94, 0.88, k);
     labLight.color.copy(labDusk).lerp(labNight, k);
     labLight.intensity = lerp(1.65, 0.62, k);
     if (screenGlow) screenGlow.intensity = lerp(0.25, 0.55, k);
+    atmosphere?.blend(k);
+  };
+  /**
+   * Captures the room into the environment for `which` time of day, as lit right now (twice: the
+   * second sees the first one's bounce). After load, at the end of a change of light, on idle for
+   * the other time of day. A few small renders, never per frame.
+   */
+  let capturedKey = "";
+  const stale: Record<Time, boolean> = { dusk: true, night: true };
+  const lightKey = () => `${lamp.intensity.toFixed(2)}|${spill.intensity.toFixed(2)}`;
+  const captureRoom = (which: Time) => {
+    const was = timeK;
+    applyTime(which === "night" ? 1 : 0);
+    const hide = atmosphere ? [atmosphere.object] : [];
+    for (let i = 0; i < 2; i++) {
+      envs[which] = probe.capture(envs[which], hide);
+      scene.environment = envs[which]!.texture;
+    }
+    stale[which] = false;
+    capturedKey = lightKey();
+    applyTime(was); // and back to wherever the light is
+  };
+  /** The lamp went on or off: the room it lights is a different room. Recaptured once it settles. */
+  let recaptureTimer = 0;
+  const lightChanged = () => {
+    if (!capturedKey || lightKey() === capturedKey) return;
+    clearTimeout(recaptureTimer);
+    recaptureTimer = window.setTimeout(() => {
+      if (blackoutRunning || lightKey() === capturedKey) return;
+      stale[time === "dusk" ? "night" : "dusk"] = true; // captured again when the time turns
+      captureRoom(time);
+      request();
+    }, 400);
   };
   const setTime = (next: Time) => {
     time = next;
@@ -721,7 +765,9 @@ export async function createDesk(opts: {
     time = next;
     const from = timeK;
     const to = next === "night" ? 1 : 0;
-    return animate(1100, (t) => applyTime(lerp(from, to, ease(t))));
+    return animate(1100, (t) => applyTime(lerp(from, to, ease(t)))).then(() => {
+      if (time === next && (stale[next] || !envs[next])) captureRoom(next);
+    });
   };
   setTime(time);
 
@@ -738,7 +784,7 @@ export async function createDesk(opts: {
         if (!mat.color || /screen/i.test(mat.name)) continue;
         mat.color.multiply(new Color("#f4f1ec"));
         mat.roughness = Math.min(Math.max(mat.roughness, 0.5), 0.6);
-        mat.envMapIntensity = 1.6; // a little of the room in the plastic's sheen
+        mat.envMapIntensity = 1.15; // a little of the room (captured, see captureRoom) in the plastic's sheen
       }
     });
     loaded.tube.renderOrder = 1;
@@ -936,6 +982,7 @@ export async function createDesk(opts: {
   function relight() {
     (lamp.userData.sync as (() => void) | undefined)?.(); // the light rides on the lamp's bulb
     renderer.shadowMap.needsUpdate = true;
+    lightChanged();
     request();
   }
   relight();
@@ -1321,7 +1368,8 @@ export async function createDesk(opts: {
     controls.addEventListener("change", request);
   }
 
-  if (import.meta.env.DEV) Object.assign(window, { __desk: { scene, renderer, camera, look, three: { Raycaster, Vector2, Vector3, Box3 } } }); // for poking at it from devtools
+  // for poking at it from devtools; `draw()` is one full frame (scene, post, terminal), `api()` the DeskApi
+  if (import.meta.env.DEV) Object.assign(window, { __desk: { scene, renderer, camera, look, three: { Raycaster, Vector2, Vector3, Box3 }, draw: () => { renderer.render(scene, camera); css.render(scene, camera); }, api: () => deskApi, post, captureRoom } });
   let deskApi: DeskApi | null = null;
   const touch = createInteractions({
     desk: () => deskApi,
@@ -1405,7 +1453,10 @@ export async function createDesk(opts: {
           const onIdle = window.requestIdleCallback ?? ((fn: () => void) => setTimeout(fn, 900));
           onIdle(() => {
             if (running || transitioning) scheduleWarmNight();
-            else room.warmNight();
+            else {
+              room.warmNight();
+              if (!envs.night || stale.night) captureRoom("night"); // so the first click on the window doesn't pop
+            }
           });
         };
         scheduleWarmNight();
@@ -1604,8 +1655,12 @@ export async function createDesk(opts: {
         t.needsUpdate = true;
       }
     }
+    settleMaterials(scene); // roughness bands, reflections for the captured room (post.ts)
+    if (post) prepareGlow(scene); // what glows keys the bloom (post.ts); before the shaders compile
     await renderer.compileAsync(scene, camera);
     await uploadTextures(all);
+    renderer.shadowMap.needsUpdate = true;
+    captureRoom(time); // the room, lit, as its own environment
     while (blobUrls.length) URL.revokeObjectURL(blobUrls.pop()!);
     opts.onProgress(1);
   });
