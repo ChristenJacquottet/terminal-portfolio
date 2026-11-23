@@ -268,18 +268,37 @@ body {
   display: none;
 }
 
+/*
+ * The desk's chrome (the hint, the credit, the sound switch, the caption strip, the hover bubble):
+ * one family, after c-na.dev. Cream cards, a dark 2px border, a hard offset shadow, a pixel face
+ * for short labels (Pixelify Sans, loaded with the desk: features/chrome-caption.ts; until then
+ * Plex Mono stands in), IBM Plex Mono for the rest, teal for what leads somewhere.
+ */
+.desk,
 .desk-hint,
-.desk-caption,
+.credit {
+  --cream: #f3eee2;
+  --paper: #fffdf7;
+  --ink: #16130f;
+  --ink-soft: #62594c;
+  --teal: #0c7a76;
+  --pixel: "Pixelify Sans", "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  --strip: 36px; /* the caption strip's height */
+}
+
+.desk-hint,
 .credit,
 .sound-toggle {
   position: fixed;
   z-index: 3;
   margin: 0;
-  padding: 3px 8px;
-  border-radius: 4px;
-  font: 12px / 1.4 "IBM Plex Mono", ui-monospace, Menlo, monospace;
-  color: rgba(255, 255, 255, 0.72);
-  background: rgba(0, 0, 0, 0.45);
+  padding: 4px 9px;
+  font: 11px / 1.4 "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  color: var(--ink);
+  background: var(--cream);
+  border: 2px solid var(--ink);
+  border-radius: 0;
+  box-shadow: 3px 3px 0 var(--ink);
   pointer-events: none;
 }
 
@@ -288,94 +307,203 @@ body {
   top: max(10px, env(safe-area-inset-top));
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  border: 0;
+  gap: 6px;
+  padding: 3px 9px 4px;
+  font: 600 13px / 1.2 var(--pixel);
   cursor: pointer;
   pointer-events: auto;
+  transition: transform 80ms ease-out, box-shadow 80ms ease-out;
 }
 
 .sound-toggle:hover,
 .sound-toggle:focus-visible {
-  color: #fff;
-  background: rgba(0, 0, 0, 0.68);
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--teal);
   outline: none;
 }
 
+.sound-toggle:active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--ink);
+}
+
 .sound-toggle[data-muted="true"] {
-  color: rgba(255, 255, 255, 0.48);
-}
-
-.credit code {
-  font: inherit;
-  color: #fff;
-}
-
-.desk-caption {
-  right: max(12px, env(safe-area-inset-right));
-  bottom: max(16px, env(safe-area-inset-bottom));
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--ink-soft);
+  background: #ddd5c5;
 }
 
 .desk-hint {
   left: 50%;
-  bottom: max(16px, env(safe-area-inset-bottom));
+  bottom: calc(var(--strip) + max(0px, env(safe-area-inset-bottom)) + 14px);
   transform: translateX(-50%);
   white-space: nowrap;
+}
+
+/* c-na.dev's little square, in teal: this is where to start */
+.desk-hint::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin: 0 7px 1px 0;
+  background: var(--teal);
 }
 
 .credit {
   right: max(12px, env(safe-area-inset-right));
   top: max(10px, env(safe-area-inset-top));
-  max-width: min(68ch, calc(100% - 24px));
-  font-size: 11px;
+  max-width: min(100ch, calc(100% - 160px));
+  font-size: 10.5px;
   text-align: right;
   pointer-events: auto;
 }
 
 .credit a {
   color: inherit;
+  text-underline-offset: 2px;
+}
+
+.credit a:hover {
+  color: var(--teal);
+}
+
+.credit code {
+  font: inherit;
+  color: var(--teal);
 }
 
 .desk-hint[hidden],
 .credit[hidden],
-.sound-toggle[hidden] {
+.sound-toggle[hidden],
+.desk-caption[hidden] {
   display: none;
 }
 
-/* What's under the pointer at the desk (interact.ts): a name, and what a click does. */
+/* The caption strip under the scene: what you're looking at, and its count or state (desk.ts, features/chrome-caption.ts). */
+.desk-caption {
+  position: fixed;
+  z-index: 3;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: var(--strip);
+  padding: 9px max(18px, env(safe-area-inset-right)) max(9px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
+  font: 12px / 1.4 "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  color: rgba(243, 238, 226, 0.66);
+  background: rgba(16, 14, 12, 0.9);
+  border-top: 1px solid rgba(243, 238, 226, 0.16);
+  pointer-events: none;
+}
+
+.desk-caption span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.desk-caption span:first-child {
+  flex: 0 1 auto;
+  font: 600 14px / 1.2 var(--pixel);
+  color: var(--cream);
+}
+
+.desk-caption span:first-child::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin: 0 9px 1px 0;
+  background: var(--teal);
+}
+
+.desk-caption span:last-child {
+  flex: 0 1 auto;
+  text-align: right;
+}
+
+/*
+ * What's under the pointer (interact.ts): a speech bubble over the prop, its tail pointing down at
+ * it (`--tail` is where, across the bubble). The name in the pixel face, what a click does under it.
+ */
 .prop-label {
   position: fixed;
   left: 0;
   top: 0;
   z-index: 3;
   display: grid;
-  gap: 1px;
-  max-width: calc(100vw - 24px);
-  padding: 4px 9px 5px;
-  border-radius: 4px;
-  font: 12px / 1.35 "IBM Plex Mono", ui-monospace, Menlo, monospace;
-  color: rgba(255, 255, 255, 0.92);
-  background: rgba(8, 8, 10, 0.72);
-  border-left: 2px solid rgba(255, 232, 194, 0.55);
+  justify-items: start;
+  gap: 2px;
+  max-width: min(320px, calc(100vw - 20px));
+  padding: 5px 10px 6px;
+  font: 11px / 1.35 "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  color: var(--ink);
+  background: var(--cream);
+  border: 2px solid var(--ink);
+  box-shadow: inset 0 0 0 2px var(--paper), 3px 3px 0 var(--ink);
   pointer-events: none;
   white-space: nowrap;
 }
 
 .prop-label b {
-  font-weight: 600;
+  font: 700 16px / 1.15 var(--pixel);
+  letter-spacing: 0.01em;
 }
 
 .prop-label span {
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--ink-soft);
 }
 
+.prop-label::before,
+.prop-label::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: var(--tail, 50%);
+  border-style: solid;
+  border-color: transparent;
+}
+
+.prop-label::before {
+  margin-left: -9px;
+  border-width: 10px 9px 0;
+  border-top-color: var(--ink);
+}
+
+.prop-label::after {
+  margin-left: -6px;
+  border-width: 7px 6px 0;
+  border-top-color: var(--cream);
+}
+
+/* Things that lead somewhere (a project, the phone): teal, and the hint says so. */
 .prop-label.nav {
-  border-left-color: #7ee787;
+  box-shadow: inset 0 0 0 2px var(--paper), 3px 3px 0 var(--teal);
 }
 
 .prop-label.nav span {
-  color: #7ee787;
+  color: var(--teal);
+}
+
+.prop-label.nav span::after {
+  content: " →";
+}
+
+.prop-label.pop {
+  transform-origin: var(--tail, 50%) 100%;
+  animation: bubble-pop 170ms cubic-bezier(0.2, 1.5, 0.5, 1);
+}
+
+@keyframes bubble-pop {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.86);
+  }
 }
 
 .prop-label[hidden] {
@@ -384,15 +512,17 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .prompt-line.focused .cursor,
-  .art.drawn {
+  .art.drawn,
+  .prop-label.pop {
     animation: none;
   }
 }
 
 @media (max-width: 680px) {
   .credit {
-    left: calc(max(12px, env(safe-area-inset-left)) + 96px);
+    left: calc(max(12px, env(safe-area-inset-left)) + 122px);
     max-width: none;
+    padding: 3px 7px;
     font-size: 10px;
     line-height: 1.35;
   }
@@ -405,8 +535,23 @@ body {
     text-align: center;
   }
 
+  .desk-caption {
+    gap: 12px;
+    padding-left: max(14px, env(safe-area-inset-left));
+    padding-right: max(14px, env(safe-area-inset-right));
+    font-size: 11px;
+  }
+
+  .desk-caption span:first-child {
+    font-size: 13px;
+  }
+
   .prop-label {
     white-space: normal;
+  }
+
+  .prop-label b {
+    font-size: 15px;
   }
 }
 

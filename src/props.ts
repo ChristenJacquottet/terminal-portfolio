@@ -1033,6 +1033,10 @@ export async function addProps(
     // The handset is its own part, so a click can lift it out of the cradle.
     const kit = byName.phone;
     const handset = piece(kit, "sellphone_low.002_phone.001_0");
+    // The loader drops the dots from node names: in props.glb the handset is "sellphone_low002". It
+    // lifts where it is (a clone of its packed geometry comes out garbled).
+    const inPlace = handset ? null : kit.getObjectByName("sellphone_low002");
+    if (inPlace) inPlace.name = "handset";
     const phone = new Group();
     for (const o of [...kit.children]) if (o.name !== "sellphone_low.002_phone.001_0") phone.add(o);
     if (handset) {

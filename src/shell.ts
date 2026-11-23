@@ -1,4 +1,6 @@
+import { bus } from "./bus";
 import { COMMANDS, type Ctx } from "./commands";
+import { display, findFile, lookup, resolve } from "./fs";
 import { run, s, type Line } from "./output";
 
 type Stage = string[];
@@ -54,6 +56,28 @@ export function parse(input: string): Pipeline[] {
   return pipelines;
 }
 
+/**
+ * Tells the desk what just ran, so it can answer while you're stepped back: a project's floppy goes
+ * into the drive, the phone's handset lifts (src/features/chrome-coupling.ts listens).
+ */
+function announce(name: string, args: string[], cwd: string) {
+  const targets = args.filter((a) => !a.startsWith("-"));
+  if (name === "contact" || name === "email" || name === "book" || (name === "open" && ["email", "book"].includes(targets[0]))) {
+    bus.emit("contact:open", { via: name === "open" ? targets[0] : name });
+    return;
+  }
+  if (name !== "cat" && name !== "open") return;
+  for (const target of targets) {
+    const path = resolve(cwd, target);
+    const node = lookup(path);
+    const found = node ? { path, node } : findFile(target.replace(/\/$/, ""));
+    if (found?.node.kind === "file" && found.node.project) {
+      bus.emit("project:open", { slug: found.node.project.slug, command: `cat ${display(found.path)}` });
+      return;
+    }
+  }
+}
+
 /** Runs a command line and returns everything it printed. */
 export function execute(input: string, ctx: Omit<Ctx, "stdin">): Line[] {
   const out: Line[] = [];
@@ -68,6 +92,7 @@ export function execute(input: string, ctx: Omit<Ctx, "stdin">): Line[] {
         break;
       }
       stdin = command.run(args, { ...ctx, stdin }) ?? [];
+      announce(name, args, ctx.cwd);
     }
     if (stdin) out.push(...stdin);
     if (failed && then === "&&") break;
