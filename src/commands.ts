@@ -132,12 +132,15 @@ export const COMMANDS: Record<string, Command> = {
     run: () => {
       const visible = Object.entries(COMMANDS).filter(([, c]) => !c.hidden);
       const width = Math.max(...visible.map(([name]) => name.length)) + 3;
+      // every command merged in from src/commands/ counts too, so this stays true as they're added
+      const secret = Object.keys(COMMANDS).length - visible.length;
       return [
         [s("commands. click one, or type it. ", "dim"), s("tab", "bright"), s(" completes, ", "dim"), s("↑ ↓", "bright"), s(" walk history, ", "dim"), s("|", "bright"), s(" pipes into grep or head.", "dim")],
         [],
         ...visible.map(([name, c]): Line => [run(name, name, "accent"), s(" ".repeat(width - name.length)), s(c.desc)]),
         [],
         [s("try: ", "dim"), run("ls -l ~/shipped"), s(" · ", "dim"), run("grep voice"), s(" · ", "dim"), run("theme amber"), s(" · ", "dim"), run("exit")],
+        ...(secret ? ([[], [s(`${secret} more command${secret === 1 ? " isn't" : "s aren't"} listed. the desk has a few secrets too.`, "dim")]] as Line[]) : []),
       ];
     },
   },

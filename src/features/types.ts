@@ -109,6 +109,11 @@ export type DeskApi = {
   blackout: (ms: number, keep?: Object3D[], opts?: { terminal?: boolean }) => Promise<void>;
   /** The caption strip under the scene (c-na.dev's "Floppy holder · 7 disks"); null hides it. */
   caption: (text: string | null) => void;
+  /**
+   * A caption that wins over the ambient one (which chrome-caption rewrites a few times a
+   * second) until it's released with null: a game being played, a take on the slate.
+   */
+  holdCaption: (text: string | null) => void;
   /** The prop nearest the middle of the view, by name. */
   lookingAt: () => string | null;
   /** The heartbeat (about 1 Hz while the desk is in view): add a function to run on it. */
@@ -129,8 +134,12 @@ export type DeskApi = {
   sitDown: () => Promise<void>;
   /** The Sony PVM's screen, if the lab loaded (see alive.ts `PvmScreen`). */
   pvm: () => PvmScreen | null;
-  /** Clicks a prop (or anything with a hotspot) as if the visitor had: the terminal driving the desk. */
-  activate: (object: Object3D) => boolean;
+  /**
+   * Clicks a prop (or anything with a hotspot) as if the visitor had: the terminal driving the desk.
+   * `stay`: the prop answers (a disk goes into the drive, the handset lifts) but the visitor isn't
+   * sat down and nothing is typed (the terminal already ran it).
+   */
+  activate: (object: Object3D, opts?: { stay?: boolean }) => boolean;
   /** Whether the visitor is at the screen (true) or stepped back looking at the desk. */
   seated: () => boolean;
   /** Steps back from the screen to the desk (loads nothing new: the desk is already here). */

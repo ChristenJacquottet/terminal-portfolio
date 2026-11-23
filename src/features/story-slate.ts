@@ -116,7 +116,7 @@ async function action(animate: DeskApi["animate"], lampOn: () => boolean, religh
   const d = desk;
   if (!key || !d) return;
   d.sound?.play("keyLightOn", { pan: -0.7 });
-  d.caption(`take ${take} · action`);
+  d.holdCaption(`take ${take} · action`);
   const lamp = d.lights.lamp;
   const was = lampOn() ? 1 : 0;
   // the ballast strikes: a flicker, then it swells to full as the lamp drops
@@ -137,7 +137,7 @@ async function cut(animate: DeskApi["animate"], lampOn: () => boolean, relight: 
   const d = desk;
   if (!key || !d) return;
   d.sound?.play("keyLightOff", { pan: -0.7 });
-  d.caption("cut");
+  d.holdCaption("cut");
   const lamp = d.lights.lamp;
   const on = lampOn();
   const from = key.intensity;
@@ -155,7 +155,7 @@ async function cut(animate: DeskApi["animate"], lampOn: () => boolean, relight: 
   if (on) lampAt(lamp, 1);
   relight();
   window.setTimeout(() => {
-    if (!rolling) d.caption(null);
+    if (!rolling) d.holdCaption(null);
   }, 1400);
 }
 

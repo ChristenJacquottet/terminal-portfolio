@@ -690,6 +690,7 @@ export async function createDesk(opts: {
   // Progress: the computer is the first third, the props the rest.
   const loaded = await loadModel((f) => opts.onProgress(f * 0.35));
   const { root, screen } = loaded ?? standIn();
+  root.name = "computer"; // the Apple II, for features (the caption names it)
   scene.add(root);
   const room = buildRoom(scene, await roomAssets, new Box3().setFromObject(root), {
     initTexture: (t) => renderer.initTexture(t),
@@ -1197,10 +1198,25 @@ export async function createDesk(opts: {
   captionEl.className = "desk-caption";
   captionEl.hidden = true;
   host.append(captionEl);
+  // Two layers: the ambient caption (what the view is centred on, rewritten all the time) and a
+  // held one (a game, a take on the slate) that wins until it's released with null.
+  let ambientCaption: string | null = null;
+  let heldCaption: string | null = null;
   let captionText: string | null = null;
+  let captionShown: string | null = null;
   const showCaption = () => {
-    captionEl.textContent = captionText ?? "";
-    captionEl.hidden = !captionText || seated || transitioning || editing;
+    captionText = heldCaption ?? ambientCaption;
+    if (captionShown !== captionText) {
+      // "Floppy box · 6 disks": the thing on the left, its count or state on the right
+      captionShown = captionText;
+      const [thing, ...rest] = (captionText ?? "").split(" · ");
+      const left = document.createElement("span");
+      const right = document.createElement("span");
+      left.textContent = thing;
+      right.textContent = rest.join(" · ");
+      captionEl.replaceChildren(left, right);
+    }
+    captionEl.hidden = !captionText || seated || (transitioning && !framedNow) || editing; // a close-up keeps it
   };
   if (hint && coarsePointer) {
     hint.textContent = "drag to look · pinch to lean · tap anything · tap screen to sit";
@@ -1277,14 +1293,7 @@ export async function createDesk(opts: {
     if (target) {
       touch.click(target);
       if (e.pointerType === "touch" && !target.spot.nav) {
-        if (touch.hover(target, e)) request();
-        const chip = host.querySelector<HTMLElement>(".prop-label");
-        if (chip && !chip.hidden) {
-          const r = chip.getBoundingClientRect();
-          const x = clamp(Math.round(e.clientX - r.width / 2), 12, Math.max(12, vw - r.width - 12));
-          const y = clamp(Math.round(e.clientY - r.height - 18), 52, Math.max(52, vh - r.height - 64));
-          chip.style.transform = `translate(${x}px, ${y}px)`;
-        }
+        if (touch.hover(target, e)) request(); // the bubble sits over the prop itself
         touchChipTimer = window.setTimeout(() => {
           touchChipTimer = 0;
           if (touch.leave()) request();
@@ -1328,7 +1337,7 @@ export async function createDesk(opts: {
         if (seated || transitioning) return touch.leave();
         const target = touch.pick(ev, vw, vh);
         const glassy = !target && onGlass(ev);
-        if (glassy ? touch.say("Apple II", "sit back down", ev) : touch.hover(target, ev)) request();
+        if (glassy ? touch.say("Apple II", "sit back down", ev, loaded?.tube) : touch.hover(target, ev)) request();
         canvas.style.cursor = target ? "pointer" : glassy ? "zoom-in" : "grab";
       });
     }
@@ -1626,7 +1635,11 @@ export async function createDesk(opts: {
       setTime: (next) => void fadeTime(next).then(relight),
       blackout,
       caption: (text) => {
-        captionText = text;
+        ambientCaption = text;
+        showCaption();
+      },
+      holdCaption: (text) => {
+        heldCaption = text;
         showCaption();
       },
       lookingAt,
@@ -1637,7 +1650,7 @@ export async function createDesk(opts: {
       terminal: { run: opts.run, reboot: opts.reboot ?? (async () => {}) },
       sitDown: () => api.sitDown(),
       pvm: () => (props.get("crt")?.userData.pvm as PvmScreen | undefined) ?? null,
-      activate: (object) => touch.activate(object),
+      activate: (object, o) => touch.activate(object, o),
       frame: frameOn,
       unframe,
       framed: () => framedNow,

@@ -155,7 +155,7 @@ function start(i: number) {
   mode = "ready";
   newHigh = false;
   sfx("arcadeStart");
-  desk?.caption(`Sony PVM · ${cart.title.toLowerCase()} · esc for the menu`);
+  desk?.holdCaption(`Sony PVM · ${cart.title.toLowerCase()} · esc for the menu`);
   paint();
   schedule();
 }
@@ -166,7 +166,7 @@ function toMenu() {
   blinkOn = true;
   held.clear();
   stick(null);
-  desk?.caption("Sony PVM · arcade · esc to leave");
+  desk?.holdCaption("Sony PVM · arcade · esc to leave");
   paint();
   schedule();
 }
@@ -371,7 +371,7 @@ async function open(game?: string): Promise<boolean> {
     }, 250);
     await flight;
     if (!on) return true;
-    if (index < 0) desk.caption("Sony PVM · arcade · esc to leave");
+    if (index < 0) desk.holdCaption("Sony PVM · arcade · esc to leave");
   }
   if (index >= 0) start(index);
   else schedule();
@@ -392,7 +392,7 @@ function leave(unframe = true) {
     pvm.repaint();
   }
   giveKeysBack();
-  desk.caption(null);
+  desk.holdCaption(null);
   if (unframe && desk.framed()) void desk.unframe();
 }
 

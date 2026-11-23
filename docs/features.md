@@ -53,8 +53,15 @@ bus.emit("coffee:refill");
 bus.on("coffee:refill", () => refill());
 ```
 
-Bus names in use: `project:hover {slug|null}`, `project:open {slug}`, `contact:open`,
-`desk:look {name|null}`, `coffee:refill`, `power:cut`, `games:play {game, at}`. Add yours to this list.
+Bus names in use: `project:hover {slug|null}`, `project:open {slug, command}`, `contact:open {via}`,
+`desk:look {name|null}`, `desk:focus {name|null}`, `coffee:refill {at}`, `power:cut`,
+`games:play {game, at}`. Add yours to this list.
+The shell emits `project:open` (a `cat` or `open` of a project) and `contact:open` (`contact`,
+`email`, `book`) after every command it runs (shell.ts `announce`); stepped back, the desk answers
+(features/chrome-coupling.ts). interact.ts emits `desk:focus` when a click frames a prop up close,
+and the caption names it (features/chrome-caption.ts). `coffee:refill` comes from the `coffee`
+command (features/consequences-mug.ts), `power:cut` is answered by the power strip
+(features/consequences-power.ts), `games:play` comes from `play` (features/games-arcade.ts).
 
 Rules that still apply (docs/art-direction.md): the scene only draws while something moves (use
 `animate`, never your own rAF loop); a click leads somewhere real, changes the room, or is a toy
