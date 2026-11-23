@@ -234,7 +234,9 @@ export function createInteractions(o: {
       varying vec3 vV;
       void main() {
         float f = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 2.0);
-        gl_FragColor = vec4(uColor * (0.12 + 1.6 * f) * uStrength, 1.0);
+        // Linear light, added before tone mapping (post.ts): a whisper across the face, the
+        // light on the edges. The old 0.12 base read as a milky overlay once the frame went HDR.
+        gl_FragColor = vec4(uColor * (0.012 + 0.42 * f) * uStrength, 1.0);
       }`,
     blending: AdditiveBlending,
     transparent: true,
