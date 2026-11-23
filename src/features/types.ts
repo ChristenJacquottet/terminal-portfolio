@@ -103,9 +103,10 @@ export type DeskApi = {
   setTime: (t: Time) => void;
   /**
    * Everything electrical off for `ms`: lights, LEDs, screens, the hum, the terminal under the
-   * glass. `keep` stays lit (the UPS's LCD). Resolves once the room is back.
+   * glass. `keep` stays lit (the UPS's LCD); `terminal: true` keeps the terminal under the glass
+   * up (the UPS feeds the desk). Resolves once the room is back.
    */
-  blackout: (ms: number, keep?: Object3D[]) => Promise<void>;
+  blackout: (ms: number, keep?: Object3D[], opts?: { terminal?: boolean }) => Promise<void>;
   /** The caption strip under the scene (c-na.dev's "Floppy holder · 7 disks"); null hides it. */
   caption: (text: string | null) => void;
   /** The prop nearest the middle of the view, by name. */

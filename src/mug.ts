@@ -31,12 +31,20 @@ export type Liquid = {
    * x and z) so the surface can stay level and lag behind. Returns true while anything still moves.
    */
   step(dt: number, now: number, camera: Camera, tilt?: { x: number; z: number }): boolean;
+  /** How full the cup is, 0 (empty: no steam, a dry ring) to 1 (full). */
+  level(): number;
+  /** Moves the surface, the crema line and the column under it to `k` of full (0..1). */
+  setLevel(k: number): void;
+  /** When set, the cup's tilt for `step`, whoever is stepping (a sip holds it while it lifts the cup). */
+  hold: { x: number; z: number } | null;
 };
 
 const RINGS = 14;
 const SEGS = 40;
 const RADIUS = 0.0346;
 const LEVEL = 0.079;
+/** The inside floor of the cup. */
+const FLOOR = 0.008;
 
 /** A disc with vertices on concentric rings, so waves can be drawn across it. */
 function discGeometry(radius: number): { geo: BufferGeometry; r: Float32Array } {
@@ -66,7 +74,8 @@ function discGeometry(radius: number): { geo: BufferGeometry; r: Float32Array } 
   return { geo, r: new Float32Array(radii) };
 }
 
-function wispTexture(): CanvasTexture {
+/** A soft, bent wisp of steam or smoke, white, for billboards (the soldering iron's smoke uses it too). */
+export function wispTexture(): CanvasTexture {
   const c = document.createElement("canvas");
   c.width = 64;
   c.height = 128;
@@ -130,6 +139,27 @@ export function mug(): Group {
   const coffee = new Group();
   coffee.add(surface, meniscus);
   g.add(depth, coffee);
+  // What an empty cup keeps: a faint dried ring on the floor where the last of it sat.
+  const ringCanvas = document.createElement("canvas");
+  ringCanvas.width = ringCanvas.height = 128;
+  const rg = ringCanvas.getContext("2d")!;
+  const stain = rg.createRadialGradient(64, 64, 0, 64, 64, 64);
+  stain.addColorStop(0, "rgba(60,30,10,0.3)");
+  stain.addColorStop(0.7, "rgba(60,30,10,0.38)");
+  stain.addColorStop(0.84, "rgba(40,18,6,0.95)");
+  stain.addColorStop(0.92, "rgba(52,25,8,0.5)");
+  stain.addColorStop(1, "rgba(60,30,10,0.12)");
+  rg.fillStyle = stain;
+  rg.fillRect(0, 0, 128, 128);
+  const ringMap = new CanvasTexture(ringCanvas);
+  ringMap.colorSpace = SRGBColorSpace;
+  const dry = new Mesh(new PlaneGeometry(0.069, 0.069), new MeshStandardMaterial({ map: ringMap, transparent: true, depthWrite: false, roughness: 0.6, polygonOffset: true, polygonOffsetFactor: -1 }));
+  dry.rotation.x = -Math.PI / 2;
+  dry.position.y = FLOOR + 0.0004;
+  dry.visible = false;
+  dry.raycast = () => {};
+  g.add(dry);
+  let full = 1;
 
   // ── steam ─────────────────────────────────────────────────────────────────────────────────
   const wispMap = wispTexture();
@@ -150,8 +180,23 @@ export function mug(): Group {
   let steamUntil = 0;
   let steamClock = 0;
   const pos = geo.getAttribute("position");
+  let lastNow = -1;
+  let lastMoving = false;
 
   const liquid: Liquid = {
+    hold: null,
+    level: () => full,
+    setLevel(k) {
+      full = Math.max(0, Math.min(1, k));
+      const y = FLOOR + (LEVEL - FLOOR) * full;
+      surface.position.y = y;
+      meniscus.position.y = y + 0.0004;
+      depth.position.y = Math.max(FLOOR + 0.0021, y - 0.0021);
+      const wet = full > 0.004;
+      surface.visible = meniscus.visible = depth.visible = wet;
+      dry.visible = !wet;
+      if (!wet) steamUntil = 0;
+    },
     knock(strength) {
       // a kick to the surface's velocity (more about z, the way the handle side is pushed) and
       // fresh rings from the wall
@@ -162,9 +207,14 @@ export function mug(): Group {
       this.steam(3200);
     },
     steam(ms) {
+      if (full <= 0.004) return; // an empty cup doesn't steam
       steamUntil = Math.max(steamUntil, performance.now() + ms);
     },
     step(dt, now, camera, tilt) {
+      // Two loops may step the coffee in one frame (a sip, and the steam from stepping back): once is enough.
+      if (Math.abs(now - lastNow) < 4) return lastMoving;
+      lastNow = now;
+      tilt = this.hold ?? tilt;
       let moving = false;
       // The surface wants to be level in the world: in the cup's frame that is minus the cup's tilt.
       const tx = -(tilt?.x ?? 0);
@@ -214,6 +264,7 @@ export function mug(): Group {
         }
         moving = moving || steaming;
       }
+      lastMoving = moving;
       return moving;
     },
   };
