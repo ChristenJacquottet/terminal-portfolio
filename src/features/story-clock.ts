@@ -20,6 +20,9 @@ function pivotHand(hand: Mesh, centre: Vector3): Hand {
   pivot.updateMatrix();
   pivot.attach(hand);
   hand.updateMatrix();
+  // Its shadow catches up with the next redraw of the shadow maps (something moving, a click): a
+  // second hand stepping on the heartbeat doesn't earn redrawing the whole room's every second.
+  hand.userData.lazyShadow = true;
   const pos = (hand.geometry as BufferGeometry).getAttribute("position");
   const v = new Vector3();
   let far = 0;

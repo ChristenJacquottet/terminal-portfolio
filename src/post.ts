@@ -57,6 +57,12 @@ export type Post = {
   /** Ambient-occlusion strength (0 = off), the bloom's, and the vignette's. */
   settings: { ao: number; aoRadius: number; bloom: number; vignette: number; saturation: number; warmth: number };
   setEnabled(on: boolean): void;
+  /**
+   * The scene's resolution as a fraction of the canvas (1 = full). desk.ts drops it while the
+   * camera moves on high-DPI screens and puts it back for the frame the camera settles on, so the
+   * picture at rest is unchanged; the composite upsamples into the full-size canvas.
+   */
+  setScale(scale: number): void;
 };
 
 const quadVertex = /* glsl */ `
@@ -381,6 +387,7 @@ export function createPost(renderer: WebGLRenderer, scene: Scene): Post {
   const quadCam = new OrthographicCamera(-1, 1, 1, -1, 0, 1);
 
   let enabled = true;
+  let scale = 1;
   const settings = { ao: 0.8, aoRadius: 0.09, bloom: 0.6, vignette: 0.22, saturation: 1.06, warmth: 0.03 };
 
   const pass = (material: ShaderMaterial, out: WebGLRenderTarget | null) => {
@@ -400,8 +407,8 @@ export function createPost(renderer: WebGLRenderer, scene: Scene): Post {
 
   const draw = (camera: Camera) => {
     renderer.getDrawingBufferSize(size);
-    if (size.x !== sceneRT.width || size.y !== sceneRT.height) resize(size.x, size.y);
-    const w = size.x, h = size.y;
+    const w = Math.max(1, Math.round(size.x * scale)), h = Math.max(1, Math.round(size.y * scale));
+    if (w !== sceneRT.width || h !== sceneRT.height) resize(w, h);
     renderer.setRenderTarget(sceneRT);
     raw(scene, camera);
 
@@ -469,6 +476,9 @@ export function createPost(renderer: WebGLRenderer, scene: Scene): Post {
     settings,
     setEnabled(on) {
       enabled = on;
+    },
+    setScale(next) {
+      scale = Math.min(1, Math.max(0.25, next));
     },
   };
 }
