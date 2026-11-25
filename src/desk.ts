@@ -1,10 +1,10 @@
 // The desk scene: the computer on a desk in a room, with the live terminal mounted on the monitor.
 // Loaded on demand by `exit`, so the terminal itself never pays for three.js.
 //
-// Performance rules: render only while something moves (camera tween or orbit damping), cap the
-// pixel ratio, shadow maps redrawn only when something moves, the environment captured from the
-// room only when its light changes, and the terminal stays DOM (CSS3D), so text is never
-// re-uploaded as a texture. Desktops finish each frame in post.ts (AO, bloom, grade); phones don't.
+// Performance rules: render only while something moves (camera tween or orbit damping), at most
+// 60 fps, cap the pixel ratio (and drop it while the camera moves), shadow maps redrawn only when a
+// shadow caster or light really moved, the environment captured from the room only when its light
+// changes, and the terminal stays DOM (CSS3D), so text is never re-uploaded as a texture. Desktops finish each frame in post.ts (AO, bloom, grade); phones don't.
 //
 // The CSS3D layer sits *under* the WebGL canvas. The tube is drawn as a transparent hole, so the
 // terminal shows through exactly where the curved glass is: the bezel crops it, and the glass
@@ -76,6 +76,8 @@ const TUBE_MIN_H = 360;
 const FOV = 35;
 /** How much of the window the screen fills in the close-up pose, which must match the fullscreen hand-off. */
 const FILL = 0.94;
+/** The frame budget: the render loop never draws faster than 60 fps, whatever the display's refresh rate. */
+const FRAME_MS = 1000 / 60;
 
 /**
  * The real model, once it is in public/models. Credit is required (CC BY 4.0).
@@ -954,23 +956,139 @@ export async function createDesk(opts: {
   }
 
   // Render on demand only.
+  /**
+   * The scene's resolution while the camera moves, on screens with a device pixel ratio of ~2
+   * (1.5x effective, still sharper than a 1x screen). Never on 1x screens or phones (no post).
+   */
+  const MOVING_SCALE = post && renderer.getPixelRatio() >= 1.75 ? 0.75 : 1;
   let running = false;
   let tween: ((now: number) => boolean) | null = null;
   /** Props in motion (interact.ts): each returns false when it's done. */
   const motions = new Set<(now: number) => boolean>();
   let frameMs = 0; // how long the last frame took: the heartbeat stays away from a slow machine
+  let nextDraw = 0; // when the next frame is due (rAF time)
+  /** Counters for devtools (`__desk.stats`): frames drawn, frames that redrew the shadow maps, frames skipped by the cap. */
+  const stats = { frames: 0, shadowFrames: 0, capped: 0, lowRes: 0 };
   const frame = (now: number) => {
+    // At most ~60 frames a second. ProMotion and other 120/144 Hz displays call rAF twice as often,
+    // and each frame here is a full HDR render with AO and bloom: the extra frames only make heat.
+    // Every tween and motion is timed by the clock, not by frames, so skipping one changes nothing.
+    // Frames are due every 1/60 s (with 2 ms of slack for jitter), so 90, 100, 120 and 144 Hz all
+    // average 60; after a pause the schedule restarts from now.
+    if (now < nextDraw - 2) {
+      stats.capped++;
+      requestAnimationFrame(frame);
+      return;
+    }
+    nextDraw = Math.max(nextDraw + FRAME_MS, now + FRAME_MS / 2);
     const tweening = tween ? tween(now) : false;
     if (!tweening) tween = null;
     for (const m of motions) if (!m(now)) motions.delete(m);
-    if (motions.size) renderer.shadowMap.needsUpdate = true; // moving things move their shadows
     const moving = controls?.enabled ? controls.update() : updateLook();
-    const t0 = performance.now();
-    renderer.render(scene, camera);
-    css.render(scene, camera);
-    frameMs = performance.now() - t0;
+    // Moving things move their shadows; light-only changes (the time of day, the lamp's flicker, a
+    // flash, steam) and the camera don't, so the shadow maps are redrawn only when a caster or a
+    // shadow-casting light really moved (including the last step of an animation).
+    if (shadowsMoved()) renderer.shadowMap.needsUpdate = true;
+    if (renderer.shadowMap.needsUpdate) stats.shadowFrames++;
+    // While the camera itself moves, a high-DPI screen draws the scene at a lower resolution (the eye
+    // can't resolve it in motion); the frame it settles on is always full resolution.
+    const lowRes = (tweening || moving) && MOVING_SCALE < 1;
+    post?.setScale(lowRes ? MOVING_SCALE : 1);
+    if (lowRes) stats.lowRes++;
+    // Seated, the canvas is hidden: motions still finish, but nothing is drawn that nobody sees.
+    if (!host.hidden) {
+      const t0 = performance.now();
+      renderer.render(scene, camera);
+      css.render(scene, camera);
+      frameMs = performance.now() - t0;
+      stats.frames++;
+    }
     if (tweening || moving || motions.size) requestAnimationFrame(frame);
     else running = false;
+  };
+
+  /**
+   * Whether anything the shadow maps draw has changed since the last check: every visible
+   * shadow-casting mesh (where it is, its geometry's version, whether it's shown) and every
+   * shadow-casting light (where it is, where it points, its cone). Casters marked
+   * `userData.lazyShadow` (the clock's hands) don't count. A few thousand numbers compared,
+   * against redrawing a 2048² and a 1024² depth map of the whole room (~300 draw calls).
+   */
+  let shadowSig = new Float64Array(4096);
+  let nextSig = new Float64Array(4096);
+  let shadowLen = -1;
+  function shadowsMoved() {
+    scene.updateMatrixWorld();
+    let n = 0;
+    const put = (v: number) => {
+      if (n === nextSig.length) {
+        const grown = new Float64Array(n * 2);
+        grown.set(nextSig);
+        nextSig = grown;
+      }
+      nextSig[n++] = v;
+    };
+    const putMatrix = (m: Matrix4) => {
+      for (let i = 0; i < 16; i++) put(m.elements[i]);
+    };
+    scene.traverseVisible((o) => {
+      const light = o as SpotLight;
+      if (light.isLight) {
+        if (!light.castShadow) return;
+        put(o.id);
+        putMatrix(o.matrixWorld);
+        if (light.target) putMatrix(light.target.matrixWorld);
+        put(light.angle ?? 0);
+        put(light.distance ?? 0);
+        return;
+      }
+      const mesh = o as Mesh;
+      if (!mesh.isMesh || !mesh.castShadow || o.userData.lazyShadow) return;
+      put(o.id);
+      putMatrix(o.matrixWorld);
+      const geometry = mesh.geometry;
+      put(geometry.id);
+      put((geometry.getAttribute("position") as BufferAttribute | undefined)?.version ?? 0);
+      put(Array.isArray(mesh.material) ? 1 : mesh.material.visible ? 1 : 0);
+      const instanced = mesh as unknown as { isInstancedMesh?: boolean; count: number; instanceMatrix: BufferAttribute };
+      if (instanced.isInstancedMesh) {
+        put(instanced.count);
+        put(instanced.instanceMatrix.version);
+      }
+      if (mesh.morphTargetInfluences) for (const v of mesh.morphTargetInfluences) put(v);
+      const skinned = mesh as unknown as { isSkinnedMesh?: boolean; skeleton: { bones: Object3D[] } };
+      if (skinned.isSkinnedMesh) for (const bone of skinned.skeleton.bones) putMatrix(bone.matrixWorld);
+    });
+    let changed = n !== shadowLen;
+    for (let i = 0; !changed && i < n; i++) changed = nextSig[i] !== shadowSig[i];
+    [shadowSig, nextSig] = [nextSig, shadowSig];
+    shadowLen = n;
+    return changed;
+  }
+
+  // A light that's off (the lamp switched off, the blackout) lights nothing, so its shadow map
+  // isn't redrawn while it's off; it's redrawn the moment it comes back on if anything moved
+  // meanwhile. (The light itself stays in the scene: removing it would recompile every shader.)
+  const unlitShadows = new Set<object>();
+  const renderShadows = renderer.shadowMap.render;
+  renderer.shadowMap.render = function (this: typeof renderer.shadowMap, lights, s, c) {
+    let any = this.needsUpdate;
+    for (const light of lights as SpotLight[]) {
+      light.shadow.autoUpdate = false;
+      const lit = light.intensity > 0;
+      if (this.needsUpdate) {
+        light.shadow.needsUpdate = lit;
+        if (lit) unlitShadows.delete(light);
+        else unlitShadows.add(light);
+      } else if (lit && unlitShadows.has(light)) {
+        light.shadow.needsUpdate = true;
+        unlitShadows.delete(light);
+        any = true;
+      }
+    }
+    if (!any) return;
+    this.needsUpdate = true;
+    renderShadows.call(this, lights, s, c);
   };
   const animate = (ms: number, step: (t: number) => void) =>
     new Promise<void>((done) => {
@@ -1389,7 +1507,7 @@ export async function createDesk(opts: {
   }
 
   // for poking at it from devtools; `draw()` is one full frame (scene, post, terminal), `api()` the DeskApi
-  if (import.meta.env.DEV) Object.assign(window, { __desk: { scene, renderer, camera, look, three: { Raycaster, Vector2, Vector3, Box3 }, draw: () => { renderer.render(scene, camera); css.render(scene, camera); }, api: () => deskApi, post, captureRoom } });
+  if (import.meta.env.DEV) Object.assign(window, { __desk: { scene, renderer, camera, look, stats, idle: () => !running, three: { Raycaster, Vector2, Vector3, Box3 }, draw: () => { renderer.render(scene, camera); css.render(scene, camera); }, api: () => deskApi, post, captureRoom } });
   let deskApi: DeskApi | null = null;
   const touch = createInteractions({
     desk: () => deskApi,
