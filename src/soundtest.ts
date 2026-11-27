@@ -118,11 +118,11 @@ export function mountSoundTest() {
     </div>
     <div class="soundtest-body">
       <div class="soundtest-group">
-        <p class="soundtest-label">loops & walkman</p>
+        <p class="soundtest-label">loops & music</p>
         <div class="soundtest-row">
           <button type="button" data-loop="room">loop: room</button>
           <button type="button" data-loop="hum">loop: hum</button>
-          <button type="button" data-music>music (walkman)</button>
+          <button type="button" data-music>synthwave sample</button>
         </div>
       </div>
       <div class="soundtest-group">
@@ -197,8 +197,8 @@ export function mountSoundTest() {
       say("loading /audio/music.mp3…");
       await audio.music(true);
       musicBusy = false;
-      musicBtn.textContent = "music (walkman)";
-      say(audio.muted ? "music(true) queued (currently muted)" : "music(true): playing Walkman track");
+      musicBtn.textContent = "synthwave sample";
+      say(audio.muted ? "music(true) queued (currently muted)" : "music(true): playing synthwave sample");
     } else {
       await audio.music(false);
       say("music(false): stopped");

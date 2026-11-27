@@ -230,7 +230,7 @@ const PROTECTED_SUBNODES = new Set([
   "cubies",
   "handset",
   "Empty.001_4",
-  "portable_cassette_player_lid",
+  "walkman-lid",
   "joystick-stick", // games-arcade.ts: the stick leans with the arrow keys
 ]);
 

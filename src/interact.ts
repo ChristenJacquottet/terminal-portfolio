@@ -3,6 +3,8 @@
 // goes into the Disk II and opens its project, the phone gets you in touch, the tape plays.
 // Props carry their hotspot in userData.hotspot (props.ts) or get one here by name. Everything you
 // can do here can also be done from the terminal; the desk is a shortcut, never the only door.
+import { BAY_Y, type Volume } from "./mixtapes";
+import { createMixPlayer } from "./mix-player";
 import { firstSurface } from "./picking";
 import type { Liquid } from "./mug";
 import { bus } from "./bus";
@@ -10,6 +12,7 @@ import { featureActions, featureHotspots, features } from "./features";
 import type { ActionCtx, DeskApi } from "./features/types";
 import {
   AdditiveBlending,
+  Group,
   Box3,
   BufferGeometry,
   Color,
@@ -311,8 +314,8 @@ export function createInteractions(o: {
   let lampOn = true;
   let busy = false;
   let inDrive: Object3D | null = null;
-  let tapeIn = false;
-  let playing = false;
+  let loadedTape: Object3D | null = null;
+  let changingTape = false;
 
   const unpowered = (spot: Hotspot) => o.desk()?.stripOff() && (spot.nav || POWERED.has(spot.kind));
   const labelFor = (t: Target): [string, string | undefined] => {
@@ -325,8 +328,8 @@ export function createInteractions(o: {
     if (spot.kind === "lamp") return [spot.label, lampOn ? "switch it off" : "switch it on"];
     if (spot.kind === "headphones") return [spot.label, o.muted() ? "sound on" : "sound off"];
     if (spot.kind === "time") return [spot.label, o.time() === "dusk" ? "wait for night" : "back to dusk"];
-    if (spot.kind === "walkman") return [spot.label, tapeIn ? (playing ? "pause" : "play") : "no tape in it"];
-    if (spot.kind === "tape") return [spot.label, tapeIn ? "take it out" : spot.hint];
+    if (spot.kind === "walkman" && loadedTape) return [spot.label, o.muted() ? "unmute sound to play" : "play / pause"];
+    if (spot.kind === "mixtape") return [spot.label, t.object === loadedTape ? "eject tape" : spot.hint];
     if (spot.kind === "disk" && t.object === inDrive) return [spot.label, "it's in the drive: open it"];
     return [spot.label, spot.hint];
   };
@@ -650,39 +653,65 @@ export function createInteractions(o: {
   }
 
   // ── the Walkman ───────────────────────────────────────────────────────────────────
+  const player = createMixPlayer(o.host, () => {
+    if (loadedTape) void changeTape(loadedTape);
+  });
   let tapeHome: { parent: Object3D; position: Vector3; quaternion: Quaternion; scale: Vector3 } | null = null;
-  async function insertTape(tape: Object3D, walkman: Object3D) {
-    const bay = walkman.userData.bay as Vector3 | null;
-    if (!bay) return;
-    tapeHome ??= { parent: tape.parent!, position: tape.position.clone(), quaternion: tape.quaternion.clone(), scale: tape.scale.clone() };
-    const to = {
-      position: walkman.localToWorld(bay.clone()),
-      quaternion: walkman.getWorldQuaternion(new Quaternion()),
-      scale: walkman.getWorldScale(new Vector3()),
-    };
-    await flyTo(tape, to, 700, 0.08);
-    walkman.attach(tape);
-    sfx("tapeInsert", walkman);
-    tapeIn = true;
-    playing = true;
-    o.music(true);
-  }
-  async function ejectTape(tape: Object3D) {
-    if (!tapeHome) return;
-    o.music(false);
-    playing = false;
-    sfx("lidOpen", tape);
-    const home = tapeHome;
-    const ghost = new Mesh();
-    home.parent.add(ghost);
-    ghost.position.copy(home.position);
-    ghost.quaternion.copy(home.quaternion);
-    ghost.scale.copy(home.scale);
-    const to = worldPose(ghost);
-    ghost.removeFromParent();
-    await flyTo(tape, to, 650, 0.08);
-    home.parent.attach(tape);
-    tapeIn = false;
+  async function changeTape(selected: Object3D) {
+    const desk = o.desk();
+    const deck = desk?.props.get("cassette");
+    const lid = deck?.getObjectByName("walkman-lid");
+    if (changingTape || !deck || !lid || !desk || !selected.parent) return;
+    changingTape = true;
+    const ejectOnly = selected === loadedTape;
+    try {
+      leave();
+      player.stop();
+      if (!desk.framed()) {
+        const area = new Box3().setFromObject(deck, true);
+        for (const n of ["mix-1", "mix-2"]) {
+          const tape = desk.props.get(n);
+          if (tape) area.expandByObject(tape, true);
+        }
+        await desk.frame(area, { dir: new Vector3(0.08, 1, 0.72), fill: Math.min(0.88, camera.aspect * 0.85), ms: 520 });
+      }
+      const open = -1.78;
+      sfx("lidOpen", deck);
+      await o.animate(240, (t) => { lid.rotation.x = open * ease(t); });
+      const seat = {position: deck.localToWorld(new Vector3(0, BAY_Y, 0)), quaternion: deck.getWorldQuaternion(new Quaternion()), scale: deck.getWorldScale(new Vector3())};
+      const above = { ...seat, position: deck.localToWorld(new Vector3(0, BAY_Y + 0.035, 0)) };
+      if (loadedTape && tapeHome) {
+        const tape = loadedTape;
+        const home = tapeHome;
+        await flyTo(tape, above, 240, 0);
+        const rest = new Group();
+        rest.position.copy(home.position); rest.quaternion.copy(home.quaternion); rest.scale.copy(home.scale);
+        home.parent.add(rest);
+        await flyTo(tape, worldPose(rest), 420, 0.027);
+        rest.removeFromParent();
+        home.parent.add(tape);
+        tape.position.copy(home.position); tape.quaternion.copy(home.quaternion); tape.scale.copy(home.scale);
+        loadedTape = null;
+        tapeHome = null;
+      }
+      if (!ejectOnly) {
+        tapeHome = {parent: selected.parent!, position: selected.position.clone(), quaternion: selected.quaternion.clone(), scale: selected.scale.clone()};
+        await flyTo(selected, above, 460, 0.037);
+        await flyTo(selected, seat, 270, 0);
+        deck.add(selected);
+        selected.position.set(0, BAY_Y, 0);
+        selected.quaternion.identity();
+        selected.scale.setScalar(1);
+        loadedTape = selected;
+        sfx("tapeInsert", deck);
+      }
+      await o.animate(250, (t) => { lid.rotation.x = open * (1 - ease(t)); });
+      sfx("lidClose", deck);
+      if (loadedTape) player.load(loadedTape.userData.volume as Volume);
+      o.relight();
+    } finally {
+      changingTape = false;
+    }
   }
 
   // ── the Rubik's cube: real face turns, and it solves itself when you leave it alone ──
@@ -863,21 +892,17 @@ export function createInteractions(o: {
         sfx(lampOn ? "switch" : "lampOn", object);
         setLamp(!lampOn);
         return;
-      case "tape": {
-        const walkman = findWalkman();
-        if (!walkman) return;
-        void once(object, () => (tapeIn ? ejectTape(object) : insertTape(object, walkman)));
+      case "mixtape":
+        void changeTape(object);
         return;
-      }
       case "walkman":
-        if (!tapeIn) {
-          sfx("caseTap", object);
-          void once(object, () => hop(object, 0.012, 360));
-          return;
-        }
+        if (changingTape) return;
         sfx("tapeButton", object);
-        playing = !playing;
-        o.music(playing);
+        if (loadedTape) player.toggle();
+        else {
+          const tape = o.desk()?.props.get("mix-1");
+          if (tape) void changeTape(tape);
+        }
         return;
       case "flash":
         void once(object, () => camera35(object));
@@ -895,14 +920,6 @@ export function createInteractions(o: {
       sfx(cue, object);
       await motion(object);
     });
-  }
-
-  function findWalkman(): Object3D | null {
-    let found: Object3D | null = null;
-    scene.traverse((x) => {
-      if ((x.userData.hotspot as Hotspot | undefined)?.kind === "walkman") found = x;
-    });
-    return found;
   }
 
   /** A click on `object` as if the visitor had made it (the terminal driving the desk; `stay`: see click). */

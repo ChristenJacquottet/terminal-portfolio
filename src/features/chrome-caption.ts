@@ -69,7 +69,7 @@ const CAPTIONS: Record<string, Say> = {
   voicestrip: paper("Transcript strip"),
   pantrymap: paper("Map sketch"),
   lamp: (desk) => ["Desk lamp", desk.lights.lamp.intensity > 0.01 ? "on" : "off"],
-  cassette: (_, o) => ["Walkman", ofKind(o, "tape").length ? "a tape in" : "no tape in it"],
+  cassette: (_, o) => ["Walkman", ofKind(o, "mixtape")[0]?.userData.hotspot.label ?? "choose a mixtape"],
   tape: (_, o) => (spotOf(o)?.kind === "tape" ? ["A mixtape", "for the Walkman"] : ["Electrical tape", "black, always black"]),
   phone: ["The phone", "get in touch"],
   answering: ["Answering machine", "leave a message"],

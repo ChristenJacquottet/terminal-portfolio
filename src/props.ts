@@ -11,6 +11,7 @@
 // graduating from Taylor, and collecting digital art (the pixel portrait).
 //
 // Every prop has a name; src/layout.json can move, turn, scale or hide it (see layout.ts).
+import { cassette, walkman } from "./mixtapes";
 import {
   Box3,
   BoxGeometry,
@@ -1011,29 +1012,15 @@ export async function addProps(
   add("super8", (o) => place(o, min.x - 0.42, max.z + 0.06, { height: 0.17, rotY: 0.9 }));
   add("spectacles", (o) => place(o, min.x + 0.1, max.z + 0.14, { width: 0.13, rotY: 0.35, y: 0.0115 }));
   add("duck", (o) => place(o, min.x - 0.08, max.z - 0.17, { height: 0.065, rotY: 0.6 }));
-  if (byName.cassette) {
-    // The Walkman on its back, lid up, with its tape out on the desk beside it.
-    const kit = byName.cassette;
-    // Where the tape sits inside the player, in the player's own space, so it can go back in.
-    kit.updateMatrixWorld(true);
-    const inside = kit.getObjectByName("portable_cassette_player_casette");
-    const bay = inside ? new Box3().setFromObject(inside).getCenter(new Vector3()) : null;
-    const tape = piece(kit, "portable_cassette_player_casette", true);
-    const body = new Group();
-    for (const name of ["portable_cassette_player", "portable_cassette_player_lid"]) {
-      const p = piece(kit, name);
-      if (p) body.add(p);
-    }
-    const player = tape && body.children.length ? body : kit;
-    player.rotation.x = -Math.PI / 2;
-    put("cassette", place(player, max.x + 0.3, front - 0.14, { width: 0.13, rotY: -0.5 }));
-    if (tape && player === body) {
-      body.userData.bay = bay;
-      body.userData.hotspot = { kind: "walkman", label: "Walkman" };
-      tape.userData.hotspot = { kind: "tape", label: "a mixtape", hint: "put it in the Walkman" };
-      tape.rotation.x = -Math.PI / 2;
-      put("tape", place(tape, max.x + 0.43, front - 0.2, { width: 0.1, rotY: 0.35 }));
-    }
+  const player = walkman();
+  player.position.set(max.x + 0.30, 0, front - 0.14);
+  player.rotation.y = -0.32;
+  put("cassette", player);
+  for (const volume of [1, 2] as const) {
+    const tape = cassette(volume);
+    tape.position.set(max.x + (volume === 1 ? 0.44 : 0.56), 0.001, front - (volume === 1 ? 0.12 : 0.09));
+    tape.rotation.y = volume === 1 ? 0.16 : -0.14;
+    put(`mix-${volume}`, tape);
   }
   if (byName.phone) {
     // The handset is its own part, so a click can lift it out of the cradle.
