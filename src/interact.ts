@@ -667,14 +667,6 @@ export function createInteractions(o: {
     try {
       leave();
       player.stop();
-      if (!desk.framed()) {
-        const area = new Box3().setFromObject(deck, true);
-        for (const n of ["mix-1", "mix-2"]) {
-          const tape = desk.props.get(n);
-          if (tape) area.expandByObject(tape, true);
-        }
-        await desk.frame(area, { dir: new Vector3(0.08, 1, 0.72), fill: Math.min(0.88, camera.aspect * 0.85), ms: 520 });
-      }
       const open = -1.78;
       sfx("lidOpen", deck);
       await o.animate(240, (t) => { lid.rotation.x = open * ease(t); });

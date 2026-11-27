@@ -17,7 +17,7 @@ export type Volume = 1 | 2;
 export const mixTitle = (volume: Volume) => `Awesome Mix Vol. ${volume}`;
 export const BAY_Y = 0.006;
 const REEL_X = 0.021;
-const violet = new MeshStandardMaterial({ color: "#253753", metalness: 0.52, roughness: 0.36 });
+const enamel = new MeshStandardMaterial({ color: "#356394", metalness: 0.42, roughness: 0.36 });
 const silver = new MeshStandardMaterial({ color: "#c0c3c2", metalness: 0.68, roughness: 0.4 });
 const rubber = new MeshStandardMaterial({ color: "#202023", roughness: 0.65 });
 const ivory = new MeshStandardMaterial({ color: "#d1c8ad", roughness: 0.55 });
@@ -113,36 +113,44 @@ export function cassette(volume: Volume) {
 
 export function walkman() {
   const deck = new Group();
-  box(deck, violet, 0.132, 0.005, 0.085, 0, BAY_Y - 0.0025, 0);
+  box(deck, enamel, 0.132, 0.005, 0.085, 0, BAY_Y - 0.0025, 0);
   box(deck, rubber, 0.106, 0.001, 0.068, 0, BAY_Y - 0.0005, 0);
   for (const x of [-REEL_X, REEL_X]) pin(deck, silver, 0.0034, 0.007, x, BAY_Y + 0.0035, 0);
-  for (const z of [-0.039, 0.039]) box(deck, violet, 0.132, 0.014, 0.007, 0, 0.013, z);
-  box(deck, silver, 0.011, 0.014, 0.072, -0.06, 0.013, 0);
-  box(deck, violet, 0.012, 0.014, 0.072, 0.06, 0.013, 0);
-  for (let i = 0; i < 4; i++) box(deck, i === 0 ? ivory : silver, 0.004, 0.005, 0.01, 0.067, 0.011, -0.025 + i * 0.015);
+  for (const z of [-0.039, 0.039]) box(deck, z > 0 ? silver : enamel, 0.132, 0.014, 0.007, 0, 0.013, z);
+  box(deck, enamel, 0.011, 0.014, 0.072, -0.06, 0.013, 0);
+  box(deck, enamel, 0.012, 0.014, 0.072, 0.06, 0.013, 0);
+  // Paired headphone sockets and the orange talk-through key share the end panel.
+  const hotline = new MeshStandardMaterial({ color: "#ec9026", roughness: 0.48 });
+  box(deck, hotline, 0.009, 0.004, 0.014, -0.06, 0.021, -0.02);
+  for (const z of [0.003, 0.019]) {
+    pin(deck, silver, 0.0041, 0.001, -0.06, 0.0205, z);
+    pin(deck, rubber, 0.0026, 0.0006, -0.06, 0.021, z);
+  }
+  for (let i = 0; i < 4; i++) {
+    const z = -0.025 + i * 0.015;
+    box(deck, rubber, 0.006, 0.007, 0.013, 0.065, 0.012, z);
+    box(deck, silver, 0.005, 0.006, 0.01, 0.068, 0.012, z);
+  }
   const lid = new Group();
   lid.name = "walkman-lid";
   lid.position.set(0, 0.02, -0.035);
-  // The door frames a real opening over the reels, with a clear pane and brushed metal trim.
-  for (const x of [-0.047, 0.047]) box(lid, violet, 0.012, 0.003, 0.07, x, 0.0015, 0.035);
-  box(lid, violet, 0.084, 0.003, 0.01, 0, 0.0015, 0.005);
-  box(lid, silver, 0.084, 0.003, 0.015, 0, 0.0015, 0.0625);
-  box(
-    lid,
-    new MeshStandardMaterial({ color: "#cedad7", transparent: true, opacity: 0.18, depthWrite: false, roughness: 0.17 }),
-    0.083,
-    0.001,
-    0.045,
-    0,
-    0.001,
-    0.0325,
-  );
-  decal(lid, 0.07, 0.007, 0, 0.0031, 0.062, (g) => {
-    g.fillStyle = "#bababb";
+  // Solid enamel around a narrow window, wide enough to see both cassette hubs.
+  for (const x of [-0.0435, 0.0435]) box(lid, enamel, 0.019, 0.003, 0.07, x, 0.0015, 0.035);
+  box(lid, enamel, 0.068, 0.003, 0.016, 0, 0.0015, 0.008);
+  box(lid, enamel, 0.068, 0.003, 0.026, 0, 0.0015, 0.057);
+  box(lid, silver, 0.106, 0.0012, 0.013, 0, 0.0036, 0.0635);
+  const glass = new MeshStandardMaterial({ color: "#a9b7bf", transparent: true, opacity: 0.23, depthWrite: false, roughness: 0.17 });
+  box(lid, glass, 0.068, 0.001, 0.028, 0, 0.001, 0.030);
+  for (const z of [0.016, 0.044]) box(lid, silver, 0.069, 0.0006, 0.0012, 0, 0.0031, z);
+  for (const x of [-0.034, 0.034]) box(lid, silver, 0.0012, 0.0006, 0.028, x, 0.0031, 0.030);
+  decal(lid, 0.102, 0.012, 0, 0.0043, 0.0635, (g) => {
+    g.fillStyle = "#bcc0c4";
     g.fillRect(0, 0, 768, 160);
-    g.fillStyle = "#293444";
-    g.font = "bold 98px sans-serif";
-    g.fillText("STEREO  CASSETTE", 22, 118, 718);
+    g.fillStyle = "#243245";
+    g.font = "bold 102px Georgia, serif";
+    g.fillText("SONY", 22, 116);
+    g.font = "bold 60px sans-serif";
+    g.fillText("WALKMAN  TPS-L2", 338, 106, 410);
   });
   deck.add(lid);
   deck.userData.hotspot = { kind: "walkman", label: "Walkman", hint: "choose a mixtape" };

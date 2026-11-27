@@ -24,25 +24,26 @@ const bar = (f: number, label: string): Line => {
   return [s("desk  ", "dim"), s(`[${"█".repeat(full)}${"░".repeat(n - full)}]`, "accent"), s(` ${String(Math.round(f * 100)).padStart(3)}%  `), s(label, "dim")];
 };
 
-// The first time, everything prepares behind a progress line before you step back, so nothing on
-// the desk pops in afterwards. Idle prefetch usually brings `fraction` to 100% beforehand.
 let fraction = 0;
+let phase = "mounting /dev/desk";
 let deskReady = false;
-let show: ((next: Line) => void) | null = null;
+let show: ReturnType<Terminal["live"]> | null = null;
 
 function stepBack() {
-  // printed on the next frame, under the command's "logout"
+  // Let the terminal print "logout" first. Warm returns go straight to the desk.
   requestAnimationFrame(() => {
-    if (!deskReady && !show) show = term.live(bar(fraction, fraction >= 1 ? "ready" : "mounting /dev/desk"));
+    if (deskReady || !desk || show) return;
+    show = term.live(bar(fraction, phase));
   });
   desk ??= loadDesk().then(({ createDesk }) =>
     createDesk({
       host: $("desk"),
       screenEl: $("screen"),
       glow: currentScheme().fg,
-      onProgress: (f) => {
+      onProgress: (f, label) => {
         fraction = Math.max(fraction, f);
-        show?.(bar(fraction, fraction < 0.35 ? "apple-ii.glb" : fraction < 1 ? "props.glb" : "ready"));
+        phase = label;
+        show?.(bar(fraction, phase));
       },
       onSitDown: () => {
         term.print([[s(`Last login: ${stamp(new Date())} on ttys000`, "dim")]]);
@@ -70,12 +71,16 @@ function stepBack() {
       await d.ready;
       fraction = 1;
       deskReady = true;
-      show?.(bar(1, "ready"));
+      show?.(bar(1, "ready"), true);
       show = null;
       return d.stepBack();
     })
     .catch(() => {
+      show?.(bar(fraction, "interrupted"), true);
       desk = null;
+      deskReady = false;
+      fraction = 0;
+      phase = "mounting /dev/desk";
       show = null;
       term.print([[s("exit: couldn't load the desk on this device. you're still logged in.", "err")]]);
     });
@@ -109,7 +114,7 @@ function scheduleDeskPrefetch() {
       void loadDesk()
         .then(({ prefetchDesk }) =>
           prefetchDesk((f) => {
-            if (!desk) fraction = Math.max(fraction, f);
+            if (!desk) fraction = Math.max(fraction, f * 0.45);
           }),
         )
         .catch(() => {});

@@ -195,12 +195,14 @@ export class Terminal {
   }
 
   /** Prints a line that can be rewritten in place (a progress bar); returns the rewrite. */
-  live(line: Line): (next: Line) => void {
+  live(line: Line): (next: Line, finished?: boolean) => void {
     let el = this.line(line);
+    el.classList.add("live");
     this.output.append(el);
     this.scroll();
-    return (next) => {
+    return (next, finished = false) => {
       const fresh = this.line(next);
+      if (!finished) fresh.classList.add("live");
       el.replaceWith(fresh);
       el = fresh;
     };

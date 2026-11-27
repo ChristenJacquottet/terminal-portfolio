@@ -44,16 +44,23 @@ export function createMixPlayer(host: HTMLElement, eject: () => void) {
   panel.setAttribute("aria-label", "Walkman");
   panel.hidden = true;
   const mount = document.createElement("div");
+  mount.id = "walkman-playback";
   const controls = document.createElement("div");
-  const link = document.createElement("a");
-  link.target = "_blank";
-  link.rel = "noopener noreferrer";
+  controls.className = "mix-toolbar";
+  const disclosure = document.createElement("button");
+  disclosure.type = "button";
+  disclosure.setAttribute("aria-controls", mount.id);
+  function expand(open: boolean) {
+    mount.hidden = !open;
+    disclosure.setAttribute("aria-expanded", String(open));
+  }
+  disclosure.onclick = () => expand(mount.hidden);
   const button = document.createElement("button");
   button.type = "button";
   button.textContent = "Eject tape";
   button.onclick = eject;
-  controls.append(link, button);
-  panel.append(mount, controls);
+  controls.append(disclosure, button);
+  panel.append(controls, mount);
   host.append(panel);
   let current: Volume | null = null;
   let controller: Controller | null = null;
@@ -79,6 +86,9 @@ export function createMixPlayer(host: HTMLElement, eject: () => void) {
           c.destroy();
           return;
         }
+        // A seated tape can play while its controls are folded away.
+        const frame = mount.querySelector("iframe");
+        if (frame) frame.loading = "eager";
         controller = c;
         c.addListener("ready", () => {
           if (autoplay && generation === token && !audio.muted) c.play();
@@ -94,21 +104,27 @@ export function createMixPlayer(host: HTMLElement, eject: () => void) {
     }
   }
   audio.onChange((muted) => {
-    if (muted) clear();
-    else if (current) void display(current, false);
+    if (muted) {
+      clear();
+      if (current) mount.textContent = "Sound is muted.";
+    } else if (current) void display(current, false);
   });
   return {
     load(volume: Volume) {
       current = volume;
-      link.href = "https://open.spotify.com/album/" + albums[volume];
-      link.textContent = mixTitle(volume) + " on Spotify ↗";
+      disclosure.textContent = mixTitle(volume);
+      expand(false);
       panel.hidden = false;
-      if (!audio.muted) void display(volume, true);
+      if (audio.muted) mount.textContent = "Sound is muted.";
+      else void display(volume, true);
     },
     toggle() {
       if (audio.muted) return;
       if (controller) controller.togglePlay();
-      else mount.querySelector("iframe")?.focus();
+      else {
+        expand(true);
+        mount.querySelector("iframe")?.focus();
+      }
     },
     stop() {
       current = null;
