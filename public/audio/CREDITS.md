@@ -1,6 +1,6 @@
 # Audio Credits & Licences
 
-Every audio file in `public/audio/` comes from a verified **CC0 1.0 Universal** or **Public Domain** source. All other cues (`key`, `keyReturn`, `keySpace`, `click`, `switch`, `diskInsert`, `diskRead`, `diskEject`, `lidOpen`, `lidClose`, `tap`, `clapper`, `spin`, `boot`, and the `hum` loop) are synthesised directly in the browser with the Web Audio API (`src/audio.ts` + `src/audio-engine.ts`).
+Every audio file in `public/audio/` comes from a verified **CC0 1.0 Universal** or **Public Domain** source. Other cues (`key`, `keyReturn`, `keySpace`, `click`, `switch`, `diskInsert`, `diskRead`, `diskEject`, `lidOpen`, `lidClose`, `tap`, `clapper`, `spin`, `boot`, and the `hum` loop) are synthesised directly in the browser with the Web Audio API (`src/audio.ts` + `src/audio-engine.ts`).
 
 The ambient distance low-pass and volume-ducking curve (`audio.setInside`) is adapted from [`henryjeff/portfolio-website`](https://github.com/henryjeff/portfolio-website) (`src/Application/Audio/AudioSources.ts`), Copyright (c) 2022–2024 Henry Heffernan, licensed under the **MIT License** (code pattern only; zero audio files from that repository are used).
 
@@ -16,4 +16,8 @@ The ambient distance low-pass and volume-ducking curve (`audio.setInside`) is ad
 | `phone-down.mp3` | `phoneDown` | ["tone dialling phone, germany"](https://commons.wikimedia.org/wiki/File:Tone_dialling_phone_germany.ogg) (PDSounds, `17.29s–17.95s`, cradle hang-up) | `stephan` (via PDSounds / Wikimedia Commons) | Public Domain / [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) |
 | `paper.mp3` | `paper` | ["turning a page"](https://commons.wikimedia.org/wiki/File:Turning_a_page.ogg) (PDSounds #304, `1.46s–2.38s`) | `planish` (via PDSounds / Wikimedia Commons) | Public Domain / [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) |
 | `shutter.mp3` | `shutter` | ["Auslösegeräusch SLR Serienaufnahme mit AF Schärfepriorität"](https://commons.wikimedia.org/wiki/File:Ausl%C3%B6seger%C3%A4usch_SLR_Serienaufnahme_mit_AF_Sch%C3%A4rfepriorit%C3%A4t.ogg) (`7.71s–8.06s`) | `Smial` (Wikimedia Commons) | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) |
-| `music.mp3` | `music(true)` | ["Synth Wave"](https://opengameart.org/content/synth-wave) (lazy-loaded on Walkman play) | Alex McCulloch (`Pro Sensory` on OpenGameArt) | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) |
+| `music.mp3` | `music(true)` | ["Synth Wave"](https://opengameart.org/content/synth-wave) (development sound-test sample) | Alex McCulloch (`Pro Sensory` on OpenGameArt) | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) |
+
+The contact samples in `foley/` are from [Kenney’s Impact Sounds](https://kenney.nl/assets/impact-sounds), released under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). The wood, metal, plate and glass light impacts and the soft and tin medium impacts use takes 000 and 001. Each was trimmed and level-matched before MP3 encoding. [Source audio files](https://github.com/iree-gd/iree.gd/tree/9db7d7069a9ad75c77e9b5657d1ae5bdf615a6bc/sample/assets/audio/impact)
+
+The two Awesome Mix albums play through Spotify’s official embedded player. [Vol. 1](https://open.spotify.com/album/7vdi2ftAxsHzDtXkiQCGC1) · [Vol. 2](https://open.spotify.com/album/3dpnbhZjAfAl4W0lUJYNa8)

@@ -2,6 +2,7 @@
 // gone; the room swims out of focus for a moment, then comes back sharp, with the faint dark rim
 // of a lens around the edge for as long as you wear them. Click empty desk space, or press Escape,
 // to take them off: they're back on the desk.
+import { firstSurface } from "../picking";
 import { Raycaster, Vector2, Vector3, type Object3D } from "three";
 import type { DeskApi, Feature } from "./types";
 import { deskCanvas, easeInOut } from "./story-kit";
@@ -136,11 +137,12 @@ function listen(d: DeskApi) {
     const r = canvas.getBoundingClientRect();
     p.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
     ray.setFromCamera(p, d.camera);
-    const hit = ray.intersectObjects([...d.props.values()], true).find((h) => {
-      for (let o: Object3D | null = h.object; o; o = o.parent) if (!o.visible) return false;
-      return true;
-    });
-    if (!hit) void takeOff();
+    const hit = firstSurface(ray, d.scene);
+    for (let o: Object3D | null = hit?.object ?? null; o; o = o.parent) {
+      if (o.userData.pickBlocker) break;
+      if (d.props.get(o.name) === o || o.userData.hotspot || o.name === "computer") return;
+    }
+    void takeOff();
   });
   window.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && wearing && !photoOpen()) void takeOff();

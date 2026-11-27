@@ -2,7 +2,7 @@
 // and you have to click it again before it lands. The count goes on the PVM's status page and in
 // the hover chip; the best rally is kept. A miss and it drops, bounces, rolls a little:
 // "rally: 7 · best 12". The racquet by the desk hits it too.
-import { Mesh, MeshBasicMaterial, SphereGeometry, Vector3, type Object3D } from "three";
+import { type Mesh, type MeshBasicMaterial, Vector3, type Object3D } from "three";
 import { arcadeOn } from "./games-arcade";
 import { loadScores, saveScore } from "./games-screen";
 import type { DeskApi, Feature } from "./types";
@@ -16,7 +16,6 @@ let desk: DeskApi | null = null;
 let ball: Object3D | null = null;
 let blob: Object3D | null = null;
 let sphere: Object3D | null = null; // the ball itself, inside the holder that sits it on the desk
-let reach: Object3D | null = null; // a bigger, invisible target while it flies
 const home = new Vector3();
 const pos = new Vector3();
 const vel = new Vector3();
@@ -127,7 +126,6 @@ async function fly() {
       vel.z *= -0.4;
     }
     b.position.copy(pos);
-    if (reach) reach.visible = state === "air";
     // it rolls the way it goes, and spins a little in the air
     const speed = Math.hypot(vel.x, vel.z);
     if (sphere && speed > 1e-4) {
@@ -189,12 +187,7 @@ const rallyFeature: Feature = {
         blob = m;
       } else if (m.isMesh) sphere ??= m;
     }
-    // An invisible, bigger target round it: a moving ball 7 cm across is hard to click.
-    reach = new Mesh(new SphereGeometry(RADIUS * 2.2, 12, 8), new MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, colorWrite: false }));
-    reach.name = "ball-reach";
-    reach.position.copy(sphere?.position ?? new Vector3(0, RADIUS, 0));
-    reach.visible = false;
-    ball.add(reach);
+
   },
 };
 

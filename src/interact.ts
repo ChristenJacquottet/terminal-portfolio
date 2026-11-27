@@ -3,12 +3,16 @@
 // goes into the Disk II and opens its project, the phone gets you in touch, the tape plays.
 // Props carry their hotspot in userData.hotspot (props.ts) or get one here by name. Everything you
 // can do here can also be done from the terminal; the desk is a shortcut, never the only door.
+import { BAY_Y, type Volume } from "./mixtapes";
+import { createMixPlayer } from "./mix-player";
+import { firstSurface } from "./picking";
 import type { Liquid } from "./mug";
 import { bus } from "./bus";
 import { featureActions, featureHotspots, features } from "./features";
 import type { ActionCtx, DeskApi } from "./features/types";
 import {
   AdditiveBlending,
+  Group,
   Box3,
   BufferGeometry,
   Color,
@@ -76,14 +80,15 @@ const BY_NAME: Record<string, Hotspot> = {
   worldmap: { kind: "swing", label: "the world map", hint: "the one from my room" },
   corkboard: { kind: "swing", label: "the pinboard", hint: "workbench notes" },
   books: { kind: "wiggle", label: "books" },
-  rack: { kind: "wiggle", label: "the home lab", hint: "it hums" },
+  computer: { kind: "computer", label: "Apple II", nav: true },
+  rack: { kind: "rack", label: "the home lab", hint: "inspect the shelves" },
   crt: { kind: "crt", label: "Sony PVM", hint: "lab status · run neofetch", nav: true, command: "neofetch" },
-  mac128k: { kind: "hop", label: "Macintosh 128K", hint: "1984 · 128 kilobytes" },
   c64: { kind: "wiggle", label: "Commodore 64", hint: "1982 · 64 kilobytes" },
   switch: { kind: "wiggle", label: "8-port switch", hint: "link lights on" },
   nas: { kind: "wiggle", label: "the NAS", hint: "backups" },
-  thinkpad: { kind: "wiggle", label: "laptops", hint: "a few generations of them" },
-  macbook: { kind: "wiggle", label: "laptops", hint: "a few generations of them" },
+  server: { kind: "server", label: "build server", hint: "check the fans" },
+  thinkpad: { kind: "wiggle", label: "ThinkPad", hint: "docked on the build server" },
+  macbook: { kind: "wiggle", label: "MacBook", hint: "the second build machine" },
   pegboard: { kind: "swing", label: "the pegboard" },
   pliers: { kind: "swing", label: "pliers" },
   screwdrivers: { kind: "swing", label: "screwdrivers" },
@@ -94,6 +99,23 @@ const BY_NAME: Record<string, Hotspot> = {
   plant: { kind: "wiggle", label: "the plant" },
   chair: { kind: "wiggle", label: "my chair" },
 };
+
+const MATERIAL_CUES: Record<string, string> = {
+  thinkpad: "caseTap", macbook: "rackTap", switch: "rackTap", drives: "toolClink",
+  c64: "key", pegboard: "woodKnock", spool: "spoolRoll", drawers: "partsRattle",
+  patchleads: "cableBrush", cableloop: "cableBrush", tape: "caseTap",
+  pliers: "toolClink", screwdrivers: "toolClink", cutters: "toolClink", rule: "toolClink",
+  pens: "partsRattle", biplane: "woodKnock", skateboard: "woodKnock", chair: "woodKnock",
+  corkboard: "woodKnock", frame: "frameKnock", pixelart: "frameKnock", diploma: "frameKnock",
+  longhorn: "woodKnock", clock: "glassTick", super8: "caseTap", suitcase: "lidClose",
+  pennant: "fabric", mortarboard: "fabric", rugby: "ballBounce",
+  ivy: "foliage", monstera: "foliage", plant: "foliage",
+  notebook: "paper", books: "paper", worldmap: "cardFlick", card: "cardFlick",
+};
+
+// These actions require the room's mains or would navigate to the unpowered Apple II.
+const POWERED = new Set(["computer", "lamp", "time", "server", "ups", "nas", "picluster", "soldering",
+  "games-arcade", "breadboard", "slate", "keylight"]);
 
 /** The defaults, with every feature's labels over them (src/features). */
 const HOTSPOTS: Record<string, Hotspot> = { ...BY_NAME, ...featureHotspots };
@@ -122,7 +144,7 @@ export function createInteractions(o: {
   /** Runs `step(t)` (0 → 1) each frame for `ms`, redrawing (and re-shadowing) as it goes. */
   animate: (ms: number, step: (t: number) => void) => Promise<void>;
   relight: () => void;
-  /** Sit at the computer and type a command into the terminal. */
+  /** Frame the Apple II and type a command on its screen. */
   sitDownAndRun: (command: string) => Promise<void>;
   lamp: SpotLight;
   flash: PointLight;
@@ -139,14 +161,14 @@ export function createInteractions(o: {
   desk: () => DeskApi | null;
 }) {
   const { scene, camera } = o;
-  const targets: Object3D[] = [];
-  /** Where a prop is across the screen, -1..1, for panning its sound. */
-  const ndc = new Vector3();
-  const panOf = (x: Object3D) => {
-    x.getWorldPosition(ndc).project(camera);
-    return Number.isFinite(ndc.x) ? Math.max(-0.8, Math.min(0.8, ndc.x * 0.7)) : 0;
+  const source = new Vector3();
+  const sfx = (cue: string, object?: Object3D, volume = 1) => {
+    if (!object) return o.sfx(cue, { volume });
+    camera.worldToLocal(object.getWorldPosition(source));
+    const distance = Math.max(0.01, source.length());
+    const pan = 0.85 * source.x / distance;
+    o.sfx(cue, { pan, volume: volume * Math.min(1, 1.6 / (0.3 + distance)) });
   };
-  const sfx = (cue: string, x?: Object3D, volume?: number) => o.sfx(cue, { pan: x ? panOf(x) : 0, volume });
   const ray = new Raycaster();
   const pointer = new Vector2();
 
@@ -275,32 +297,13 @@ export function createInteractions(o: {
 
   // ── finding what's under the pointer ──────────────────────────────────────────────
   const spotOf = (object: Object3D): Hotspot | undefined => (object.name && featureHotspots[object.name]) || (object.userData.hotspot as Hotspot | undefined) || (object.name ? HOTSPOTS[object.name] : undefined);
-  const shown = (object: Object3D) => {
-    for (let p: Object3D | null = object; p; p = p.parent) if (!p.visible) return false;
-    return true;
-  };
-  /**
-   * The props, and boxes for what might stand in front of them (the computer's parts): testing a
-   * few boxes instead of the computer's 77k triangles keeps hovering inside a frame.
-   */
-  const blockers: Box3[] = [];
-  function setTargets(props: Iterable<Object3D>, occluders: Box3[]) {
-    targets.length = 0;
-    targets.push(...props);
-    blockers.length = 0;
-    blockers.push(...occluders);
-  }
-
-  const behind = new Vector3();
-  function pick(e: PointerEvent, width: number, height: number): Target | null {
+  function pick(e: Pick<PointerEvent, "clientX" | "clientY">, width: number, height: number): Target | null {
     pointer.set((e.clientX / width) * 2 - 1, -(e.clientY / height) * 2 + 1);
     ray.setFromCamera(pointer, camera);
-    const hit = ray.intersectObjects(targets, true).find((h) => shown(h.object) && (h.object as Mesh).material !== rim);
+    const hit = firstSurface(ray, scene);
     if (!hit) return null;
-    for (const box of blockers) {
-      if (ray.ray.intersectBox(box, behind) && behind.distanceTo(ray.ray.origin) < hit.distance) return null;
-    }
     for (let p: Object3D | null = hit.object; p; p = p.parent) {
+      if (p.userData.pickBlocker) return null;
       const spot = spotOf(p);
       if (spot) return { object: p, spot, hit };
     }
@@ -311,11 +314,13 @@ export function createInteractions(o: {
   let lampOn = true;
   let busy = false;
   let inDrive: Object3D | null = null;
-  let tapeIn = false;
-  let playing = false;
+  let loadedTape: Object3D | null = null;
+  let changingTape = false;
 
+  const unpowered = (spot: Hotspot) => o.desk()?.stripOff() && (spot.nav || POWERED.has(spot.kind));
   const labelFor = (t: Target): [string, string | undefined] => {
     const { spot } = t;
+    if (unpowered(spot)) return [spot.label, "power is off"];
     for (const f of features) {
       const custom = f.label?.(t.object, spot);
       if (custom) return custom;
@@ -323,8 +328,8 @@ export function createInteractions(o: {
     if (spot.kind === "lamp") return [spot.label, lampOn ? "switch it off" : "switch it on"];
     if (spot.kind === "headphones") return [spot.label, o.muted() ? "sound on" : "sound off"];
     if (spot.kind === "time") return [spot.label, o.time() === "dusk" ? "wait for night" : "back to dusk"];
-    if (spot.kind === "walkman") return [spot.label, tapeIn ? (playing ? "pause" : "play") : "no tape in it"];
-    if (spot.kind === "tape") return [spot.label, tapeIn ? "take it out" : spot.hint];
+    if (spot.kind === "walkman" && loadedTape) return [spot.label, o.muted() ? "unmute sound to play" : "play / pause"];
+    if (spot.kind === "mixtape") return [spot.label, t.object === loadedTape ? "eject tape" : spot.hint];
     if (spot.kind === "disk" && t.object === inDrive) return [spot.label, "it's in the drive: open it"];
     return [spot.label, spot.hint];
   };
@@ -648,39 +653,65 @@ export function createInteractions(o: {
   }
 
   // ── the Walkman ───────────────────────────────────────────────────────────────────
+  const player = createMixPlayer(o.host, () => {
+    if (loadedTape) void changeTape(loadedTape);
+  });
   let tapeHome: { parent: Object3D; position: Vector3; quaternion: Quaternion; scale: Vector3 } | null = null;
-  async function insertTape(tape: Object3D, walkman: Object3D) {
-    const bay = walkman.userData.bay as Vector3 | null;
-    if (!bay) return;
-    tapeHome ??= { parent: tape.parent!, position: tape.position.clone(), quaternion: tape.quaternion.clone(), scale: tape.scale.clone() };
-    const to = {
-      position: walkman.localToWorld(bay.clone()),
-      quaternion: walkman.getWorldQuaternion(new Quaternion()),
-      scale: walkman.getWorldScale(new Vector3()),
-    };
-    await flyTo(tape, to, 700, 0.08);
-    walkman.attach(tape);
-    sfx("tapeInsert", walkman);
-    tapeIn = true;
-    playing = true;
-    o.music(true);
-  }
-  async function ejectTape(tape: Object3D) {
-    if (!tapeHome) return;
-    o.music(false);
-    playing = false;
-    sfx("lidOpen", tape);
-    const home = tapeHome;
-    const ghost = new Mesh();
-    home.parent.add(ghost);
-    ghost.position.copy(home.position);
-    ghost.quaternion.copy(home.quaternion);
-    ghost.scale.copy(home.scale);
-    const to = worldPose(ghost);
-    ghost.removeFromParent();
-    await flyTo(tape, to, 650, 0.08);
-    home.parent.attach(tape);
-    tapeIn = false;
+  async function changeTape(selected: Object3D) {
+    const desk = o.desk();
+    const deck = desk?.props.get("cassette");
+    const lid = deck?.getObjectByName("walkman-lid");
+    if (changingTape || !deck || !lid || !desk || !selected.parent) return;
+    changingTape = true;
+    const ejectOnly = selected === loadedTape;
+    try {
+      leave();
+      player.stop();
+      if (!desk.framed()) {
+        const area = new Box3().setFromObject(deck, true);
+        for (const n of ["mix-1", "mix-2"]) {
+          const tape = desk.props.get(n);
+          if (tape) area.expandByObject(tape, true);
+        }
+        await desk.frame(area, { dir: new Vector3(0.08, 1, 0.72), fill: Math.min(0.88, camera.aspect * 0.85), ms: 520 });
+      }
+      const open = -1.78;
+      sfx("lidOpen", deck);
+      await o.animate(240, (t) => { lid.rotation.x = open * ease(t); });
+      const seat = {position: deck.localToWorld(new Vector3(0, BAY_Y, 0)), quaternion: deck.getWorldQuaternion(new Quaternion()), scale: deck.getWorldScale(new Vector3())};
+      const above = { ...seat, position: deck.localToWorld(new Vector3(0, BAY_Y + 0.035, 0)) };
+      if (loadedTape && tapeHome) {
+        const tape = loadedTape;
+        const home = tapeHome;
+        await flyTo(tape, above, 240, 0);
+        const rest = new Group();
+        rest.position.copy(home.position); rest.quaternion.copy(home.quaternion); rest.scale.copy(home.scale);
+        home.parent.add(rest);
+        await flyTo(tape, worldPose(rest), 420, 0.027);
+        rest.removeFromParent();
+        home.parent.add(tape);
+        tape.position.copy(home.position); tape.quaternion.copy(home.quaternion); tape.scale.copy(home.scale);
+        loadedTape = null;
+        tapeHome = null;
+      }
+      if (!ejectOnly) {
+        tapeHome = {parent: selected.parent!, position: selected.position.clone(), quaternion: selected.quaternion.clone(), scale: selected.scale.clone()};
+        await flyTo(selected, above, 460, 0.037);
+        await flyTo(selected, seat, 270, 0);
+        deck.add(selected);
+        selected.position.set(0, BAY_Y, 0);
+        selected.quaternion.identity();
+        selected.scale.setScalar(1);
+        loadedTape = selected;
+        sfx("tapeInsert", deck);
+      }
+      await o.animate(250, (t) => { lid.rotation.x = open * (1 - ease(t)); });
+      sfx("lidClose", deck);
+      if (loadedTape) player.load(loadedTape.userData.volume as Volume);
+      o.relight();
+    } finally {
+      changingTape = false;
+    }
   }
 
   // ── the Rubik's cube: real face turns, and it solves itself when you leave it alone ──
@@ -748,7 +779,7 @@ export function createInteractions(o: {
   /** `stay`: the terminal did it while you're stepped back: the prop answers, you stay where you are. */
   function click(t: Target, stay = false) {
     const { object, spot } = t;
-    if (busy) return;
+    if (busy || unpowered(spot)) return;
     const action = featureActions[spot.kind];
     if (action) {
       void action(ctxFor(t, stay));
@@ -800,7 +831,7 @@ export function createInteractions(o: {
         void once(object, async () => {
           leave();
           if (!stay) await closeUp(object);
-          sfx("paper", object);
+          sfx("cardFlick", object);
           if (object.getWorldPosition(new Vector3()).y > 0.1) {
             const z0 = object.rotation.z;
             await o.animate(260, (t) => (object.rotation.z = z0 + 0.04 * wobble(t, 2, 3.5)));
@@ -828,6 +859,27 @@ export function createInteractions(o: {
           await o.sitDownAndRun("email");
         });
         return;
+      case "rack": {
+        const desk = o.desk();
+        if (!desk) return;
+        const box = new Box3();
+        for (const name of ["crt", "server", "thinkpad", "c64", "soldering", "ups"]) {
+          const item = desk.props.get(name);
+          if (item) box.expandByObject(item, true);
+        }
+        if (box.isEmpty()) return;
+        sfx("rackTap", object);
+        const dir = new Vector3(0, 0.12, 1).applyQuaternion(object.quaternion);
+        void desk.frame(box, { dir, fill: Math.min(1.19, camera.aspect * 1.48) });
+        bus.emit("desk:focus", { name: "rack" });
+        return;
+      }
+      case "server":
+        if (o.desk()?.lights.lab.intensity) void once(object, async () => {
+          sfx("fanTest", object);
+          await new Promise((resolve) => setTimeout(resolve, 1350));
+        });
+        return;
       case "headphones": {
         const now = o.muted();
         if (now === null) return;
@@ -840,21 +892,17 @@ export function createInteractions(o: {
         sfx(lampOn ? "switch" : "lampOn", object);
         setLamp(!lampOn);
         return;
-      case "tape": {
-        const walkman = findWalkman();
-        if (!walkman) return;
-        void once(object, () => (tapeIn ? ejectTape(object) : insertTape(object, walkman)));
+      case "mixtape":
+        void changeTape(object);
         return;
-      }
       case "walkman":
-        if (!tapeIn) {
-          sfx("tap", object);
-          void once(object, () => hop(object, 0.012, 360));
-          return;
-        }
+        if (changingTape) return;
         sfx("tapeButton", object);
-        playing = !playing;
-        o.music(playing);
+        if (loadedTape) player.toggle();
+        else {
+          const tape = o.desk()?.props.get("mix-1");
+          if (tape) void changeTape(tape);
+        }
         return;
       case "flash":
         void once(object, () => camera35(object));
@@ -867,16 +915,11 @@ export function createInteractions(o: {
     const motions: Record<string, (x: Object3D) => Promise<unknown>> = { spin, hop: (x) => hop(x), bounce, wiggle: (x) => wiggle(x), swing, flip };
     const motion = motions[spot.kind];
     if (!motion) return;
-    sfx(spot.kind === "spin" ? "spin" : spot.kind === "hop" || spot.kind === "bounce" || spot.kind === "flip" ? "tap" : "paper", object);
-    void once(object, () => motion(object) as Promise<void>);
-  }
-
-  function findWalkman(): Object3D | null {
-    let found: Object3D | null = null;
-    scene.traverse((x) => {
-      if ((x.userData.hotspot as Hotspot | undefined)?.kind === "walkman") found = x;
+    const cue = MATERIAL_CUES[object.name] ?? (object.name.startsWith("postcard:") ? "cardFlick" : "tap");
+    void once(object, async () => {
+      sfx(cue, object);
+      await motion(object);
     });
-    return found;
   }
 
   /** A click on `object` as if the visitor had made it (the terminal driving the desk; `stay`: see click). */
@@ -896,7 +939,7 @@ export function createInteractions(o: {
     return false;
   }
 
-  return { pick, hover, say, leave, click, activate, setTargets, warm: steamMug, get busy() {
+  return { pick, hover, say, leave, click, activate, warm: steamMug, get busy() {
     return busy;
   } };
 }

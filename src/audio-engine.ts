@@ -704,7 +704,7 @@ function startRoom() {
     const now = ctx.currentTime;
     const gain = ctx.createGain();
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.linearRampToValueAtTime(0.28, now + 0.65);
+    gain.gain.linearRampToValueAtTime(0.105, now + 1.4);
     gain.connect(ambFilter);
 
     const rain = ctx.createBufferSource();
@@ -713,23 +713,34 @@ function startRoom() {
     rain.connect(gain);
     rain.start(now, Math.random() * Math.max(0.1, buf.duration - 1));
 
-    const srcs: AudioScheduledSourceNode[] = [rain];
-    if (brownBuf) {
-      const city = ctx.createBufferSource();
-      city.buffer = brownBuf;
-      city.loop = true;
-      const lp = ctx.createBiquadFilter();
-      lp.type = "lowpass";
-      lp.frequency.value = 145;
-      const cg = ctx.createGain();
-      cg.gain.value = 0.16;
-      city.connect(lp);
-      lp.connect(cg);
-      cg.connect(gain);
-      city.start(now);
-      srcs.push(city);
+    // Leave space between events. Small drops on the sill and a car on wet pavement
+    // come from the window at the left, through the same distance and mute controls.
+    const c = ctx;
+    const sill = panned(c, gain, -0.5);
+    let timer = 0;
+    function schedule() {
+      timer = window.setTimeout(() => {
+        if (document.visibilityState === "visible") {
+          if (Math.random() < 0.30) {
+            nb(c, sill, pinkBuf, 2.8, 0.21, 440, 0.7, 0, 1050, 0.96);
+            nb(c, sill, brownBuf, 2.1, 0.17, 320, 0.8, 0.7, 140, 0.55);
+          } else {
+            for (let i = 0, n = 1 + Math.floor(Math.random() * 3); i < n; i++) {
+              const dt = i * (0.16 + Math.random() * 0.14);
+              const pitch = 1400 + Math.random() * 730;
+              td(c, sill, 0.083, pitch, pitch * 0.71, 0.081, "sine", dt);
+              nb(c, sill, pinkBuf, 0.03, 0.19, pitch * 1.5, 0.9, dt);
+            }
+          }
+        }
+        schedule();
+      }, 6500 + Math.random() * 10500);
     }
-    stopRoom = () => fadeStop(gain, srcs, 350);
+    schedule();
+    stopRoom = () => {
+      clearTimeout(timer);
+      fadeStop(gain, [rain], 350);
+    };
   });
 }
 
@@ -740,35 +751,28 @@ function endRoom() {
   fn?.();
 }
 
+let rackPan = 0.65;
+let rackPresence = 0.35;
+let fanMix: { pan: StereoPannerNode | null; level: GainNode; filter: BiquadFilterNode } | null = null;
+
+export function setRackMix(pan: number, presence: number) {
+  rackPan = pan;
+  rackPresence = presence;
+  if (!fanMix || !ctx) return;
+  const now = ctx.currentTime;
+  fanMix.pan?.pan.setTargetAtTime(pan, now, 0.12);
+  fanMix.level.gain.setTargetAtTime(0.3 + 1.4 * presence, now, 0.15);
+  fanMix.filter.frequency.setTargetAtTime(720 + 780 * presence, now, 0.15);
+}
+
 function startHum() {
   if (stopHum || !wantLoop.hum || muted || !ctx || !ambFilter || !brownBuf) return;
   const now = ctx.currentTime;
   const gain = ctx.createGain();
   gain.gain.setValueAtTime(0.0001, now);
-  gain.gain.linearRampToValueAtTime(1, now + 0.45);
+  gain.gain.linearRampToValueAtTime(0.19, now + 0.8);
   gain.connect(ambFilter);
 
-  const air = ctx.createBufferSource();
-  air.buffer = brownBuf;
-  air.loop = true;
-  const bp = ctx.createBiquadFilter();
-  bp.type = "bandpass";
-  bp.frequency.value = 320;
-  bp.Q.value = 0.85;
-  const ag = ctx.createGain();
-  ag.gain.value = 0.048;
-  air.connect(bp);
-  bp.connect(ag);
-  ag.connect(gain);
-  air.start(now);
-  // the air moves: a slow swell on the hum so it never sits still
-  const sway = ctx.createOscillator();
-  sway.frequency.value = 0.09;
-  const swayDepth = ctx.createGain();
-  swayDepth.gain.value = 0.012;
-  sway.connect(swayDepth);
-  swayDepth.connect(ag.gain);
-  sway.start(now);
   // the rack's fan, over in the corner: a thin rush, a little unsteady
   const fan = ctx.createBufferSource();
   fan.buffer = pinkBuf;
@@ -778,10 +782,18 @@ function startHum() {
   fbp.frequency.value = 1150;
   fbp.Q.value = 0.7;
   const fg = ctx.createGain();
-  fg.gain.value = 0.009;
+  fg.gain.value = 0.021;
   fan.connect(fbp);
   fbp.connect(fg);
-  fg.connect(gain);
+  const pan = ctx.createStereoPanner?.() ?? null;
+  const level = ctx.createGain();
+  if (pan) pan.pan.value = rackPan;
+  level.gain.value = 0.3 + 1.4 * rackPresence;
+  fbp.frequency.value = 720 + 780 * rackPresence;
+  fg.connect(level);
+  level.connect(pan ?? gain);
+  pan?.connect(gain);
+  fanMix = { pan, level, filter: fbp };
   fan.start(now, Math.random() * 1.2);
   const flutter = ctx.createOscillator();
   flutter.frequency.value = 0.31;
@@ -791,11 +803,10 @@ function startHum() {
   flutterDepth.connect(fg.gain);
   flutter.start(now);
 
-  const srcs: AudioScheduledSourceNode[] = [air, sway, fan, flutter];
+  const srcs: AudioScheduledSourceNode[] = [fan, flutter];
   for (const [f, v] of [
     [60, 0.011],
     [120, 0.006],
-    [7850, 0.0014],
   ] as const) {
     const o = ctx.createOscillator();
     o.frequency.value = f;
@@ -806,7 +817,18 @@ function startHum() {
     o.start(now);
     srcs.push(o);
   }
-  stopHum = () => fadeStop(gain, srcs, 300);
+  const motor = ctx.createOscillator();
+  const motorLevel = ctx.createGain();
+  motor.frequency.value = 109;
+  motorLevel.gain.value = 0.008;
+  motor.connect(motorLevel);
+  motorLevel.connect(level);
+  motor.start(now);
+  srcs.push(motor);
+  stopHum = () => {
+    fanMix = null;
+    fadeStop(gain, srcs, 300);
+  };
 }
 
 function endHum() {

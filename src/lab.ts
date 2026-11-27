@@ -11,13 +11,18 @@ import {
   CanvasTexture,
   CatmullRomCurve3,
   Color,
+  CurvePath,
   CylinderGeometry,
+  LineCurve3,
+  QuadraticBezierCurve3,
   Float32BufferAttribute,
   Group,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
   PlaneGeometry,
+  PointLight,
+  SphereGeometry,
   SRGBColorSpace,
   TorusGeometry,
   TubeGeometry,
@@ -142,6 +147,67 @@ export function piCluster(): Group {
   return g;
 }
 
+/** A repurposed short-depth server, with two rubber-lined laptop slots bolted to its lid. */
+export function labServer(): Group {
+  const g = new Group();
+  g.add(box(0.255, 0.062, 0.208, darkMetal, 0, 0.036, 0));
+  for (const x of [-0.112, 0.112]) {
+    for (const z of [-0.088, 0.088]) g.add(box(0.018, 0.005, 0.014, nearBlack, x, 0.0025, z));
+  }
+  // One baked perforated grille; the bays, pull handles and ears stand proud of it.
+  const panel = canvas(512, 120, (c) => {
+    c.fillStyle = "#565957"; c.fillRect(0, 0, 512, 120);
+    for (let row = 0; row < 9; row++) {
+      for (let col = 0; col < 18; col++) {
+        c.fillStyle = "#1a1c1b"; c.beginPath();
+        c.arc(17 + col * 9 + row % 2 * 4, 18 + row * 10, 3, 0, Math.PI * 2); c.fill();
+      }
+    }
+    c.save(); c.translate(357, 54); c.rotate(-0.042);
+    c.fillStyle = "#dbcfab"; c.fillRect(0, -13, 137, 30);
+    c.fillStyle = "#292522"; c.font = "bold 19px monospace"; c.fillText("BUILD / 01", 7, 9); c.restore();
+  });
+  const face = new Mesh(new PlaneGeometry(0.255, 0.062), new MeshStandardMaterial({ map: panel, roughness: 0.61 }));
+  face.position.set(0, 0.037, 0.105); g.add(face);
+  for (const y of [0.022, 0.048]) {
+    g.add(box(0.079, 0.019, 0.011, nearBlack, 0.003, y, 0.105));
+    g.add(box(0.043, 0.004, 0.005, warmGrey, 0.002, y, 0.112));
+  }
+  g.add(ledCluster([{ p: new Vector3(0.117, 0.014, 0.106), hex: "#7ada9b", size: 0.005 }]));
+  for (const centre of [-0.052, 0.048]) {
+    for (const x of [centre - 0.019, centre + 0.019]) {
+      g.add(box(0.011, 0.035, 0.145, nearBlack, x, 0.0845, -0.006));
+    }
+  }
+  return g;
+}
+
+/** Two spare patch leads on a steel hook, with loose ends hanging below the coil. */
+export function patchHook(): Group {
+  const g = new Group();
+  g.add(box(0.016, 0.033, 0.008, darkMetal, 0, 0, 0));
+  g.add(box(0.009, 0.008, 0.035, steelBlue, 0, -0.005, 0.018));
+  g.add(box(0.009, 0.018, 0.007, steelBlue, 0, 0, 0.033));
+  const plug = new MeshStandardMaterial({ color: "#b5b1a3", roughness: 0.45 });
+  for (const [j, jacket] of [teal, steelBlue].entries()) {
+    const z = 0.015 + 0.01 * j;
+    const points = [new Vector3(-0.021 + j * 0.005, -0.15 - j * 0.026, z)];
+    for (let i = 0; i <= 32; i++) {
+      const angle = i * Math.PI / 8 - Math.PI * 0.65;
+      points.push(new Vector3(0.024 * Math.sin(angle) + j * 0.003,
+        -0.055 + (0.056 + j * 0.001) * Math.cos(angle), z + i * 0.00018));
+    }
+    points.push(new Vector3(0.016 + j * 0.006, -0.112 - j * 0.021, z + 0.006));
+    const wire = new CatmullRomCurve3(points);
+    g.add(new Mesh(new TubeGeometry(wire, 96, 0.0019, 6), jacket));
+    for (const end of [points[0], points[points.length - 1]]) {
+      g.add(box(0.008, 0.012, 0.007, jacket, end.x, end.y - 0.004, end.z));
+      g.add(box(0.0105, 0.013, 0.0075, plug, end.x, end.y - 0.014, end.z));
+    }
+  }
+  return g;
+}
+
 /** A small line-interactive UPS: a black tower with a cyan LCD and a load bar. */
 export function ups(): Group {
   const g = new Group();
@@ -217,40 +283,55 @@ export function powerStrip(): Group {
   const g = new Group();
   const W = 0.3, H = 0.036, D = 0.062;
   g.add(box(W, H, D, cream, 0, H / 2, 0));
-  g.add(box(0.03, 0.012, 0.016, tomato, -W / 2 + 0.03, H + 0.0055, 0)); // the lit switch
+  const rocker = box(0.03, 0.012, 0.016, tomato, -W / 2 + 0.03, H + 0.0055, 0);
+  rocker.name = "strip-rocker";
+  g.add(rocker);
+  // A battery-backed locator beside the rocker, still visible when the outlets go dead.
+  const bulb = new Mesh(new SphereGeometry(0.0048, 12, 8), new MeshStandardMaterial({
+    color: "#ffe0ac", emissive: "#ffb75a", emissiveIntensity: 1.6, roughness: 0.35,
+  }));
+  bulb.position.set(-W / 2 + 0.011, H + 0.002, 0);
+  bulb.name = "standby-bulb";
+  const pilot = new PointLight("#ffc381", 0, 2.8, 1.45);
+  pilot.position.y = 0.035;
+  bulb.add(pilot);
+  g.add(bulb);
   g.add(ledCluster([{ p: new Vector3(-W / 2 + 0.03, H + 0.0125, 0), hex: "#ff6a3d", size: 0.004, dir: new Vector3(0, 1, 0) }]));
   for (let i = 0; i < 6; i++) {
-    const s = new Mesh(new CylinderGeometry(0.014, 0.014, 0.004, 18), nearBlack);
-    s.position.set(-W / 2 + 0.07 + i * 0.038, H - 0.001, 0);
-    g.add(s);
+    const x = -W / 2 + 0.07 + i * 0.038;
+    g.add(box(0.030, 0.002, 0.034, warmGrey, x, H, 0));
+    for (const side of [-1, 1]) g.add(box(0.0023, 0.001, 0.009, nearBlack, x + side * 0.007, H + 0.0015, -0.003));
+    g.add(box(0.0045, 0.001, 0.0045, nearBlack, x, H + 0.0015, 0.009));
   }
   return g;
 }
 
-/**
- * Plugs into the placed strip (`holder`, already in the scene) and runs a cord from every other
- * socket to each world point in `to`: up out of the socket, down to the floor, off to the device.
- */
-export function powerCords(holder: Object3D, to: Vector3[]) {
-  holder.updateMatrixWorld(true);
-  const W = 0.3, H = 0.036;
-  to.slice(0, 3).forEach((target, i) => {
-    const x = -W / 2 + 0.07 + i * 2 * 0.038;
-    const plug = new Mesh(new CylinderGeometry(0.012, 0.012, 0.018, 16), nearBlack);
-    plug.position.set(x, H + 0.009, 0);
-    const local = holder.worldToLocal(target.clone());
-    const curve = new CatmullRomCurve3([
-      new Vector3(x, H + 0.018, 0),
-      new Vector3(x, H + 0.036, 0.014),
-      new Vector3(x + 0.02, 0.004, 0.08 + i * 0.025),
-      new Vector3((x + local.x) / 2, 0.004, local.z * 0.55 + 0.06),
-      local.clone().setY(Math.min(local.y, 0.004)).addScaledVector(new Vector3(0, 0, 1), 0.03),
-      local,
+/** Short service loops drop from the front-mounted strip, then follow the right upright to the equipment. */
+export function powerCords(strip: Object3D, feeds: Vector3[]) {
+  strip.updateWorldMatrix(true, false);
+  const cords: BufferGeometry[] = [];
+  feeds.forEach((feed, i) => {
+    const x = -0.08 + i * 0.076;
+    const plug = new Mesh(new CylinderGeometry(0.012, 0.012, 0.018, 12), nearBlack);
+    plug.position.set(x, 0.045, 0);
+    const end = strip.worldToLocal(feed.clone());
+    // In strip space +y is out from the sockets and +z is down the face of the rack.
+    const side = 0.175 + 0.008 * i;
+    const path = new CatmullRomCurve3([
+      new Vector3(x, 0.053, 0), new Vector3(x, 0.063, 0.019),
+      new Vector3(x + 0.025, 0.04, 0.062 + 0.012 * i),
+      new Vector3(side - 0.04, 0.01, 0.056 + 0.007 * i),
+      new Vector3(side, -0.02, 0.044), new Vector3(side, -0.155, 0.05),
+      new Vector3(side, -0.19, end.z), end,
     ]);
-    const cord = new Mesh(new TubeGeometry(curve, 40, 0.0024, 6), nearBlack);
-    cord.raycast = () => {};
-    holder.add(plug, cord);
+    strip.add(plug);
+    cords.push(new TubeGeometry(path, 52, 0.0024, 6));
   });
+  if (cords.length) {
+    const loom = new Mesh(mergeGeos(cords), nearBlack);
+    loom.userData.pickBlocker = true; // touching a supply lead does not flip the rocker
+    strip.add(loom);
+  }
 }
 
 /** A parts organiser: a cabinet of little clear drawers, some of them with something in. */
@@ -288,19 +369,33 @@ export function cableSpool(): Group {
   const R = 0.05;
   const flange = new MeshStandardMaterial({ color: "#ece2cc", roughness: 0.6 });
   const spool = new Group();
-  spool.add(new Mesh(new TorusGeometry(R * 0.62, R * 0.36, 12, 40), steelBlue));
+  for (let i = -2; i <= 2; i++) {
+    const winding = new Mesh(new TorusGeometry(R * 0.73, 0.0055, 8, 32), steelBlue);
+    winding.position.z = i * 0.009;
+    spool.add(winding);
+  }
   for (const z of [-0.026, 0.026]) {
-    const f = new Mesh(new CylinderGeometry(R, R, 0.004, 40), flange);
-    f.rotation.x = Math.PI / 2;
-    f.position.z = z;
-    spool.add(f);
+    const rim = new Mesh(new TorusGeometry(R - 0.003, 0.003, 8, 32), flange);
+    rim.position.z = z;
+    spool.add(rim);
+    for (const angle of [0.4, 0.4 + Math.PI / 2]) {
+      const spoke = box(2 * R - 0.006, 0.008, 0.004, flange, 0, 0, z);
+      spoke.rotation.z = angle;
+      spool.add(spoke);
+    }
   }
   const core = new Mesh(new CylinderGeometry(R * 0.28, R * 0.28, 0.056, 20), flange);
   core.rotation.x = Math.PI / 2;
   spool.add(core);
   spool.position.y = R;
   g.add(spool);
-  g.add(new Mesh(new TubeGeometry(new CatmullRomCurve3([new Vector3(R * 0.95, R * 1.1, 0.02), new Vector3(R * 1.4, R * 0.5, 0.05), new Vector3(R * 1.2, 0.003, 0.11), new Vector3(R * 0.3, 0.003, 0.16)]), 24, 0.0022, 6), steelBlue));
+  // Two rubber stops keep the upright reel on the cabinet. The loose end rests on the lid.
+  for (const x of [-0.021, 0.021]) g.add(box(0.012, 0.006, 0.066, nearBlack, x, 0.003, 0));
+  const tail = new CatmullRomCurve3([
+    new Vector3(0.038, 0.051, 0.012), new Vector3(0.055, 0.024, 0.018),
+    new Vector3(0.059, 0.003, 0.032), new Vector3(0.038, 0.0025, 0.049),
+  ]);
+  g.add(new Mesh(new TubeGeometry(tail, 20, 0.0022, 6), steelBlue));
   return g;
 }
 
@@ -378,8 +473,23 @@ export function ethernetRun(from: Vector3, out: Vector3, via: Vector3[], hex: st
   const boot = new Mesh(new CylinderGeometry(0.0032, 0.0045, 0.012, 10), mat);
   boot.position.copy(from).addScaledVector(out, 0.023);
   boot.quaternion.setFromUnitVectors(new Vector3(0, 1, 0), out);
-  const curve = new CatmullRomCurve3([from.clone().addScaledVector(out, 0.02), from.clone().addScaledVector(out, 0.045), ...via]);
-  g.add(plug, boot, new Mesh(new TubeGeometry(curve, Math.max(12, via.length * 10), 0.0022, 6), mat));
+  // Round each corner locally so long vertical drops cannot pull a curve through the shelf.
+  const points = [from.clone().addScaledVector(out, 0.025), from.clone().addScaledVector(out, 0.045), ...via];
+  const knots = points.filter((p, i) => i === 0 || p.distanceToSquared(points[i - 1]) > 1e-10);
+  const path = new CurvePath<Vector3>();
+  let start = knots[0];
+  for (let i = 1; i < knots.length - 1; i++) {
+    const corner = knots[i];
+    const radius = Math.min(0.022, corner.distanceTo(knots[i - 1]) / 2, corner.distanceTo(knots[i + 1]) / 2);
+    if (radius < 1e-5) continue;
+    const before = corner.clone().add(knots[i - 1].clone().sub(corner).setLength(radius));
+    const after = corner.clone().add(knots[i + 1].clone().sub(corner).setLength(radius));
+    path.add(new LineCurve3(start, before));
+    path.add(new QuadraticBezierCurve3(before, corner, after));
+    start = after;
+  }
+  path.add(new LineCurve3(start, knots[knots.length - 1]));
+  g.add(plug, boot, new Mesh(new TubeGeometry(path, Math.min(112, Math.ceil(path.getLength() / 0.006)), 0.0022, 6), mat));
   return g;
 }
 

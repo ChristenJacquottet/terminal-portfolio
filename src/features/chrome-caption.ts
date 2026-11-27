@@ -3,7 +3,7 @@
 // "The window · 2 AM"). A close-up (interact.ts emits `desk:focus`) names what it framed until you
 // come back. Also brings in the pixel font the desk's labels use: only now, never in the terminal's
 // first paint.
-import { Box3, Raycaster, Vector2, Vector3, type Object3D } from "three";
+import { Vector3, type Object3D } from "three";
 import { bus } from "../bus";
 import type { Hotspot } from "../interact";
 import type { DeskApi, Feature } from "./types";
@@ -34,7 +34,7 @@ function ofKind(root: Object3D, kind: string) {
   return out;
 }
 const present = (desk: DeskApi, names: string[]) => names.filter((n) => desk.props.has(n)).length;
-const LAB = ["switch", "nas", "crt", "picluster", "ups", "thinkpad", "macbook", "mac128k", "c64"];
+const LAB = ["server", "switch", "nas", "crt", "picluster", "ups", "thinkpad", "macbook", "c64"];
 const PEGS = ["pliers", "screwdrivers", "cutters", "tape", "cableloop", "rule"];
 /** A story paper: "Printout" on the left, its project (from its hint, "RAG Crawler · read it") on the right. */
 const paper = (thing: string) => (_: DeskApi, o: Object3D): Caption => [thing, (spotOf(o)?.hint ?? "").replace(/ · read it$/, "")];
@@ -69,7 +69,7 @@ const CAPTIONS: Record<string, Say> = {
   voicestrip: paper("Transcript strip"),
   pantrymap: paper("Map sketch"),
   lamp: (desk) => ["Desk lamp", desk.lights.lamp.intensity > 0.01 ? "on" : "off"],
-  cassette: (_, o) => ["Walkman", ofKind(o, "tape").length ? "a tape in" : "no tape in it"],
+  cassette: (_, o) => ["Walkman", ofKind(o, "mixtape")[0]?.userData.hotspot.label ?? "choose a mixtape"],
   tape: (_, o) => (spotOf(o)?.kind === "tape" ? ["A mixtape", "for the Walkman"] : ["Electrical tape", "black, always black"]),
   phone: ["The phone", "get in touch"],
   answering: ["Answering machine", "leave a message"],
@@ -110,9 +110,9 @@ const CAPTIONS: Record<string, Say> = {
   ups: ["The UPS", "for the Dallas storms"],
   drives: ["Spare drives", "backups of the backups"],
   powerstrip: ["Power strip", "everything on one switch"],
-  thinkpad: ["Laptops", "a few generations of them"],
-  macbook: ["Laptops", "a few generations of them"],
-  mac128k: ["Macintosh 128K", "1984 · 128 KB"],
+  server: ["Build server", "two removable drives"],
+  thinkpad: ["ThinkPad", "docked"],
+  macbook: ["MacBook", "docked"],
   c64: ["Commodore 64", "1982 · 64 KB"],
   pegboard: (desk) => ["The pegboard", plural(present(desk, PEGS), "tool")],
   pliers: ["Pliers", "on the pegboard"],
@@ -146,44 +146,6 @@ const caption: Feature = {
   onDesk(desk) {
     loadPixelFont();
     const { scene, camera } = desk;
-    const ray = new Raycaster();
-    const centre = new Vector2(0, 0);
-    const hitBox = new Vector3();
-    let computerBox: Box3 | null = null;
-    /** What's in the middle of the view: the nearest prop the centre ray hits (or a postcard on the map), else the computer. */
-    function centred(): Object3D | null {
-      ray.setFromCamera(centre, camera);
-      const computer = scene.getObjectByName("computer");
-      if (computer && !computerBox) computerBox = new Box3().setFromObject(computer);
-      const toComputer = computerBox && ray.ray.intersectBox(computerBox, hitBox) ? hitBox.distanceTo(ray.ray.origin) : Infinity;
-      const pane = scene.getObjectByName("window");
-      const hit = ray.intersectObjects([...desk.props.values(), ...(pane ? [pane] : [])], true).find((h) => h.object.visible);
-      if (hit && hit.distance < toComputer) {
-        for (let p: Object3D | null = hit.object; p; p = p.parent) {
-          if (p.name.startsWith("postcard:") || p === pane) return p;
-          if (p.name && desk.props.get(p.name) === p) return p;
-        }
-      }
-      if (Number.isFinite(toComputer)) return computer ?? null;
-      // the middle is bare wall or floor: name the prop nearest the middle of the view
-      let best: Object3D | null = null;
-      let bestD = 0.45 ** 2;
-      for (const [name, prop] of [...desk.props, ...(pane ? [["window", pane] as const] : [])]) {
-        if (!CAPTIONS[name] && !spotOf(prop)) continue;
-        let at = centres.get(prop);
-        if (!at) centres.set(prop, (at = new Box3().setFromObject(prop).getCenter(new Vector3())));
-        const p = onScreen.copy(at).project(camera);
-        const d = p.x * p.x + p.y * p.y;
-        if (p.z < 1 && d < bestD) {
-          best = prop;
-          bestD = d;
-        }
-      }
-      return best;
-    }
-    /** Where each prop's middle is (they stay put, near enough, so it's measured once). */
-    const centres = new Map<Object3D, Vector3>();
-    const onScreen = new Vector3();
 
     // A close-up names what it framed until the camera comes back.
     let focus: string | null = null;
@@ -218,7 +180,7 @@ const caption: Feature = {
       lastPose.copy(camera.position);
       lastTurn.copy(turn);
       if (focus && !desk.framed()) focus = null;
-      const object = focus ? scene.getObjectByName(focus) : centred();
+      const object = focus ? scene.getObjectByName(focus) : desk.lookingAt();
       const text = object ? captionOf(desk, object) : null;
       last = text ?? (desk.time() === "night" ? "The desk · 2 AM" : "The desk · golden hour");
       desk.caption(last);

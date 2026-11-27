@@ -106,7 +106,7 @@ const slate: Feature = {
     },
     async keylight({ object, sfx, motions, once }) {
       // the stand on its own: a nudge, and the slate is what rolls
-      sfx("tap", object, 0.6);
+      sfx("rackTap", object, 0.6);
       await once(object, () => motions.wiggle(object, 0.03));
     },
   },

@@ -9,6 +9,7 @@
 // frame. The stick's tilt eases with the desk's `animate`. Leaving, sitting down, a click away or
 // a hidden tab stops it all.
 import { Box3, BufferAttribute, BufferGeometry, Group, Mesh, Quaternion, Vector3, type Material, type Object3D, type Texture } from "three";
+import { mains } from "./consequences-lab";
 import { bus } from "../bus";
 import { CARTS, H, W, hud, type Cart, type Dir, type Ev } from "./games-carts";
 import { GREEN, createTube, loadScores, pad, pixelText, saveScore } from "./games-screen";
@@ -345,7 +346,7 @@ function stick(dir: Dir | null) {
  * camera can't go yet (still flying back from the screen).
  */
 async function open(game?: string): Promise<boolean> {
-  if (!desk) return false;
+  if (!desk || desk.stripOff()) return false;
   const crt = desk.props.get("crt");
   const pvm = desk.pvm();
   if (!crt || !pvm) return false;
@@ -459,6 +460,7 @@ const arcade: Feature = {
   },
   onDesk(d) {
     desk = d;
+    mains.onCut(() => { if (on) leave(false); });
     bus.on("games:play", (p) => playFromTerminal(typeof p.game === "string" ? p.game : undefined));
     // `play` typed before the desk existed: it's waiting for us
     const early = bus.last("games:play");

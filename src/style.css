@@ -264,6 +264,7 @@ body {
 }
 
 /* Scaling 1px repeating scanlines inside the CSS3D monitor tube creates moiré bands; keep vignette only. */
+.desk:not([hidden]) ~ .screen .fx-scan,
 .desk-css .fx-scan {
   display: none;
 }
@@ -337,6 +338,24 @@ body {
   bottom: calc(var(--strip) + max(0px, env(safe-area-inset-bottom)) + 14px);
   transform: translateX(-50%);
   white-space: nowrap;
+}
+
+.desk-hint button {
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+  pointer-events: auto;
+  border: 0;
+  padding: 5px 9px;
+}
+.desk-hint button + button {
+  border-left: 1px solid var(--ink);
+}
+.desk-hint button:hover,
+.desk-hint button:focus-visible {
+  color: var(--teal);
+  text-decoration: underline;
 }
 
 /* c-na.dev's little square, in teal: this is where to start */
@@ -641,3 +660,22 @@ body {
   margin: 8px 0 0;
   color: rgba(255, 255, 255, 0.6);
 }
+
+.mix-player {
+  position: absolute;
+  z-index: 4;
+  top: 54px;
+  left: 12px;
+  width: min(300px, calc(100% - 24px));
+  padding: 5px;
+  color: var(--ink);
+  background: #eee7d8;
+  border: 1px solid var(--ink);
+  box-shadow: 2px 2px 0 #242322;
+  font: 12px "IBM Plex Mono", monospace;
+}
+.mix-player[hidden] { display: none; }
+.mix-player iframe { display: block; width: 100%; height: 152px; border: 0; }
+.mix-player > div:last-child { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 3px 4px; }
+.mix-player a, .mix-player button { font: inherit; color: inherit; }
+.mix-player button { padding: 4px 7px; background: transparent; border: 1px solid; cursor: pointer; }

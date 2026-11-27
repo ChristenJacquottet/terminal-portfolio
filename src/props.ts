@@ -11,6 +11,7 @@
 // graduating from Taylor, and collecting digital art (the pixel portrait).
 //
 // Every prop has a name; src/layout.json can move, turn, scale or hide it (see layout.ts).
+import { cassette, walkman } from "./mixtapes";
 import {
   Box3,
   BoxGeometry,
@@ -54,16 +55,17 @@ import {
 import { applyPose, currentLayout, poseOf } from "./layout";
 import { features } from "./features";
 import type { PropCtx } from "./features/types";
+import { headphones } from "./headphones";
 import { mug } from "./mug";
-import { cableColour, cableLoop, cableSpool, ethernetRun, partsDrawers, piCluster, powerCords, powerStrip, solderingStation, spareDrives, spot, steelRule, tapeRoll, ups, widthOf } from "./lab";
+import { labServer, patchHook, cableColour, cableLoop, cableSpool, ethernetRun, partsDrawers, piCluster, powerCords, powerStrip, solderingStation, spareDrives, spot, steelRule, tapeRoll, ups, widthOf } from "./lab";
 import type { Room } from "./room";
 
 const PROPS_URL = "/models/props.glb";
 const ORDER = [
   "lamp", "cassette", "pens", "spectacles", "duck", "camera", "plant", "clock", "frame", "globe", "super8", "phone",
   "longhorn", "rugby", "skateboard", "clapper", "biplane", "studiolight", "chair", "suitcase",
-  "breadboard", "multimeter", "joystick", "headphones", "answering",
-  "rack", "switch", "nas", "crt", "pegboard", "pliers", "screwdrivers", "cutters", "thinkpad", "macbook", "mac128k", "c64", "ivy", "monstera", "kiev",
+  "breadboard", "multimeter", "joystick", "answering",
+  "rack", "switch", "nas", "crt", "pegboard", "pliers", "screwdrivers", "cutters", "thinkpad", "macbook", "c64", "ivy", "monstera", "kiev",
 ] as const;
 
 /** Decals (shadows, labels, paper) sit a hair above what they're on and win the depth test. */
@@ -92,6 +94,7 @@ function blob(width: number, depth: number, strength = 0.42): Mesh {
   });
   const m = new Mesh(new PlaneGeometry(width, depth), new MeshBasicMaterial({ map, transparent: true, depthWrite: false, ...decal }));
   m.rotation.x = -Math.PI / 2;
+  m.raycast = () => {};
   m.position.y = 0.0006;
   return m;
 }
@@ -924,7 +927,11 @@ export async function addProps(
   const mid = (min.x + max.x) / 2;
 
   // The code-made props first: they cost nothing to load.
-  put("mug", place(mug(), max.x + 0.06, max.z - 0.06, { height: 0.095 }));
+  // The ceramic is already 9.5 cm tall. Invisible steam billboards extend below its origin.
+  const cup = new Group();
+  cup.add(mug(), blob(0.12, 0.11));
+  cup.position.set(max.x + 0.06, 0, max.z - 0.06);
+  put("mug", cup);
   put("floppies", place(diskBox(disks), min.x - 0.14, max.z - 0.02, { width: Math.max(0.152, 0.06 + disks.length * 0.016), rotY: 0.25 }));
   put("notebook", place(notebook(), min.x + 0.02, max.z + 0.17, { width: 0.31, rotY: 0.12 }));
   put("card", place(card(), max.x + 0.42, max.z - 0.14, { width: 0.11, rotY: -0.55 }));
@@ -1005,29 +1012,15 @@ export async function addProps(
   add("super8", (o) => place(o, min.x - 0.42, max.z + 0.06, { height: 0.17, rotY: 0.9 }));
   add("spectacles", (o) => place(o, min.x + 0.1, max.z + 0.14, { width: 0.13, rotY: 0.35, y: 0.0115 }));
   add("duck", (o) => place(o, min.x - 0.08, max.z - 0.17, { height: 0.065, rotY: 0.6 }));
-  if (byName.cassette) {
-    // The Walkman on its back, lid up, with its tape out on the desk beside it.
-    const kit = byName.cassette;
-    // Where the tape sits inside the player, in the player's own space, so it can go back in.
-    kit.updateMatrixWorld(true);
-    const inside = kit.getObjectByName("portable_cassette_player_casette");
-    const bay = inside ? new Box3().setFromObject(inside).getCenter(new Vector3()) : null;
-    const tape = piece(kit, "portable_cassette_player_casette", true);
-    const body = new Group();
-    for (const name of ["portable_cassette_player", "portable_cassette_player_lid"]) {
-      const p = piece(kit, name);
-      if (p) body.add(p);
-    }
-    const player = tape && body.children.length ? body : kit;
-    player.rotation.x = -Math.PI / 2;
-    put("cassette", place(player, max.x + 0.3, front - 0.14, { width: 0.13, rotY: -0.5 }));
-    if (tape && player === body) {
-      body.userData.bay = bay;
-      body.userData.hotspot = { kind: "walkman", label: "Walkman" };
-      tape.userData.hotspot = { kind: "tape", label: "a mixtape", hint: "put it in the Walkman" };
-      tape.rotation.x = -Math.PI / 2;
-      put("tape", place(tape, max.x + 0.43, front - 0.2, { width: 0.1, rotY: 0.35 }));
-    }
+  const player = walkman();
+  player.position.set(max.x + 0.30, 0, front - 0.14);
+  player.rotation.y = -0.32;
+  put("cassette", player);
+  for (const volume of [1, 2] as const) {
+    const tape = cassette(volume);
+    tape.position.set(max.x + (volume === 1 ? 0.44 : 0.56), 0.001, front - (volume === 1 ? 0.12 : 0.09));
+    tape.rotation.y = volume === 1 ? 0.16 : -0.14;
+    put(`mix-${volume}`, tape);
   }
   if (byName.phone) {
     // The handset is its own part, so a click can lift it out of the cradle.
@@ -1069,21 +1062,12 @@ export async function addProps(
   add("studiolight", (o) => place(o, room.desk.minX - 0.7, wall + 0.8, { height: 1.6, rotY: 0.7, y: floor, shadow: true })); // by the window, out of the lab's way
   add("suitcase", (o) => place(o, room.desk.minX - 0.3, wall + 0.3, { width: 0.6, rotY: 0.15, y: floor, shadow: true }));
   add("skateboard", (o) => place(o, room.desk.minX - 0.12, wall + 0.2, { height: 0.7, y: floor, shadow: true }));
-  // The implementation side: a breadboard mid-build, the meter on it, the joystick by the keys.
+  // The implementation side: a breadboard mid-build, the meter behind it, the joystick by the keys.
   add("breadboard", (o) => place(o, max.x + 0.58, back + 0.36, { width: 0.15, rotY: -0.3 }));
-  add("multimeter", (o) => place(o, max.x + 0.64, back + 0.56, { height: 0.12, rotY: -0.6 }));
+  add("multimeter", (o) => place(o, max.x + 0.60, back + 0.21, { height: 0.12, rotY: -0.48 }));
   add("joystick", (o) => place(o, max.x + 0.12, max.z + 0.18, { height: 0.11, rotY: -0.3 }));
-  if (byName.headphones) {
-    // Only the headphones from the Walkman kit, lying on the desk by the player.
-    const cans = piece(byName.headphones, "headset_Material_0", true);
-    if (cans) {
-      cans.rotation.x = -Math.PI / 2;
-      put("headphones", place(cans, max.x + 0.62, front - 0.28, { width: 0.14, rotY: 0.4 }));
-    }
-  }
-  // ── the home lab, in the corner past the end of the desk ──────────────────────────────────────
-  // A steel shelving rack, its shelves found by looking straight down through it, with the CRT and
-  // the Macintosh on top, the switch and the NAS, the C64, the laptops; the pegboard of tools above.
+  put("headphones", place(headphones(), max.x + 0.62, front - 0.28, { rotY: -0.35 }));
+  // The active lab occupies the three shelves visible above the desktop.
   if (byName.rack) {
     const labX = room.desk.maxX + 0.5;
     const labZ = wall + 0.22;
@@ -1093,23 +1077,37 @@ export async function addProps(
     const down = new Raycaster(new Vector3(labX, floor + 3, labZ), new Vector3(0, -1, 0));
     const tops = [...new Set(down.intersectObject(rack, true).filter((h) => h.face && h.face.normal.y > 0.5).map((h) => Math.round(h.point.y * 1000) / 1000))].sort((a, b) => a - b);
     const along = new Vector3(Math.cos(turn), 0, -Math.sin(turn)); // the rack's width, in the room
-    const onRack = (name: (typeof ORDER)[number], level: number, dx: number, opts: PlaceOpts) => {
+    const onRack = (name: (typeof ORDER)[number], level: number, dx: number, opts: PlaceOpts, lift = 0) => {
       const o = byName[name];
       const y = tops[tops.length - 1 - level];
       if (!o || y === undefined) return null;
-      return put(name, place(o, labX + along.x * dx, labZ + along.z * dx, { ...opts, rotY: turn + (opts.rotY ?? 0), y, shadow: true }));
+      return put(name, place(o, labX + along.x * dx, labZ + along.z * dx, { ...opts, rotY: turn + (opts.rotY ?? 0), y: y + lift, shadow: opts.shadow ?? true }));
     };
-    const crt = onRack("crt", 0, -0.14, { height: 0.28 });
+    const crt = onRack("crt", 0, -0.135, { height: 0.255 });
     if (crt) fitCrtScreen(crt, onChange);
-    onRack("mac128k", 0, 0.2, { height: 0.3, rotY: Math.PI - 0.15 }); // the model faces away
     const sw = onRack("switch", 1, -0.13, { width: 0.24 });
     const ports = sw ? addSwitchLeds(sw) : null;
-    const nas = onRack("nas", 1, 0.18, { height: 0.19 });
-    onRack("c64", 2, 0, { width: 0.4 });
-    const lowest = onRack("thinkpad", 3, -0.02, { width: 0.33 });
-    if (lowest && byName.macbook) {
-      const top = new Box3().setFromObject(lowest).max.y;
-      put("macbook", place(byName.macbook, labX + along.x * 0.02, labZ + along.z * 0.02, { width: 0.31, rotY: turn + 0.12, y: top, shadow: false }));
+    const nas = onRack("nas", 1, 0.18, { height: 0.19, shadow: false });
+    onRack("c64", 2, -0.165, { width: 0.29, rotY: -0.04 });
+    const top = tops[tops.length - 1];
+    const dockX = 0.178;
+    if (top !== undefined) {
+      const hook = patchHook();
+      hook.position.set(labX, top - 0.026, labZ).addScaledVector(along, 0.333)
+        .addScaledVector(new Vector3(Math.sin(turn), 0, Math.cos(turn)), 0.152);
+      hook.rotation.y = turn;
+      hook.userData.hotspot = spot("spare patch leads", "ready for the next node");
+      put("patchleads", hook);
+      const server = labServer();
+      server.position.set(labX + along.x * dockX, top, labZ + along.z * dockX);
+      server.rotation.y = turn;
+      put("server", server);
+      for (const [name, offset, height] of [["thinkpad", -0.052, 0.205], ["macbook", 0.048, 0.186]] as const) {
+        const laptop = byName[name];
+        if (!laptop) continue;
+        laptop.rotation.z = Math.PI / 2;
+        onRack(name, 0, dockX + offset, { height, shadow: false }, 0.067);
+      }
     }
 
     // ── the rest of the lab, made in code (lab.ts): fitted to the rack's width ─────────────────
@@ -1119,25 +1117,25 @@ export async function addProps(
       const y = tops[tops.length - 1 - level];
       if (y === undefined) return null;
       const d = fit(dx, w);
-      const holder = put(name, place(o, labX + along.x * d, labZ + along.z * d, { ...opts, rotY: turn + (opts.rotY ?? 0), y, shadow: true }));
+      const holder = put(name, place(o, labX + along.x * d, labZ + along.z * d, { ...opts, rotY: turn + (opts.rotY ?? 0), y, shadow: opts.shadow ?? true }));
       holder.userData.hotspot = hotspot;
       return holder;
     };
-    /** The middle of a prop's footprint, `dy` above its base, pulled a little back into it. */
-    const at = (o: Object3D | null, dy = 0, back = 0.25) => {
-      if (!o) return null;
-      const b = new Box3().setFromObject(o);
-      return new Vector3((b.min.x + b.max.x) / 2, b.min.y + dy, (b.min.z + b.max.z) / 2 - (b.max.z - b.min.z) * back);
-    };
     rackCtx = { x: labX, z: labZ, turn, along, tops, half, onLevel };
-    const pis = onLevel("picluster", piCluster(), 2, 0.31, 0.09, { width: 0.09, rotY: 0.2 }, spot("Pi cluster", "four nodes, one of them busy"));
-    onLevel("drawers", partsDrawers(), 2, -0.31, 0.136, { width: 0.136 }, spot("parts drawers", "resistors, mostly"));
-    // (the rack is 73 cm wide: the switch and the NAS have the middle shelf, so the station goes
-    // on the laptops' shelf and the spool squeezes in by the switch)
-    const iron = onLevel("soldering", solderingStation(), 3, 0.27, 0.14, { width: 0.14, rotY: -0.25 }, spot("soldering station", "the tip's cold"));
-    onLevel("spool", cableSpool(), 1, -0.37, 0.085, { height: 0.085, rotY: 0.6 }, spot("a spool of cat6", "for the next run"));
-    const upsBox = onLevel("ups", ups(), Math.min(4, tops.length - 1), 0.27, 0.1, { height: 0.165, rotY: 0.05 }, spot("the UPS", "for the Dallas storms"));
-    onLevel("drives", spareDrives(), 3, -0.3, 0.11, { width: 0.15, rotY: -0.15 }, spot("spare drives", "backups of the backups"));
+    const nasTop = nas ? nas.position.y + 0.19 : tops[tops.length - 2];
+    const pis = nasTop === undefined ? null : put("picluster", place(piCluster(), labX + along.x * 0.18, labZ + along.z * 0.18, {
+      width: 0.086, rotY: turn + 0.08, y: nasTop, shadow: false,
+    }));
+    const drawers = onLevel("drawers", partsDrawers(), 2, 0.052, 0.12, { width: 0.12 }, spot("parts drawers", "resistors, mostly"));
+    if (drawers) {
+      drawers.updateWorldMatrix(true, true);
+      const top = new Box3().setFromObject(drawers.children[0], true).max.y;
+      const spool = put("spool", place(cableSpool(), drawers.position.x, drawers.position.z, { height: 0.077, y: top, rotY: turn + 0.4, shadow: false }));
+      spool.userData.hotspot = spot("a spool of cat6", "for the next run");
+    }
+    const iron = onLevel("soldering", solderingStation(), 2, 0.272, 0.15, { width: 0.15, rotY: -0.14 }, spot("soldering station", "the tip's cold"));
+    const upsBox = onLevel("ups", ups(), 1, -0.302, 0.08, { height: 0.145 }, spot("the UPS", "for the Dallas storms"));
+    onLevel("drives", spareDrives(), 2, 0.158, 0.08, { width: 0.088, rotY: 0.12 }, spot("spare drives", "backups of the backups"));
 
     // Ethernet from the lit ports: the uplink down the back, one to the NAS, one to the Pis, one up
     // to the PVM, one off towards the desk. Drawn in world space, parented to the rack so the
@@ -1145,41 +1143,65 @@ export async function addProps(
     if (sw && ports) {
       sw.updateMatrixWorld(true);
       const out = ports.out.clone().transformDirection(sw.matrixWorld);
-      const back = out.clone().negate();
-      const side = new Vector3().crossVectors(out, new Vector3(0, 1, 0)).normalize(); // along the shelf
-      const world = (v: Vector3) => sw.localToWorld(v.clone());
-      const runs: { from: Vector3; via: Vector3[] }[] = [];
-      const [p1, p2, p4, p5, p7] = ports.ports.map(world);
-      const drop = (p: Vector3, dy: number) => p.clone().addScaledVector(out, 0.06).add(new Vector3(0, dy, 0));
-      // the uplink and the desk run go down the back of the rack, against the wall
-      const rear = 0.3;
-      runs.push({ from: p1, via: [drop(p1, -0.03), p1.clone().addScaledVector(back, rear).add(new Vector3(0, -0.08, 0)), p1.clone().addScaledVector(back, rear + 0.02).setY(floor + 0.003)] });
-      const nasIn = at(nas, 0.05);
-      if (nasIn) runs.push({ from: p2, via: [drop(p2, -0.02), nasIn.clone().addScaledVector(out, 0.05).addScaledVector(side, -0.03), nasIn.clone().addScaledVector(back, 0.02)] });
-      const piIn = at(pis, 0.03);
-      if (piIn) runs.push({ from: p4, via: [drop(p4, -0.025), p4.clone().addScaledVector(back, 0.1).add(new Vector3(0, 0.08, 0)), piIn.clone().addScaledVector(back, 0.06).setY(piIn.y + 0.12), piIn.clone().addScaledVector(back, 0.04).add(new Vector3(0, 0.08, 0)), piIn.clone().addScaledVector(side, 0.01)] });
-      const crtIn = at(crt, 0.05);
-      if (crtIn) runs.push({ from: p5, via: [drop(p5, -0.02), p5.clone().addScaledVector(back, 0.11).add(new Vector3(0, 0.1, 0)), crtIn.clone().addScaledVector(back, 0.12), crtIn.clone().addScaledVector(back, 0.06)] });
-      const post = p7.clone().addScaledVector(back, rear);
-      runs.push({ from: p7, via: [drop(p7, -0.04), post.clone().add(new Vector3(0, -0.12, 0)), post.clone().setY(floor + 0.03), new Vector3(post.x, floor + 0.004, wall + 0.05), new Vector3(room.desk.maxX + 0.1, floor + 0.004, wall + 0.05), new Vector3(room.desk.maxX - 0.3, floor + 0.004, wall + 0.06)] });
+      const shelf = tops[tops.length - 2];
+      const point = (x: number, y: number, z: number) =>
+        new Vector3(labX, y, labZ).addScaledVector(along, x).addScaledVector(out, z);
+      const rearPort = (device: Object3D, height: number) => {
+        // Use the case itself: a contact shadow overhangs the back of the enclosure.
+        device.updateWorldMatrix(true, true);
+        const box = new Box3().setFromObject(device.children[0], true);
+        const centre = device.getWorldPosition(new Vector3());
+        const ray = new Raycaster(centre.clone().setY(box.min.y + height).addScaledVector(out, -1), out);
+        return ray.intersectObject(device.children[0], true)[0]?.point ?? centre.setY(box.min.y + height);
+      };
+      const piJack = pis?.children[0].localToWorld(new Vector3(0.0425, 0.0115, -0.014));
+      const ends = [
+        [point(0.048, floor + 0.006, -0.15), point(0.19, floor + 0.004, -0.16)],
+        nas && [rearPort(nas, 0.045)],
+        piJack && [point(0.32, piJack.y, -0.15), piJack.clone().addScaledVector(along, 0.025), piJack],
+        crt && [rearPort(crt, 0.055)],
+        [point(0.024, floor + 0.012, -0.174), point(-0.32, floor + 0.006, -0.15)],
+      ];
       const cables = new Group();
-      runs.forEach((r, i) => cables.add(ethernetRun(r.from, out, r.via, cableColour(i))));
-      cables.traverse((m) => {
-        const mesh = m as Mesh;
-        if (mesh.isMesh) mesh.raycast = () => {};
+      ports.ports.forEach((port, i) => {
+        const end = ends[i];
+        if (!end) return;
+        const from = sw.localToWorld(port.clone());
+        const lane = i * 0.006;
+        // Parallel leads clear the plug boots, lie on the shelf, then turn into the gap
+        // between the switch and NAS. Branch only behind the equipment.
+        const front = from.clone().addScaledVector(out, 0.079 - lane);
+        const frontDepth = front.clone().sub(point(0, shelf, 0)).dot(out);
+        const railX = 0.048 - lane;
+        const via = [
+          front.clone().addScaledVector(out, -0.012).setY(shelf + 0.008),
+          front.clone().addScaledVector(along, 0.025).setY(shelf + 0.004),
+          point(railX - 0.018, shelf + 0.004, frontDepth),
+          point(railX, shelf + 0.004, 0.09 - lane),
+          point(railX, shelf + 0.004, -0.12),
+          point(railX, shelf + 0.004, -0.15 - lane),
+          point(railX, end[0].y, -0.15 - lane),
+          ...end,
+        ];
+        cables.add(ethernetRun(from, out, via, cableColour(i)));
       });
       scene.attach(cables); // world space; keep it that way
       rack.attach(cables);
       cables.name = "cables";
     }
 
-    // The power strip on the floor by the rack, three cords up into it.
-    const strip = put("powerstrip", place(powerStrip(), labX + along.x * -0.05 - Math.sin(turn) * -0.42, labZ + along.z * -0.05 - Math.cos(turn) * -0.42, { width: 0.3, rotY: turn + 0.3, y: floor, shadow: true }));
-    strip.userData.hotspot = spot("power strip", "everything on one switch");
-    const feeds = [at(upsBox, 0, 0), at(iron, 0, 0), new Vector3(labX + along.x * 0.3, 0, labZ + along.z * 0.3)]
-      .filter((v): v is Vector3 => Boolean(v))
-      .map((v) => v.setY(floor + 0.004));
-    powerCords(strip, feeds);
+    const shelf = tops[tops.length - 2];
+    if (shelf !== undefined) {
+      const strip = powerStrip();
+      const front = new Vector3(Math.sin(turn), 0, Math.cos(turn));
+      strip.position.set(labX, shelf - 0.047, labZ).addScaledVector(along, 0.128).addScaledVector(front, 0.147);
+      strip.rotation.set(Math.PI / 2, turn, 0, "YXZ");
+      strip.userData.hotspot = spot("power strip", "everything on one switch");
+      put("powerstrip", strip);
+      const feeds = [upsBox, iron, props.get("server")].flatMap((o) =>
+        o ? [o.position.clone().addScaledVector(front, -0.09).add(new Vector3(0, 0.024, 0))] : []);
+      powerCords(strip, feeds);
+    }
   }
   if (byName.pegboard) {
     const board = byName.pegboard;

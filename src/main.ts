@@ -51,13 +51,14 @@ function stepBack() {
       run: (command) => void term.type(command, 12),
       reboot: async () => {
         term.clear();
-        await boot();
+        await boot(false);
       },
       sound: {
         play: (cue, o) => audio.play(cue, o),
         music: (on) => audio.music(on),
         loop: (name, on) => audio.loop(name, on),
         setInside: (t) => audio.setInside(t),
+        setRackMix: audio.setRackMix,
         mount: (parent) => void mountSoundToggle(parent),
         muted: () => audio.muted,
         setMuted: (m) => audio.setMuted(m),
@@ -117,11 +118,11 @@ function scheduleDeskPrefetch() {
   );
 }
 
-async function boot() {
+async function boot(initialLaunch = true) {
   const promptLine = $("prompt-line");
   promptLine.hidden = true;
   // Start the desk's downloads while the banner draws, so slow connections are done sooner.
-  if (shouldPrefetchDesk()) void loadDesk().then((m) => m.preloadDeskFiles()).catch(() => {});
+  if (initialLaunch && shouldPrefetchDesk()) void loadDesk().then((m) => m.preloadDeskFiles()).catch(() => {});
   const skip = () => (term.skip = true);
   window.addEventListener("pointerdown", skip, { once: true });
   window.addEventListener("keydown", skip, { once: true });
@@ -145,6 +146,8 @@ async function boot() {
   term.skip = false;
   window.removeEventListener("pointerdown", skip);
   window.removeEventListener("keydown", skip);
+
+  if (!initialLaunch) return; // Reboot the CRT in place without replaying the arrival URL or taking focus.
 
   // Shareable links: /#cat ~/shipped/world-cup-host
   const fromHash = decodeURIComponent(location.hash.slice(1)).trim();

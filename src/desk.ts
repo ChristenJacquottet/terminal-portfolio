@@ -54,6 +54,7 @@ import { CSS3DObject, CSS3DRenderer } from "three/examples/jsm/renderers/CSS3DRe
 import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { bus } from "./bus";
 import { MODEL_CREDIT } from "./credit";
 import { editing, locked } from "./layout";
 import { fileName, projects } from "./content";
@@ -229,7 +230,7 @@ const PROTECTED_SUBNODES = new Set([
   "cubies",
   "handset",
   "Empty.001_4",
-  "portable_cassette_player_lid",
+  "walkman-lid",
   "joystick-stick", // games-arcade.ts: the stick leans with the arrow keys
 ]);
 
@@ -338,7 +339,7 @@ function mergeStaticLeaves(propName: string, root: Object3D, skipNode?: (o: Obje
 
   const collect = (node: Object3D) => {
     if (node !== root) {
-      if (!node.visible || node.userData?.hotspot || PROTECTED_SUBNODES.has(node.name) || skipNode?.(node)) return;
+      if (!node.visible || node.userData?.hotspot || node.userData.pickBlocker || PROTECTED_SUBNODES.has(node.name) || skipNode?.(node)) return;
     }
     const mesh = node as Mesh;
     if (
@@ -415,13 +416,14 @@ function contactShadow(): Mesh {
     new PlaneGeometry(0.75, 0.65),
     new MeshBasicMaterial({ map: new CanvasTexture(c), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }),
   );
+  mesh.raycast = () => {};
   mesh.rotation.x = -Math.PI / 2;
   mesh.position.y = 0.0005;
   return mesh;
 }
 
 /** A plain beige stand-in until the real model is in public/models. */
-function standIn(): { root: Group; screen: Screen } {
+function standIn(): { root: Group; screen: Screen; tube: Mesh } {
   const root = new Group();
   const beige = new MeshStandardMaterial({ color: "#d9cdb0", roughness: 0.6 });
   const dark = new MeshStandardMaterial({ color: "#2b2620", roughness: 0.8 });
@@ -434,7 +436,7 @@ function standIn(): { root: Group; screen: Screen } {
   const bezel = new Mesh(new BoxGeometry(0.32, 0.24, 0.01), dark);
   bezel.position.set(0, 0.25, 0.102);
   root.add(base, keys, monitor, bezel);
-  return { root, screen: { center: new Vector3(0, 0.25, 0.108), normal: new Vector3(0, 0, 1), up: new Vector3(0, 1, 0), width: 0.29, height: 0.2175 } };
+  return { root, tube: bezel, screen: { center: new Vector3(0, 0.25, 0.108), normal: new Vector3(0, 0, 1), up: new Vector3(0, 1, 0), width: 0.29, height: 0.2175 } };
 }
 
 async function loadModel(onProgress: (f: number) => void): Promise<{ root: Group; screen: Screen; tube: Mesh } | null> {
@@ -601,6 +603,7 @@ export async function createDesk(opts: {
     music(on: boolean): Promise<void>;
     loop(name: "room" | "hum", on: boolean): void;
     setInside(t: number): void;
+    setRackMix(pan: number, presence: number): void;
     mount(parent: HTMLElement): void;
     muted(): boolean;
     setMuted(m: boolean): void;
@@ -613,8 +616,8 @@ export async function createDesk(opts: {
   // Desktops draw through the finishing pass (post.ts: AO, bloom, grade), which anti-aliases its own
   // scene target, so the canvas needs none; phones keep the plain path and the canvas's MSAA.
   const renderer = new WebGLRenderer({ antialias: isPhone, alpha: true, powerPreference: "high-performance" });
-  // Crisp on retina desktops (the scene only draws while something moves, so idle costs nothing).
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, isPhone ? 1.25 : 2));
+  // A stable render grid avoids resampling fine lines and reallocating the HDR targets on each drag.
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, isPhone ? 1.25 : 1.5));
   const maxAniso = Math.min(8, renderer.capabilities.getMaxAnisotropy());
   renderer.outputColorSpace = SRGBColorSpace;
   renderer.toneMapping = ACESFilmicToneMapping;
@@ -691,7 +694,7 @@ export async function createDesk(opts: {
   const roomAssets = loadRoom();
   // Progress: the computer is the first third, the props the rest.
   const loaded = await loadModel((f) => opts.onProgress(f * 0.35));
-  const { root, screen } = loaded ?? standIn();
+  const { root, screen, tube } = loaded ?? standIn();
   root.name = "computer"; // the Apple II, for features (the caption names it)
   scene.add(root);
   const room = buildRoom(scene, await roomAssets, new Box3().setFromObject(root), {
@@ -713,14 +716,17 @@ export async function createDesk(opts: {
   if (envs.dusk) scene.environment = envs.dusk.texture;
   /** Dusk (the default: warm, everything reads) or the middle of the night (the window toggles it). */
   let time: Time = "dusk";
+  let darken: (() => void) | null = null;
+  let restoreStrip: (() => void) | null = null;
   let timeK = 0; // 0 dusk … 1 night, where the light is right now
   let screenGlow: PointLight | null = null; // made below, with the screen
   const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
   const fillDusk = new Color("#e6d5bf"), fillNight = new Color("#4d6fb8");
   const groundDusk = new Color("#2e1d12"), groundNight = new Color("#101524");
-  const labDusk = new Color("#ffd19c"), labNight = new Color("#5f83cc");
+  const labDusk = new Color("#e9dece"), labNight = new Color("#5f83cc");
   /** Puts every light at `k` of the way from dusk to night. */
   const applyTime = (k: number) => {
+    if (darken) return;
     timeK = k;
     room.blend(k);
     fill.color.copy(fillDusk).lerp(fillNight, k);
@@ -746,7 +752,7 @@ export async function createDesk(opts: {
   const stale: Record<Time, boolean> = { dusk: true, night: true };
   const lightKey = () => `${lamp.intensity.toFixed(2)}|${spill.intensity.toFixed(2)}`;
   const captureRoom = (which: Time) => {
-    if (!probe) return;
+    if (!probe || darken) return;
     const was = timeK;
     applyTime(which === "night" ? 1 : 0);
     const hide = atmosphere ? [atmosphere.object] : [];
@@ -764,7 +770,7 @@ export async function createDesk(opts: {
     if (!capturedKey || lightKey() === capturedKey) return;
     clearTimeout(recaptureTimer);
     recaptureTimer = window.setTimeout(() => {
-      if (blackoutRunning || lightKey() === capturedKey) return;
+      if (darken || lightKey() === capturedKey) return;
       stale[time === "dusk" ? "night" : "dusk"] = true; // captured again when the time turns
       captureRoom(time);
       request();
@@ -786,8 +792,9 @@ export async function createDesk(opts: {
   setTime(time);
 
   const glass = glassMaterial(screen, room.windowCenter.clone().sub(screen.center).normalize());
+  tube.material = glass;
+  tube.renderOrder = 1;
   if (loaded) {
-    loaded.tube.material = glass;
     // The model's plastics are near white. Keep them that way (a clean machine, not a yellowed
     // one): only a whisper of warmth, so the warm lamp and sun do the tinting, and a satin finish.
     loaded.root.traverse((o) => {
@@ -801,7 +808,6 @@ export async function createDesk(opts: {
         mat.envMapIntensity = post ? 1.15 : 1.6; // a little of the room (captured, see captureRoom) in the plastic's sheen
       }
     });
-    loaded.tube.renderOrder = 1;
   }
 
   // The screen lights the room in the theme's colour: the keys, the desk in front, the drives.
@@ -843,6 +849,7 @@ export async function createDesk(opts: {
   let vh = 0;
   let seated = true;
   let transitioning = false;
+  let monitorFocused = false;
   const resize = () => {
     vw = window.innerWidth;
     vh = window.innerHeight;
@@ -854,6 +861,7 @@ export async function createDesk(opts: {
     // A little closer or further than the wide shot, never into the keys or out of the room.
     // (The layout editor frees the camera and sets its own limits.)
     // At the desk, keep where you're looking but sit where the new window shape puts you.
+    if (monitorFocused && !transitioning) place(monitorPose());
     if (!seated && !transitioning && !editing && look.active) {
       sitAt(widePose());
       const [minYaw, maxYaw] = yawBounds();
@@ -870,17 +878,24 @@ export async function createDesk(opts: {
   let tubeW = SCREEN_W;
   let tubeH = SCREEN_H;
   function fitTube() {
-    tubeH = Math.max(TUBE_MIN_H, Math.round(closeUp().rect.h));
+    const term = screenEl.querySelector<HTMLElement>(".term");
+    const atBottom = term && term.scrollHeight - term.scrollTop - term.clientHeight < 3;
+    // Match the projected size for reading in the monitor. The wider desk view uses the
+    // fullscreen hand-off dimensions so the slide into and out of the glass still lines up.
+    tubeH = monitorFocused
+      ? Math.max(210, Math.round(monitorPose().rect.h))
+      : Math.max(TUBE_MIN_H, Math.round(closeUp().rect.h));
     tubeW = Math.round((tubeH * SCREEN_W) / SCREEN_H);
     holder.style.width = `${tubeW}px`;
     holder.style.height = `${tubeH}px`;
     screenObject.scale.setScalar(worldH / tubeH);
+    if (term && atBottom) term.scrollTop = term.scrollHeight;
   }
 
   /** Camera distance where the screen fills FILL of the window, and the rect it lands on. */
-  const closeUp = () => {
+  const closeUp = (fill = FILL) => {
     const tan = Math.tan((FOV * Math.PI) / 360);
-    const k = Math.min(FILL, (FILL * camera.aspect * worldH) / worldW);
+    const k = Math.min(fill, (fill * camera.aspect * worldH) / worldW);
     const distance = worldH / (2 * tan * k);
     const h = k * vh;
     const w = (worldW / worldH) * h;
@@ -890,6 +905,8 @@ export async function createDesk(opts: {
       rect: { x: (vw - w) / 2, y: (vh - h) / 2, w, h },
     };
   };
+
+  const monitorPose = () => closeUp(camera.aspect < 1 ? 0.51 : 0.56); // leave the housing and the desk around the tube in view
 
   /** Far enough back to frame the room around the desk (about 2.4 m of it). */
   function wideDistance() {
@@ -929,7 +946,9 @@ export async function createDesk(opts: {
     look.yaw += (look.toYaw - look.yaw) * k;
     look.pitch += (look.toPitch - look.pitch) * k;
     look.lean += (look.toLean - look.lean) * k;
-    lookEuler.set(look.basePitch + look.pitch, look.baseYaw + look.yaw, 0);
+    // Lift the sightline from the keyboard to the equipment as the chair turns right.
+    const rackTurn = clamp(-look.yaw / 0.9, 0, 1);
+    lookEuler.set(look.basePitch + look.pitch + 0.15 * rackTurn * rackTurn, look.baseYaw + look.yaw, 0);
     camera.quaternion.setFromEuler(lookEuler);
     forward.set(0, 0, -1).applyQuaternion(camera.quaternion);
     camera.position.copy(look.head).addScaledVector(forward, look.lean);
@@ -937,7 +956,10 @@ export async function createDesk(opts: {
   }
   const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
   // Portrait screens crop horizontally, so let the head turn a bit further left to the window and right to the rack.
-  const yawBounds = () => (camera.aspect < 1 ? ([-0.68, 0.72] as const) : ([-LIMITS.yaw, LIMITS.yaw] as const));
+  const yawBounds = () => {
+    const yawToRack = Math.atan2(room.desk.maxX + 0.5 - look.head.x, look.head.z - (room.wallZ + 0.22));
+    return [-Math.max(LIMITS.yaw, yawToRack + look.baseYaw), camera.aspect < 1 ? 0.72 : LIMITS.yaw] as const;
+  };
   function turnHead(dx: number, dy: number) {
     // a full drag across the window turns the head about as far as it goes
     const [minYaw, maxYaw] = yawBounds();
@@ -956,11 +978,7 @@ export async function createDesk(opts: {
   }
 
   // Render on demand only.
-  /**
-   * The scene's resolution while the camera moves, on screens with a device pixel ratio of ~2
-   * (1.5x effective, still sharper than a 1x screen). Never on 1x screens or phones (no post).
-   */
-  const MOVING_SCALE = post && renderer.getPixelRatio() >= 1.75 ? 0.75 : 1;
+  const fanPosition = new Vector3();
   let running = false;
   let tween: ((now: number) => boolean) | null = null;
   /** Props in motion (interact.ts): each returns false when it's done. */
@@ -968,7 +986,7 @@ export async function createDesk(opts: {
   let frameMs = 0; // how long the last frame took: the heartbeat stays away from a slow machine
   let nextDraw = 0; // when the next frame is due (rAF time)
   /** Counters for devtools (`__desk.stats`): frames drawn, frames that redrew the shadow maps, frames skipped by the cap. */
-  const stats = { frames: 0, shadowFrames: 0, capped: 0, lowRes: 0 };
+  const stats = { frames: 0, shadowFrames: 0, capped: 0 };
   const frame = (now: number) => {
     // At most ~60 frames a second. ProMotion and other 120/144 Hz displays call rAF twice as often,
     // and each frame here is a full HDR render with AO and bloom: the extra frames only make heat.
@@ -984,22 +1002,26 @@ export async function createDesk(opts: {
     const tweening = tween ? tween(now) : false;
     if (!tweening) tween = null;
     for (const m of motions) if (!m(now)) motions.delete(m);
+    // An in-flight animation can change a lamp after the strip was switched off.
+    darken?.();
     const moving = controls?.enabled ? controls.update() : updateLook();
     // Moving things move their shadows; light-only changes (the time of day, the lamp's flicker, a
     // flash, steam) and the camera don't, so the shadow maps are redrawn only when a caster or a
     // shadow-casting light really moved (including the last step of an animation).
     if (shadowsMoved()) renderer.shadowMap.needsUpdate = true;
     if (renderer.shadowMap.needsUpdate) stats.shadowFrames++;
-    // While the camera itself moves, a high-DPI screen draws the scene at a lower resolution (the eye
-    // can't resolve it in motion); the frame it settles on is always full resolution.
-    const lowRes = (tweening || moving) && MOVING_SCALE < 1;
-    post?.setScale(lowRes ? MOVING_SCALE : 1);
-    if (lowRes) stats.lowRes++;
     // Seated, the canvas is hidden: motions still finish, but nothing is drawn that nobody sees.
     if (!host.hidden) {
       const t0 = performance.now();
       renderer.render(scene, camera);
       css.render(scene, camera);
+      const server = props.get("server");
+      if (server && opts.sound) {
+        camera.worldToLocal(server.getWorldPosition(fanPosition));
+        const distance = Math.max(0.01, fanPosition.length());
+        const facing = Math.max(0, -fanPosition.z / distance);
+        opts.sound.setRackMix(0.9 * fanPosition.x / distance, facing * Math.min(1, 1.15 / distance));
+      }
       frameMs = performance.now() - t0;
       stats.frames++;
     }
@@ -1122,7 +1144,7 @@ export async function createDesk(opts: {
   // The heartbeat: about once a second while the desk is in view, the lab's activity lights
   // re-roll and one frame is drawn. Nothing else runs between frames.
   window.setInterval(() => {
-    if (host.hidden || seated || transitioning || document.hidden || reduced() || !pulses.size || running || frameMs > 40) return;
+    if (host.hidden || seated || transitioning || darken || document.hidden || reduced() || !pulses.size || running || frameMs > 40) return;
     for (const pulse of pulses) pulse();
     request();
   }, 1100);
@@ -1130,7 +1152,8 @@ export async function createDesk(opts: {
   // ── framing a prop up close (DeskApi.frame), and coming back to the seat ─────────────────────
   let framedNow = false;
   const frameOn = async (target: Object3D | Box3, o: { dir?: Vector3; fill?: number; ms?: number } = {}) => {
-    if (seated || (transitioning && !framedNow)) return;
+    if (seated || transitioning) return;
+    setMonitorFocus(false);
     const box = target instanceof Box3 ? target.clone() : new Box3().setFromObject(target);
     const centre = box.getCenter(new Vector3());
     const radius = Math.max(0.03, box.getSize(new Vector3()).length() / 2);
@@ -1145,9 +1168,11 @@ export async function createDesk(opts: {
     if (touch.leave()) request();
     await fly({ position: centre.clone().addScaledVector(dir, distance), target: centre }, o.ms ?? 900, glass.uniforms.uStrength.value as number, ease);
     transitioning = false;
+    updateHint();
   };
   const unframe = async (ms = 900) => {
-    if (!framedNow || seated) return;
+    if (!framedNow || seated || transitioning) return;
+    setMonitorFocus(false);
     transitioning = true;
     const wide = widePose();
     await fly(wide, ms, glass.uniforms.uStrength.value as number, ease);
@@ -1155,6 +1180,7 @@ export async function createDesk(opts: {
     Object.assign(look, { active: true, yaw: 0, pitch: 0, lean: 0, toYaw: 0, toPitch: 0, toLean: 0 });
     updateLook(true);
     framedNow = false;
+    updateHint();
     transitioning = false;
     request();
   };
@@ -1336,8 +1362,43 @@ export async function createDesk(opts: {
     }
     captionEl.hidden = !captionText || seated || (transitioning && !framedNow) || editing; // a close-up keeps it
   };
-  if (hint && coarsePointer) {
-    hint.textContent = "drag to look · pinch to lean · tap anything · tap screen to sit";
+  const wideHint = coarsePointer ? "drag to look · pinch to lean · tap the Apple II to zoom in" : hint?.textContent ?? "";
+  const backButton = document.createElement("button");
+  backButton.textContent = "Back to desk";
+  backButton.onclick = () => void unframe();
+  const enterButton = document.createElement("button");
+  enterButton.textContent = "Enter terminal";
+  enterButton.onclick = () => void api.sitDown();
+  function setMonitorFocus(focused: boolean) {
+    const changed = monitorFocused !== focused;
+    monitorFocused = focused;
+    if (changed) fitTube();
+    updateHint();
+  }
+  function updateHint() {
+    if (!hint) return;
+    if (restoreStrip) hint.replaceChildren(restoreButton);
+    else if (monitorFocused) hint.replaceChildren(backButton, enterButton);
+    else if (framedNow) hint.replaceChildren(backButton);
+    else hint.textContent = wideHint;
+  }
+  setMonitorFocus(false);
+
+  async function focusMonitor() {
+    if (restoreStrip || monitorFocused || seated || transitioning) return;
+    if (look.active) {
+      camTarget.copy(lookTarget());
+      look.active = false;
+    }
+    transitioning = true;
+    framedNow = true;
+    touch.leave();
+    bus.emit("desk:focus", { name: "computer" });
+    await fly(monitorPose(), 800, 1);
+    place(monitorPose()); // account for a resize during the flight
+    transitioning = false;
+    setMonitorFocus(true);
+    request();
   }
   const credit = document.getElementById("credit");
   if (credit && loaded) {
@@ -1347,14 +1408,6 @@ export async function createDesk(opts: {
   }
 
   // The canvas is on top, so clicks on the glass are found by ray: a click (not a drag) sits you down.
-  const ray = new Raycaster();
-  const pointer = new Vector2();
-  const onGlass = (e: PointerEvent) => {
-    if (!loaded) return true;
-    pointer.set((e.clientX / vw) * 2 - 1, -(e.clientY / vh) * 2 + 1);
-    ray.setFromCamera(pointer, camera);
-    return ray.intersectObject(loaded.tube, false).length > 0;
-  };
   const canvas = renderer.domElement;
   const activePointers = new Map<number, { x: number; y: number }>();
   let down: { id: number; x: number; y: number } | null = null;
@@ -1408,7 +1461,10 @@ export async function createDesk(opts: {
     down = null;
     if (!click || seated || transitioning || editing) return;
     const target = touch.pick(e, vw, vh);
-    if (target) {
+    if (target?.object === root) {
+      if (restoreStrip) return;
+      void (monitorFocused ? api.sitDown() : focusMonitor());
+    } else if (target) {
       touch.click(target);
       if (e.pointerType === "touch" && !target.spot.nav) {
         if (touch.hover(target, e)) request(); // the bubble sits over the prop itself
@@ -1417,8 +1473,7 @@ export async function createDesk(opts: {
           if (touch.leave()) request();
         }, 1800);
       }
-    } else if (onGlass(e)) void api.sitDown();
-    else if (framedNow) void unframe(); // a click on nothing comes back from a close-up
+    } else if (framedNow) void unframe(); // a click on nothing comes back from a close-up
   });
   // Hover: one raycast per frame at most, however fast the pointer moves.
   let hoverEvent: PointerEvent | null = null;
@@ -1454,9 +1509,9 @@ export async function createDesk(opts: {
         hoverEvent = null;
         if (seated || transitioning) return touch.leave();
         const target = touch.pick(ev, vw, vh);
-        const glassy = !target && onGlass(ev);
-        if (glassy ? touch.say("Apple II", "sit back down", ev, loaded?.tube) : touch.hover(target, ev)) request();
-        canvas.style.cursor = target ? "pointer" : glassy ? "zoom-in" : "grab";
+        const glassy = target?.object === root && !restoreStrip;
+        if (glassy ? touch.say("Apple II", monitorFocused ? "enter terminal" : "zoom in", ev, tube) : touch.hover(target, ev)) request();
+        canvas.style.cursor = glassy ? "zoom-in" : target ? "pointer" : "grab";
       });
     }
     hoverEvent = e;
@@ -1487,12 +1542,7 @@ export async function createDesk(opts: {
     scene.add(led);
     return { slot, out, quaternion, led };
   })();
-  const computerOccluders: Box3[] = [];
-  root.traverse((x) => {
-    const m = x as Mesh;
-    if (m.isMesh && m !== loaded?.tube) computerOccluders.push(new Box3().setFromObject(m));
-  });
-  mergeStaticLeaves("computer", root, (o) => o === loaded?.tube);
+  mergeStaticLeaves("computer", root, (o) => o === tube);
 
   if (editing) {
     const { OrbitControls } = await import("three/examples/jsm/controls/OrbitControls.js");
@@ -1528,8 +1578,9 @@ export async function createDesk(opts: {
     },
     setMuted: (m) => opts.sound?.setMuted(m),
     sitDownAndRun: async (command) => {
-      await api.sitDown();
-      opts.run(command);
+      if (restoreStrip) return;
+      await focusMonitor();
+      if (!restoreStrip) opts.run(command);
     },
   });
 
@@ -1545,8 +1596,10 @@ export async function createDesk(opts: {
     },
 
     async stepBack() {
+      if (monitorFocused) return unframe();
       if (!seated || transitioning) return;
       await ready;
+      if (!seated || transitioning) return;
       transitioning = true;
       seated = false;
       host.hidden = false;
@@ -1602,9 +1655,11 @@ export async function createDesk(opts: {
     },
 
     async sitDown() {
-      if (seated || (transitioning && !framedNow)) return;
+      if (restoreStrip || seated || transitioning) return;
       transitioning = true;
       framedNow = false;
+      setMonitorFocus(false);
+      touch.leave();
       clearTouchChip();
       activePointers.clear();
       down = null;
@@ -1639,22 +1694,12 @@ export async function createDesk(opts: {
   };
 
   // ── the desk, for features (src/features): built once the props map exists, below ──────────
-  const centreRay = new Raycaster();
-  const lookingAt = (): string | null => {
-    centreRay.setFromCamera(new Vector2(0, 0), camera);
-    const hit = centreRay.intersectObjects([...props.values()], true)[0];
-    if (!hit) return null;
-    for (let p: Object3D | null = hit.object; p; p = p.parent) if (p.name && props.get(p.name) === p) return p.name;
-    return null;
-  };
-  let blackoutRunning = false;
-  const blackout = async (ms: number, keep: Object3D[] = [], o: { terminal?: boolean } = {}) => {
-    if (blackoutRunning) return;
-    blackoutRunning = true;
+  const lookingAt = () => touch.pick({ clientX: vw / 2, clientY: vh / 2 }, vw, vh)?.object ?? null;
+  const beginBlackout = (keep: Object3D[], terminal: boolean, standby: boolean) => {
     const kept = new Set<Object3D>();
     for (const k of keep) k.traverse((o) => kept.add(o));
     const lights: { light: { intensity: number }; was: number }[] = [];
-    const emissives: { m: MeshStandardMaterial; was: number }[] = [];
+    const emissives = new Map<MeshStandardMaterial, number>();
     const hidden: Object3D[] = [];
     scene.traverse((o) => {
       const l = o as unknown as { isLight?: boolean; intensity: number };
@@ -1663,7 +1708,9 @@ export async function createDesk(opts: {
       if (!mesh.isMesh || kept.has(o)) return;
       for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
         const std = m as MeshStandardMaterial;
-        if (std.isMeshStandardMaterial && std.emissiveIntensity > 0) emissives.push({ m: std, was: std.emissiveIntensity });
+        if (std.isMeshStandardMaterial && (std.emissiveMap || std.emissive.getHex() !== 0)) {
+          emissives.set(std, std.emissiveIntensity);
+        }
       }
       // LEDs and the like: additive, unlit, not tone mapped
       const basic = mesh.material as MeshBasicMaterial;
@@ -1671,26 +1718,68 @@ export async function createDesk(opts: {
         hidden.push(mesh);
       }
     });
-    for (const l of lights) l.light.intensity = 0;
-    for (const e of emissives) e.m.emissiveIntensity = 0;
-    for (const h of hidden) h.visible = false;
+    darken = () => {
+      for (const l of lights) l.light.intensity = 0;
+      for (const material of emissives.keys()) material.emissiveIntensity = 0;
+      for (const h of hidden) h.visible = false;
+    };
+    darken();
     const exposure = renderer.toneMappingExposure;
     const env = scene.environmentIntensity;
-    renderer.toneMappingExposure = 0.35;
-    scene.environmentIntensity = 0;
-    if (!o.terminal) css.domElement.style.visibility = "hidden"; // the terminal under the glass goes dark (unless a UPS keeps it up)
+    renderer.toneMappingExposure = standby ? 0.72 : 0.35;
+    scene.environmentIntensity = standby ? env * 0.045 : 0;
+    if (!terminal) css.domElement.style.visibility = "hidden"; // the terminal under the glass goes dark (unless a UPS keeps it up)
     opts.sound?.loop("hum", false);
     relight();
-    await animate(Math.max(1, ms), () => {});
-    for (const l of lights) l.light.intensity = l.was;
-    for (const e of emissives) e.m.emissiveIntensity = e.was;
-    for (const h of hidden) h.visible = true;
-    renderer.toneMappingExposure = exposure;
-    scene.environmentIntensity = env;
-    css.domElement.style.visibility = "";
-    opts.sound?.loop("hum", true);
-    relight();
-    blackoutRunning = false;
+    return () => {
+      darken = null;
+      for (const l of lights) l.light.intensity = l.was;
+      for (const [material, intensity] of emissives) material.emissiveIntensity = intensity;
+      for (const h of hidden) h.visible = true;
+      renderer.toneMappingExposure = exposure;
+      scene.environmentIntensity = env;
+      css.domElement.style.visibility = "";
+      opts.sound?.loop("hum", true);
+      if (timeK !== (time === "night" ? 1 : 0)) setTime(time);
+      relight();
+    };
+  };
+  const blackout = async (ms: number, keep: Object3D[] = [], o: { terminal?: boolean } = {}) => {
+    if (darken) return;
+    const restore = beginBlackout(keep, !!o.terminal, false);
+    try {
+      await animate(ms, () => {});
+    } finally {
+      restore();
+    }
+  };
+  const restoreButton = document.createElement("button");
+  restoreButton.textContent = "Switch power on";
+  restoreButton.onclick = () => {
+    const strip = props.get("powerstrip");
+    if (strip) touch.activate(strip);
+  };
+  const setStripPower = (on: boolean) => {
+
+    const bulb = props.get("powerstrip")?.getObjectByName("standby-bulb");
+    const pilot = bulb?.children.find((o) => (o as PointLight).isPointLight) as PointLight | undefined;
+    if (!on) {
+      if (darken) return;
+      restoreStrip = beginBlackout(bulb ? [bulb] : [], false, true);
+      if (pilot) pilot.intensity = 0.26;
+      screenEl.inert = true;
+      touch.leave();
+      updateHint();
+      restoreButton.focus({ preventScroll: true });
+    } else {
+      if (!restoreStrip) return;
+      restoreStrip();
+      restoreStrip = null;
+      if (pilot) pilot.intensity = 0;
+      screenEl.inert = false;
+      updateHint();
+    }
+    request();
   };
 
   /** Uploads textures to WebGL in <= 6 ms slices so the fullscreen terminal stays responsive without burning 140 frames. */
@@ -1740,7 +1829,6 @@ export async function createDesk(opts: {
         }
       }
     }
-    touch.setTargets([...props.values(), room.windowFrame], computerOccluders);
     deskApi = {
       scene,
       camera,
@@ -1752,6 +1840,8 @@ export async function createDesk(opts: {
       time: () => time,
       setTime: (next) => void fadeTime(next).then(relight),
       blackout,
+      setStripPower,
+      stripOff: () => !!restoreStrip,
       caption: (text) => {
         ambientCaption = text;
         showCaption();
@@ -1766,7 +1856,7 @@ export async function createDesk(opts: {
         ? { play: (cue, o) => opts.sound!.play(cue as Cue, o), music: (on) => opts.sound!.music(on), loop: (name, on) => opts.sound!.loop(name, on), muted: () => opts.sound!.muted() }
         : null,
       terminal: { run: opts.run, reboot: opts.reboot ?? (async () => {}) },
-      sitDown: () => api.sitDown(),
+      sitDown: focusMonitor,
       pvm: () => (props.get("crt")?.userData.pvm as PvmScreen | undefined) ?? null,
       activate: (object, o) => touch.activate(object, o),
       frame: frameOn,

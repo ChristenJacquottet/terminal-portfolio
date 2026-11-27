@@ -228,7 +228,7 @@ async function land(stop: Stop) {
   const s = strings.get(stop.place);
   const m = s?.material as MeshStandardMaterial | undefined;
   if (s && m) s.visible = true;
-  d.sound?.play("paper", { volume: 0.5 });
+  d.sound?.play("cardFlick", { volume: 0.5 });
   const swing = card ? swingCard(d, card) : Promise.resolve();
   await d.animate(1700, (t) => {
     if (m) m.emissiveIntensity = 2.2 * Math.sin(Math.min(1, t * 2.4) * Math.PI * 0.5) * (1 - easeOut(Math.max(0, t - 0.35) / 0.65));
