@@ -98,10 +98,21 @@ const BY_NAME: Record<string, Hotspot> = {
 };
 
 const MATERIAL_CUES: Record<string, string> = {
-  thinkpad: "caseTap", macbook: "caseTap", c64: "caseTap", drawers: "caseTap",
-  patchleads: "caseTap", switch: "rackTap", drives: "rackTap", pegboard: "rackTap", spool: "caseTap",
+  thinkpad: "caseTap", macbook: "rackTap", switch: "rackTap", drives: "toolClink",
+  c64: "key", pegboard: "woodKnock", spool: "spoolRoll", drawers: "partsRattle",
+  patchleads: "cableBrush", cableloop: "cableBrush", tape: "caseTap",
   pliers: "toolClink", screwdrivers: "toolClink", cutters: "toolClink", rule: "toolClink",
+  pens: "partsRattle", biplane: "woodKnock", skateboard: "woodKnock", chair: "woodKnock",
+  corkboard: "woodKnock", frame: "frameKnock", pixelart: "frameKnock", diploma: "frameKnock",
+  longhorn: "woodKnock", clock: "glassTick", super8: "caseTap", suitcase: "lidClose",
+  pennant: "fabric", mortarboard: "fabric", rugby: "ballBounce",
+  ivy: "foliage", monstera: "foliage", plant: "foliage",
+  notebook: "paper", books: "paper", worldmap: "cardFlick", card: "cardFlick",
 };
+
+// These actions require the room's mains or would navigate to the unpowered Apple II.
+const POWERED = new Set(["computer", "lamp", "time", "server", "ups", "nas", "picluster", "soldering",
+  "games-arcade", "breadboard", "slate", "keylight"]);
 
 /** The defaults, with every feature's labels over them (src/features). */
 const HOTSPOTS: Record<string, Hotspot> = { ...BY_NAME, ...featureHotspots };
@@ -303,8 +314,10 @@ export function createInteractions(o: {
   let tapeIn = false;
   let playing = false;
 
+  const unpowered = (spot: Hotspot) => o.desk()?.stripOff() && (spot.nav || POWERED.has(spot.kind));
   const labelFor = (t: Target): [string, string | undefined] => {
     const { spot } = t;
+    if (unpowered(spot)) return [spot.label, "power is off"];
     for (const f of features) {
       const custom = f.label?.(t.object, spot);
       if (custom) return custom;
@@ -737,7 +750,7 @@ export function createInteractions(o: {
   /** `stay`: the terminal did it while you're stepped back: the prop answers, you stay where you are. */
   function click(t: Target, stay = false) {
     const { object, spot } = t;
-    if (busy) return;
+    if (busy || unpowered(spot)) return;
     const action = featureActions[spot.kind];
     if (action) {
       void action(ctxFor(t, stay));
@@ -789,7 +802,7 @@ export function createInteractions(o: {
         void once(object, async () => {
           leave();
           if (!stay) await closeUp(object);
-          sfx("paper", object);
+          sfx("cardFlick", object);
           if (object.getWorldPosition(new Vector3()).y > 0.1) {
             const z0 = object.rotation.z;
             await o.animate(260, (t) => (object.rotation.z = z0 + 0.04 * wobble(t, 2, 3.5)));
@@ -858,7 +871,7 @@ export function createInteractions(o: {
       }
       case "walkman":
         if (!tapeIn) {
-          sfx("tap", object);
+          sfx("caseTap", object);
           void once(object, () => hop(object, 0.012, 360));
           return;
         }
@@ -877,8 +890,7 @@ export function createInteractions(o: {
     const motions: Record<string, (x: Object3D) => Promise<unknown>> = { spin, hop: (x) => hop(x), bounce, wiggle: (x) => wiggle(x), swing, flip };
     const motion = motions[spot.kind];
     if (!motion) return;
-    const cue = MATERIAL_CUES[object.name] ?? (spot.kind === "spin" ? "spin" :
-      spot.kind === "hop" || spot.kind === "bounce" || spot.kind === "flip" ? "tap" : "paper");
+    const cue = MATERIAL_CUES[object.name] ?? (object.name.startsWith("postcard:") ? "cardFlick" : "tap");
     void once(object, async () => {
       sfx(cue, object);
       await motion(object);

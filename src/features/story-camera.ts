@@ -266,7 +266,7 @@ async function shoot(object: Object3D, sfx: (cue: string, at?: Object3D, volume?
   });
   print.root.position.copy(end);
   print.root.rotation.set(0, rest.turn, 0);
-  sfx("paper", object, 0.35);
+  sfx("cardFlick", object, 0.35);
   d.relight();
   void develop(print, animate);
 }
@@ -396,7 +396,7 @@ const cameras: Feature = {
       const p = prints.find((x) => x.root === object);
       if (!p) return;
       leave();
-      sfx("paper", object, 0.4);
+      sfx("cardFlick", object, 0.4);
       open(p);
     },
   },

@@ -1075,9 +1075,9 @@ export async function addProps(
   add("studiolight", (o) => place(o, room.desk.minX - 0.7, wall + 0.8, { height: 1.6, rotY: 0.7, y: floor, shadow: true })); // by the window, out of the lab's way
   add("suitcase", (o) => place(o, room.desk.minX - 0.3, wall + 0.3, { width: 0.6, rotY: 0.15, y: floor, shadow: true }));
   add("skateboard", (o) => place(o, room.desk.minX - 0.12, wall + 0.2, { height: 0.7, y: floor, shadow: true }));
-  // The implementation side: a breadboard mid-build, the meter on it, the joystick by the keys.
+  // The implementation side: a breadboard mid-build, the meter behind it, the joystick by the keys.
   add("breadboard", (o) => place(o, max.x + 0.58, back + 0.36, { width: 0.15, rotY: -0.3 }));
-  add("multimeter", (o) => place(o, max.x + 0.64, back + 0.56, { height: 0.12, rotY: -0.6 }));
+  add("multimeter", (o) => place(o, max.x + 0.60, back + 0.21, { height: 0.12, rotY: -0.48 }));
   add("joystick", (o) => place(o, max.x + 0.12, max.z + 0.18, { height: 0.11, rotY: -0.3 }));
   put("headphones", place(headphones(), max.x + 0.62, front - 0.28, { rotY: -0.35 }));
   // The active lab occupies the three shelves visible above the desktop.
@@ -1101,7 +1101,7 @@ export async function addProps(
     const sw = onRack("switch", 1, -0.13, { width: 0.24 });
     const ports = sw ? addSwitchLeds(sw) : null;
     const nas = onRack("nas", 1, 0.18, { height: 0.19, shadow: false });
-    onRack("c64", 2, -0.075, { width: 0.29, rotY: -0.04 });
+    onRack("c64", 2, -0.165, { width: 0.29, rotY: -0.04 });
     const top = tops[tops.length - 1];
     const dockX = 0.178;
     if (top !== undefined) {
@@ -1139,16 +1139,16 @@ export async function addProps(
     const pis = nasTop === undefined ? null : put("picluster", place(piCluster(), labX + along.x * 0.18, labZ + along.z * 0.18, {
       width: 0.086, rotY: turn + 0.08, y: nasTop, shadow: false,
     }));
-    const drawers = onLevel("drawers", partsDrawers(), 2, -0.293, 0.12, { width: 0.12 }, spot("parts drawers", "resistors, mostly"));
+    const drawers = onLevel("drawers", partsDrawers(), 2, 0.052, 0.12, { width: 0.12 }, spot("parts drawers", "resistors, mostly"));
     if (drawers) {
       drawers.updateWorldMatrix(true, true);
       const top = new Box3().setFromObject(drawers.children[0], true).max.y;
-      const spool = put("spool", place(cableSpool(), drawers.position.x, drawers.position.z, { height: 0.069, y: top, rotY: turn + 0.8, shadow: false }));
+      const spool = put("spool", place(cableSpool(), drawers.position.x, drawers.position.z, { height: 0.077, y: top, rotY: turn + 0.4, shadow: false }));
       spool.userData.hotspot = spot("a spool of cat6", "for the next run");
     }
-    const iron = onLevel("soldering", solderingStation(), 2, 0.228, 0.15, { width: 0.15, rotY: -0.14 }, spot("soldering station", "the tip's cold"));
+    const iron = onLevel("soldering", solderingStation(), 2, 0.272, 0.15, { width: 0.15, rotY: -0.14 }, spot("soldering station", "the tip's cold"));
     const upsBox = onLevel("ups", ups(), 1, -0.302, 0.08, { height: 0.145 }, spot("the UPS", "for the Dallas storms"));
-    onLevel("drives", spareDrives(), 2, 0.114, 0.08, { width: 0.088, rotY: 0.12 }, spot("spare drives", "backups of the backups"));
+    onLevel("drives", spareDrives(), 2, 0.158, 0.08, { width: 0.088, rotY: 0.12 }, spot("spare drives", "backups of the backups"));
 
     // Ethernet from the lit ports: the uplink down the back, one to the NAS, one to the Pis, one up
     // to the PVM, one off towards the desk. Drawn in world space, parented to the rack so the

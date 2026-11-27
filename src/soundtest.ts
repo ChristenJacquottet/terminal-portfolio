@@ -4,6 +4,7 @@ import { audio, type Cue } from "./audio";
 const CUE_GROUPS: { label: string; cues: Cue[] }[] = [
   { label: "keyboard & system", cues: ["key", "keySpace", "keyReturn", "click", "switch", "boot"] },
   { label: "disk ii", cues: ["diskInsert", "diskRead", "diskEject"] },
+  { label: "surfaces", cues: ["woodKnock", "frameKnock", "ceramicSet", "glassTick", "fabric", "foliage", "cardFlick", "spoolRoll", "partsRattle", "cableBrush"] },
   { label: "home lab", cues: ["rackTap", "caseTap", "toolClink", "fanTest"] },
   { label: "walkman & hinges", cues: ["tapeInsert", "tapeButton", "lidOpen", "lidClose"] },
   { label: "desk props", cues: ["phoneUp", "phoneDown", "paper", "tap", "clapper", "shutter", "spin", "slosh", "lampOn"] },

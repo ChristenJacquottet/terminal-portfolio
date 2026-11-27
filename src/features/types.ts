@@ -101,6 +101,9 @@ export type DeskApi = {
   lights: { lamp: SpotLight; glow: import("three").PointLight; fill: import("three").HemisphereLight; lab: import("three").PointLight };
   time: () => Time;
   setTime: (t: Time) => void;
+  /** The rack strip latches until the visitor restores it. */
+  setStripPower: (on: boolean) => void;
+  stripOff: () => boolean;
   /**
    * Everything electrical off for `ms`: lights, LEDs, screens, the hum, the terminal under the
    * glass. `keep` stays lit (the UPS's LCD); `terminal: true` keeps the terminal under the glass

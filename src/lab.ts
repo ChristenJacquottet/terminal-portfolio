@@ -21,6 +21,8 @@ import {
   MeshBasicMaterial,
   MeshStandardMaterial,
   PlaneGeometry,
+  PointLight,
+  SphereGeometry,
   SRGBColorSpace,
   TorusGeometry,
   TubeGeometry,
@@ -281,7 +283,19 @@ export function powerStrip(): Group {
   const g = new Group();
   const W = 0.3, H = 0.036, D = 0.062;
   g.add(box(W, H, D, cream, 0, H / 2, 0));
-  g.add(box(0.03, 0.012, 0.016, tomato, -W / 2 + 0.03, H + 0.0055, 0)); // the lit switch
+  const rocker = box(0.03, 0.012, 0.016, tomato, -W / 2 + 0.03, H + 0.0055, 0);
+  rocker.name = "strip-rocker";
+  g.add(rocker);
+  // A battery-backed locator beside the rocker, still visible when the outlets go dead.
+  const bulb = new Mesh(new SphereGeometry(0.0048, 12, 8), new MeshStandardMaterial({
+    color: "#ffe0ac", emissive: "#ffb75a", emissiveIntensity: 1.6, roughness: 0.35,
+  }));
+  bulb.position.set(-W / 2 + 0.011, H + 0.002, 0);
+  bulb.name = "standby-bulb";
+  const pilot = new PointLight("#ffc381", 0, 2.8, 1.45);
+  pilot.position.y = 0.035;
+  bulb.add(pilot);
+  g.add(bulb);
   g.add(ledCluster([{ p: new Vector3(-W / 2 + 0.03, H + 0.0125, 0), hex: "#ff6a3d", size: 0.004, dir: new Vector3(0, 1, 0) }]));
   for (let i = 0; i < 6; i++) {
     const x = -W / 2 + 0.07 + i * 0.038;
@@ -355,19 +369,33 @@ export function cableSpool(): Group {
   const R = 0.05;
   const flange = new MeshStandardMaterial({ color: "#ece2cc", roughness: 0.6 });
   const spool = new Group();
-  spool.add(new Mesh(new TorusGeometry(R * 0.62, R * 0.36, 12, 40), steelBlue));
+  for (let i = -2; i <= 2; i++) {
+    const winding = new Mesh(new TorusGeometry(R * 0.73, 0.0055, 8, 32), steelBlue);
+    winding.position.z = i * 0.009;
+    spool.add(winding);
+  }
   for (const z of [-0.026, 0.026]) {
-    const f = new Mesh(new CylinderGeometry(R, R, 0.004, 40), flange);
-    f.rotation.x = Math.PI / 2;
-    f.position.z = z;
-    spool.add(f);
+    const rim = new Mesh(new TorusGeometry(R - 0.003, 0.003, 8, 32), flange);
+    rim.position.z = z;
+    spool.add(rim);
+    for (const angle of [0.4, 0.4 + Math.PI / 2]) {
+      const spoke = box(2 * R - 0.006, 0.008, 0.004, flange, 0, 0, z);
+      spoke.rotation.z = angle;
+      spool.add(spoke);
+    }
   }
   const core = new Mesh(new CylinderGeometry(R * 0.28, R * 0.28, 0.056, 20), flange);
   core.rotation.x = Math.PI / 2;
   spool.add(core);
   spool.position.y = R;
   g.add(spool);
-  g.add(new Mesh(new TubeGeometry(new CatmullRomCurve3([new Vector3(R * 0.95, R * 1.1, 0.02), new Vector3(R * 1.4, R * 0.5, 0.05), new Vector3(R * 1.2, 0.003, 0.11), new Vector3(R * 0.3, 0.003, 0.16)]), 24, 0.0022, 6), steelBlue));
+  // Two rubber stops keep the upright reel on the cabinet. The loose end rests on the lid.
+  for (const x of [-0.021, 0.021]) g.add(box(0.012, 0.006, 0.066, nearBlack, x, 0.003, 0));
+  const tail = new CatmullRomCurve3([
+    new Vector3(0.038, 0.051, 0.012), new Vector3(0.055, 0.024, 0.018),
+    new Vector3(0.059, 0.003, 0.032), new Vector3(0.038, 0.0025, 0.049),
+  ]);
+  g.add(new Mesh(new TubeGeometry(tail, 20, 0.0022, 6), steelBlue));
   return g;
 }
 

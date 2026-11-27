@@ -146,14 +146,15 @@ async function sip(desk: DeskApi, cup: Object3D, sfx: (cue: string, at?: Object3
     sfx("slosh", cup, 0.6);
     liquid.knock(0.45);
     void stepCoffee(desk, liquid);
-  } else sfx("tap", cup, 0.7);
+  }
+  sfx("ceramicSet", cup, 0.7);
   report(desk);
 }
 
 /** An empty cup: you lift it, look in, and go make another. */
 async function peek(desk: DeskApi, cup: Object3D, sfx: (cue: string, at?: Object3D, volume?: number) => void) {
   await lift(desk, cup, null, 800, (t) => 0.35 * Math.sin(t * Math.PI), (t) => 0.5 * Math.sin(t * Math.PI));
-  sfx("tap", cup, 0.7);
+  sfx("ceramicSet", cup, 0.7);
 }
 
 async function refill(desk: DeskApi) {

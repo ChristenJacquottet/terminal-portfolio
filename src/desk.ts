@@ -716,6 +716,8 @@ export async function createDesk(opts: {
   if (envs.dusk) scene.environment = envs.dusk.texture;
   /** Dusk (the default: warm, everything reads) or the middle of the night (the window toggles it). */
   let time: Time = "dusk";
+  let darken: (() => void) | null = null;
+  let restoreStrip: (() => void) | null = null;
   let timeK = 0; // 0 dusk … 1 night, where the light is right now
   let screenGlow: PointLight | null = null; // made below, with the screen
   const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
@@ -724,6 +726,7 @@ export async function createDesk(opts: {
   const labDusk = new Color("#e9dece"), labNight = new Color("#5f83cc");
   /** Puts every light at `k` of the way from dusk to night. */
   const applyTime = (k: number) => {
+    if (darken) return;
     timeK = k;
     room.blend(k);
     fill.color.copy(fillDusk).lerp(fillNight, k);
@@ -749,7 +752,7 @@ export async function createDesk(opts: {
   const stale: Record<Time, boolean> = { dusk: true, night: true };
   const lightKey = () => `${lamp.intensity.toFixed(2)}|${spill.intensity.toFixed(2)}`;
   const captureRoom = (which: Time) => {
-    if (!probe) return;
+    if (!probe || darken) return;
     const was = timeK;
     applyTime(which === "night" ? 1 : 0);
     const hide = atmosphere ? [atmosphere.object] : [];
@@ -767,7 +770,7 @@ export async function createDesk(opts: {
     if (!capturedKey || lightKey() === capturedKey) return;
     clearTimeout(recaptureTimer);
     recaptureTimer = window.setTimeout(() => {
-      if (blackoutRunning || lightKey() === capturedKey) return;
+      if (darken || lightKey() === capturedKey) return;
       stale[time === "dusk" ? "night" : "dusk"] = true; // captured again when the time turns
       captureRoom(time);
       request();
@@ -999,6 +1002,8 @@ export async function createDesk(opts: {
     const tweening = tween ? tween(now) : false;
     if (!tweening) tween = null;
     for (const m of motions) if (!m(now)) motions.delete(m);
+    // An in-flight animation can change a lamp after the strip was switched off.
+    darken?.();
     const moving = controls?.enabled ? controls.update() : updateLook();
     // Moving things move their shadows; light-only changes (the time of day, the lamp's flicker, a
     // flash, steam) and the camera don't, so the shadow maps are redrawn only when a caster or a
@@ -1139,7 +1144,7 @@ export async function createDesk(opts: {
   // The heartbeat: about once a second while the desk is in view, the lab's activity lights
   // re-roll and one frame is drawn. Nothing else runs between frames.
   window.setInterval(() => {
-    if (host.hidden || seated || transitioning || document.hidden || reduced() || !pulses.size || running || frameMs > 40) return;
+    if (host.hidden || seated || transitioning || darken || document.hidden || reduced() || !pulses.size || running || frameMs > 40) return;
     for (const pulse of pulses) pulse();
     request();
   }, 1100);
@@ -1163,7 +1168,7 @@ export async function createDesk(opts: {
     if (touch.leave()) request();
     await fly({ position: centre.clone().addScaledVector(dir, distance), target: centre }, o.ms ?? 900, glass.uniforms.uStrength.value as number, ease);
     transitioning = false;
-    hint?.replaceChildren(backButton);
+    updateHint();
   };
   const unframe = async (ms = 900) => {
     if (!framedNow || seated || transitioning) return;
@@ -1175,6 +1180,7 @@ export async function createDesk(opts: {
     Object.assign(look, { active: true, yaw: 0, pitch: 0, lean: 0, toYaw: 0, toPitch: 0, toLean: 0 });
     updateLook(true);
     framedNow = false;
+    updateHint();
     transitioning = false;
     request();
   };
@@ -1367,14 +1373,19 @@ export async function createDesk(opts: {
     const changed = monitorFocused !== focused;
     monitorFocused = focused;
     if (changed) fitTube();
+    updateHint();
+  }
+  function updateHint() {
     if (!hint) return;
-    if (focused) hint.replaceChildren(backButton, enterButton);
+    if (restoreStrip) hint.replaceChildren(restoreButton);
+    else if (monitorFocused) hint.replaceChildren(backButton, enterButton);
+    else if (framedNow) hint.replaceChildren(backButton);
     else hint.textContent = wideHint;
   }
   setMonitorFocus(false);
 
   async function focusMonitor() {
-    if (monitorFocused || seated || transitioning) return;
+    if (restoreStrip || monitorFocused || seated || transitioning) return;
     if (look.active) {
       camTarget.copy(lookTarget());
       look.active = false;
@@ -1451,6 +1462,7 @@ export async function createDesk(opts: {
     if (!click || seated || transitioning || editing) return;
     const target = touch.pick(e, vw, vh);
     if (target?.object === root) {
+      if (restoreStrip) return;
       void (monitorFocused ? api.sitDown() : focusMonitor());
     } else if (target) {
       touch.click(target);
@@ -1497,7 +1509,7 @@ export async function createDesk(opts: {
         hoverEvent = null;
         if (seated || transitioning) return touch.leave();
         const target = touch.pick(ev, vw, vh);
-        const glassy = target?.object === root;
+        const glassy = target?.object === root && !restoreStrip;
         if (glassy ? touch.say("Apple II", monitorFocused ? "enter terminal" : "zoom in", ev, tube) : touch.hover(target, ev)) request();
         canvas.style.cursor = glassy ? "zoom-in" : target ? "pointer" : "grab";
       });
@@ -1566,8 +1578,9 @@ export async function createDesk(opts: {
     },
     setMuted: (m) => opts.sound?.setMuted(m),
     sitDownAndRun: async (command) => {
+      if (restoreStrip) return;
       await focusMonitor();
-      opts.run(command);
+      if (!restoreStrip) opts.run(command);
     },
   });
 
@@ -1642,7 +1655,7 @@ export async function createDesk(opts: {
     },
 
     async sitDown() {
-      if (seated || transitioning) return;
+      if (restoreStrip || seated || transitioning) return;
       transitioning = true;
       framedNow = false;
       setMonitorFocus(false);
@@ -1682,14 +1695,11 @@ export async function createDesk(opts: {
 
   // ── the desk, for features (src/features): built once the props map exists, below ──────────
   const lookingAt = () => touch.pick({ clientX: vw / 2, clientY: vh / 2 }, vw, vh)?.object ?? null;
-  let blackoutRunning = false;
-  const blackout = async (ms: number, keep: Object3D[] = [], o: { terminal?: boolean } = {}) => {
-    if (blackoutRunning) return;
-    blackoutRunning = true;
+  const beginBlackout = (keep: Object3D[], terminal: boolean, standby: boolean) => {
     const kept = new Set<Object3D>();
     for (const k of keep) k.traverse((o) => kept.add(o));
     const lights: { light: { intensity: number }; was: number }[] = [];
-    const emissives: { m: MeshStandardMaterial; was: number }[] = [];
+    const emissives = new Map<MeshStandardMaterial, number>();
     const hidden: Object3D[] = [];
     scene.traverse((o) => {
       const l = o as unknown as { isLight?: boolean; intensity: number };
@@ -1698,7 +1708,9 @@ export async function createDesk(opts: {
       if (!mesh.isMesh || kept.has(o)) return;
       for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
         const std = m as MeshStandardMaterial;
-        if (std.isMeshStandardMaterial && std.emissiveIntensity > 0) emissives.push({ m: std, was: std.emissiveIntensity });
+        if (std.isMeshStandardMaterial && (std.emissiveMap || std.emissive.getHex() !== 0)) {
+          emissives.set(std, std.emissiveIntensity);
+        }
       }
       // LEDs and the like: additive, unlit, not tone mapped
       const basic = mesh.material as MeshBasicMaterial;
@@ -1706,26 +1718,68 @@ export async function createDesk(opts: {
         hidden.push(mesh);
       }
     });
-    for (const l of lights) l.light.intensity = 0;
-    for (const e of emissives) e.m.emissiveIntensity = 0;
-    for (const h of hidden) h.visible = false;
+    darken = () => {
+      for (const l of lights) l.light.intensity = 0;
+      for (const material of emissives.keys()) material.emissiveIntensity = 0;
+      for (const h of hidden) h.visible = false;
+    };
+    darken();
     const exposure = renderer.toneMappingExposure;
     const env = scene.environmentIntensity;
-    renderer.toneMappingExposure = 0.35;
-    scene.environmentIntensity = 0;
-    if (!o.terminal) css.domElement.style.visibility = "hidden"; // the terminal under the glass goes dark (unless a UPS keeps it up)
+    renderer.toneMappingExposure = standby ? 0.72 : 0.35;
+    scene.environmentIntensity = standby ? env * 0.045 : 0;
+    if (!terminal) css.domElement.style.visibility = "hidden"; // the terminal under the glass goes dark (unless a UPS keeps it up)
     opts.sound?.loop("hum", false);
     relight();
-    await animate(Math.max(1, ms), () => {});
-    for (const l of lights) l.light.intensity = l.was;
-    for (const e of emissives) e.m.emissiveIntensity = e.was;
-    for (const h of hidden) h.visible = true;
-    renderer.toneMappingExposure = exposure;
-    scene.environmentIntensity = env;
-    css.domElement.style.visibility = "";
-    opts.sound?.loop("hum", true);
-    relight();
-    blackoutRunning = false;
+    return () => {
+      darken = null;
+      for (const l of lights) l.light.intensity = l.was;
+      for (const [material, intensity] of emissives) material.emissiveIntensity = intensity;
+      for (const h of hidden) h.visible = true;
+      renderer.toneMappingExposure = exposure;
+      scene.environmentIntensity = env;
+      css.domElement.style.visibility = "";
+      opts.sound?.loop("hum", true);
+      if (timeK !== (time === "night" ? 1 : 0)) setTime(time);
+      relight();
+    };
+  };
+  const blackout = async (ms: number, keep: Object3D[] = [], o: { terminal?: boolean } = {}) => {
+    if (darken) return;
+    const restore = beginBlackout(keep, !!o.terminal, false);
+    try {
+      await animate(ms, () => {});
+    } finally {
+      restore();
+    }
+  };
+  const restoreButton = document.createElement("button");
+  restoreButton.textContent = "Switch power on";
+  restoreButton.onclick = () => {
+    const strip = props.get("powerstrip");
+    if (strip) touch.activate(strip);
+  };
+  const setStripPower = (on: boolean) => {
+
+    const bulb = props.get("powerstrip")?.getObjectByName("standby-bulb");
+    const pilot = bulb?.children.find((o) => (o as PointLight).isPointLight) as PointLight | undefined;
+    if (!on) {
+      if (darken) return;
+      restoreStrip = beginBlackout(bulb ? [bulb] : [], false, true);
+      if (pilot) pilot.intensity = 0.26;
+      screenEl.inert = true;
+      touch.leave();
+      updateHint();
+      restoreButton.focus({ preventScroll: true });
+    } else {
+      if (!restoreStrip) return;
+      restoreStrip();
+      restoreStrip = null;
+      if (pilot) pilot.intensity = 0;
+      screenEl.inert = false;
+      updateHint();
+    }
+    request();
   };
 
   /** Uploads textures to WebGL in <= 6 ms slices so the fullscreen terminal stays responsive without burning 140 frames. */
@@ -1786,6 +1840,8 @@ export async function createDesk(opts: {
       time: () => time,
       setTime: (next) => void fadeTime(next).then(relight),
       blackout,
+      setStripPower,
+      stripOff: () => !!restoreStrip,
       caption: (text) => {
         ambientCaption = text;
         showCaption();

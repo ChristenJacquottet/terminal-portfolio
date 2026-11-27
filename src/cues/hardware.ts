@@ -1,8 +1,10 @@
 // Close mechanical sounds. The quiet tails distinguish a steel rail, plastic and loose tools.
+import { contact } from "./materials";
 import type { CueKit } from "../audio-engine";
 
 export default {
   rackTap(k: CueKit) {
+    contact(k, "Tin_medium", 0.22, 0.88);
     const r = k.rate * k.jitter(45);
     k.noise(k.brown, 0.036, 0.15 * k.vol, 460 * r, 1);
     k.tone(0.19, 224 * r, 216 * r, 0.055 * k.vol, "sine");
@@ -15,6 +17,7 @@ export default {
     k.noise(k.brown, 0.037, 0.07 * k.vol, 390 * r, 1, 0.016);
   },
   toolClink(k: CueKit) {
+    contact(k, "Metal_light", 0.25, 1.09);
     const r = k.rate * k.jitter(110);
     k.noise(k.white, 0.008, 0.08 * k.vol, 3300 * r, 1.8);
     k.tone(0.13, 1480 * r, 1450 * r, 0.033 * k.vol, "sine");
