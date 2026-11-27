@@ -58,6 +58,7 @@ function stepBack() {
         music: (on) => audio.music(on),
         loop: (name, on) => audio.loop(name, on),
         setInside: (t) => audio.setInside(t),
+        setRackMix: audio.setRackMix,
         mount: (parent) => void mountSoundToggle(parent),
         muted: () => audio.muted,
         setMuted: (m) => audio.setMuted(m),

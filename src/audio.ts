@@ -44,6 +44,8 @@ let muted = (() => {
 })();
 let unlocked = false;
 let inside = 0;
+let rackPan = 0.65;
+let rackPresence = 0.35;
 let wantRoom = false;
 let wantHum = false;
 let wantMusic = false;
@@ -56,6 +58,7 @@ const listeners = new Set<(muted: boolean) => void>();
 function loadEngine(): Promise<Engine> {
   enginePromise ??= import("./audio-engine").then((m) => {
     engine = m;
+    m.setRackMix(rackPan, rackPresence);
     if (ctx) {
       m.attach(ctx, { muted, inside, room: wantRoom, hum: wantHum, music: wantMusic });
     }
@@ -114,6 +117,7 @@ export const audio: {
   loop(name: "room" | "hum", on: boolean): void;
   music(on: boolean): Promise<void>;
   setInside(t: number): void;
+  setRackMix(pan: number, presence: number): void;
   muted: boolean;
   setMuted(m: boolean): void;
   onChange(fn: (muted: boolean) => void): () => void;
@@ -145,6 +149,13 @@ export const audio: {
     if (muted || !unlocked || !ensureContext()) return;
     const eng = engine ?? (await loadEngine());
     await eng.setMusic(true);
+  },
+
+  setRackMix(pan, presence) {
+    if (Math.abs(rackPan - pan) < 0.012 && Math.abs(rackPresence - presence) < 0.012) return;
+    rackPan = pan;
+    rackPresence = presence;
+    engine?.setRackMix(pan, presence);
   },
 
   setInside(t) {

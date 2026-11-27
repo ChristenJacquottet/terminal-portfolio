@@ -187,7 +187,12 @@ export function buildRoom(
   Object.assign(wall.material, { normalMap: tile(assets.wallNormal, 1 / 0.8, 1 / 0.8, false) });
   wall.position.z = wallZ;
   const skirting = box(7, 0.1, 0.015, new MeshStandardMaterial({ color: "#4a3626", roughness: 0.6 }), 0, floorY + 0.05, wallZ + 0.0075);
-  scene.add(wall, skirting);
+  // The wider turn toward the lab also sees the return wall at the right end of the room.
+  const side = new Mesh(new PlaneGeometry(5, 2.8), new MeshStandardMaterial({ color: "#767d76", roughness: 0.95 }));
+  side.rotation.y = -Math.PI / 2;
+  side.position.set(3.5, floorY + 1.4, wallZ + 2.5);
+  const sideTrim = box(0.015, 0.1, 5, skirting.material as MeshStandardMaterial, 3.4925, floorY + 0.05, wallZ + 2.5);
+  scene.add(wall, skirting, side, sideTrim);
 
   // ── window: painted casing, deep jambs, a sill, a meeting rail, blinds ─────────────────
   const paint = new MeshStandardMaterial({ color: PAINT, roughness: 0.55 });

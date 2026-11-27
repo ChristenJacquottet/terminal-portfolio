@@ -1,4 +1,4 @@
-// The power strip on the floor by the rack: everything is on one switch. Click it and the rocker
+// The power strip mounted under the network shelf: everything is on one switch. Click it and the rocker
 // clacks, the lab winds down with a falling whine, the PVM's picture collapses to a line, and the
 // room goes dark for a moment. Then the switch goes back on and the lab comes back as a sequence:
 // the CRTs thunk as they degauss, the PVM opens from a line, the switch and the Pis light up one by

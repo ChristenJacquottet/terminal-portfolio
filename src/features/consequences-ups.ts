@@ -1,4 +1,4 @@
-// The UPS on the rack's bottom shelf: click it for a simulated outage (a Dallas storm). The room
+// The UPS beside the network switch: click it for a simulated outage (a Dallas storm). The room
 // goes dark except the UPS and the Apple II's screen, which it feeds: its relay clicks over, the LCD
 // says ON BATTERY and counts, it beeps once a second; then the mains come back, the relay clicks
 // again, and the lab (which wasn't on the UPS) comes back up in order. The terminal never blinks.

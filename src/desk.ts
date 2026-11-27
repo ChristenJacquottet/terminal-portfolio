@@ -339,7 +339,7 @@ function mergeStaticLeaves(propName: string, root: Object3D, skipNode?: (o: Obje
 
   const collect = (node: Object3D) => {
     if (node !== root) {
-      if (!node.visible || node.userData?.hotspot || PROTECTED_SUBNODES.has(node.name) || skipNode?.(node)) return;
+      if (!node.visible || node.userData?.hotspot || node.userData.pickBlocker || PROTECTED_SUBNODES.has(node.name) || skipNode?.(node)) return;
     }
     const mesh = node as Mesh;
     if (
@@ -416,6 +416,7 @@ function contactShadow(): Mesh {
     new PlaneGeometry(0.75, 0.65),
     new MeshBasicMaterial({ map: new CanvasTexture(c), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }),
   );
+  mesh.raycast = () => {};
   mesh.rotation.x = -Math.PI / 2;
   mesh.position.y = 0.0005;
   return mesh;
@@ -602,6 +603,7 @@ export async function createDesk(opts: {
     music(on: boolean): Promise<void>;
     loop(name: "room" | "hum", on: boolean): void;
     setInside(t: number): void;
+    setRackMix(pan: number, presence: number): void;
     mount(parent: HTMLElement): void;
     muted(): boolean;
     setMuted(m: boolean): void;
@@ -719,7 +721,7 @@ export async function createDesk(opts: {
   const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
   const fillDusk = new Color("#e6d5bf"), fillNight = new Color("#4d6fb8");
   const groundDusk = new Color("#2e1d12"), groundNight = new Color("#101524");
-  const labDusk = new Color("#ffd19c"), labNight = new Color("#5f83cc");
+  const labDusk = new Color("#e9dece"), labNight = new Color("#5f83cc");
   /** Puts every light at `k` of the way from dusk to night. */
   const applyTime = (k: number) => {
     timeK = k;
@@ -941,7 +943,9 @@ export async function createDesk(opts: {
     look.yaw += (look.toYaw - look.yaw) * k;
     look.pitch += (look.toPitch - look.pitch) * k;
     look.lean += (look.toLean - look.lean) * k;
-    lookEuler.set(look.basePitch + look.pitch, look.baseYaw + look.yaw, 0);
+    // Lift the sightline from the keyboard to the equipment as the chair turns right.
+    const rackTurn = clamp(-look.yaw / 0.9, 0, 1);
+    lookEuler.set(look.basePitch + look.pitch + 0.15 * rackTurn * rackTurn, look.baseYaw + look.yaw, 0);
     camera.quaternion.setFromEuler(lookEuler);
     forward.set(0, 0, -1).applyQuaternion(camera.quaternion);
     camera.position.copy(look.head).addScaledVector(forward, look.lean);
@@ -949,7 +953,10 @@ export async function createDesk(opts: {
   }
   const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
   // Portrait screens crop horizontally, so let the head turn a bit further left to the window and right to the rack.
-  const yawBounds = () => (camera.aspect < 1 ? ([-0.68, 0.72] as const) : ([-LIMITS.yaw, LIMITS.yaw] as const));
+  const yawBounds = () => {
+    const yawToRack = Math.atan2(room.desk.maxX + 0.5 - look.head.x, look.head.z - (room.wallZ + 0.22));
+    return [-Math.max(LIMITS.yaw, yawToRack + look.baseYaw), camera.aspect < 1 ? 0.72 : LIMITS.yaw] as const;
+  };
   function turnHead(dx: number, dy: number) {
     // a full drag across the window turns the head about as far as it goes
     const [minYaw, maxYaw] = yawBounds();
@@ -968,6 +975,7 @@ export async function createDesk(opts: {
   }
 
   // Render on demand only.
+  const fanPosition = new Vector3();
   let running = false;
   let tween: ((now: number) => boolean) | null = null;
   /** Props in motion (interact.ts): each returns false when it's done. */
@@ -1002,6 +1010,13 @@ export async function createDesk(opts: {
       const t0 = performance.now();
       renderer.render(scene, camera);
       css.render(scene, camera);
+      const server = props.get("server");
+      if (server && opts.sound) {
+        camera.worldToLocal(server.getWorldPosition(fanPosition));
+        const distance = Math.max(0.01, fanPosition.length());
+        const facing = Math.max(0, -fanPosition.z / distance);
+        opts.sound.setRackMix(0.9 * fanPosition.x / distance, facing * Math.min(1, 1.15 / distance));
+      }
       frameMs = performance.now() - t0;
       stats.frames++;
     }
@@ -1148,6 +1163,7 @@ export async function createDesk(opts: {
     if (touch.leave()) request();
     await fly({ position: centre.clone().addScaledVector(dir, distance), target: centre }, o.ms ?? 900, glass.uniforms.uStrength.value as number, ease);
     transitioning = false;
+    hint?.replaceChildren(backButton);
   };
   const unframe = async (ms = 900) => {
     if (!framedNow || seated || transitioning) return;
@@ -1381,16 +1397,6 @@ export async function createDesk(opts: {
   }
 
   // The canvas is on top, so clicks on the glass are found by ray: a click (not a drag) sits you down.
-  const ray = new Raycaster();
-  const pointer = new Vector2();
-  const onComputer = (e: PointerEvent, exact = false) => {
-    pointer.set((e.clientX / vw) * 2 - 1, -(e.clientY / vh) * 2 + 1);
-    ray.setFromCamera(pointer, camera);
-    if (!ray.ray.intersectsBox(bounds)) return false;
-    if (exact) return ray.intersectObject(root, true).length > 0;
-    return computerOccluders.some((box) => ray.ray.intersectsBox(box)) ||
-      ray.intersectObject(tube, false).length > 0;
-  };
   const canvas = renderer.domElement;
   const activePointers = new Map<number, { x: number; y: number }>();
   let down: { id: number; x: number; y: number } | null = null;
@@ -1444,7 +1450,9 @@ export async function createDesk(opts: {
     down = null;
     if (!click || seated || transitioning || editing) return;
     const target = touch.pick(e, vw, vh);
-    if (target) {
+    if (target?.object === root) {
+      void (monitorFocused ? api.sitDown() : focusMonitor());
+    } else if (target) {
       touch.click(target);
       if (e.pointerType === "touch" && !target.spot.nav) {
         if (touch.hover(target, e)) request(); // the bubble sits over the prop itself
@@ -1453,8 +1461,7 @@ export async function createDesk(opts: {
           if (touch.leave()) request();
         }, 1800);
       }
-    } else if (onComputer(e, true)) void (monitorFocused ? api.sitDown() : focusMonitor());
-    else if (framedNow) void unframe(); // a click on nothing comes back from a close-up
+    } else if (framedNow) void unframe(); // a click on nothing comes back from a close-up
   });
   // Hover: one raycast per frame at most, however fast the pointer moves.
   let hoverEvent: PointerEvent | null = null;
@@ -1490,9 +1497,9 @@ export async function createDesk(opts: {
         hoverEvent = null;
         if (seated || transitioning) return touch.leave();
         const target = touch.pick(ev, vw, vh);
-        const glassy = !target && onComputer(ev);
+        const glassy = target?.object === root;
         if (glassy ? touch.say("Apple II", monitorFocused ? "enter terminal" : "zoom in", ev, tube) : touch.hover(target, ev)) request();
-        canvas.style.cursor = target ? "pointer" : glassy ? "zoom-in" : "grab";
+        canvas.style.cursor = glassy ? "zoom-in" : target ? "pointer" : "grab";
       });
     }
     hoverEvent = e;
@@ -1523,11 +1530,6 @@ export async function createDesk(opts: {
     scene.add(led);
     return { slot, out, quaternion, led };
   })();
-  const computerOccluders: Box3[] = [];
-  root.traverse((x) => {
-    const m = x as Mesh;
-    if (m.isMesh && m !== tube) computerOccluders.push(new Box3().setFromObject(m));
-  });
   mergeStaticLeaves("computer", root, (o) => o === tube);
 
   if (editing) {
@@ -1679,14 +1681,7 @@ export async function createDesk(opts: {
   };
 
   // ── the desk, for features (src/features): built once the props map exists, below ──────────
-  const centreRay = new Raycaster();
-  const lookingAt = (): string | null => {
-    centreRay.setFromCamera(new Vector2(0, 0), camera);
-    const hit = centreRay.intersectObjects([...props.values()], true)[0];
-    if (!hit) return null;
-    for (let p: Object3D | null = hit.object; p; p = p.parent) if (p.name && props.get(p.name) === p) return p.name;
-    return null;
-  };
+  const lookingAt = () => touch.pick({ clientX: vw / 2, clientY: vh / 2 }, vw, vh)?.object ?? null;
   let blackoutRunning = false;
   const blackout = async (ms: number, keep: Object3D[] = [], o: { terminal?: boolean } = {}) => {
     if (blackoutRunning) return;
@@ -1780,7 +1775,6 @@ export async function createDesk(opts: {
         }
       }
     }
-    touch.setTargets([...props.values(), room.windowFrame], computerOccluders);
     deskApi = {
       scene,
       camera,

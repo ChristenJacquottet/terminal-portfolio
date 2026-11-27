@@ -114,8 +114,8 @@ export type DeskApi = {
    * second) until it's released with null: a game being played, a take on the slate.
    */
   holdCaption: (text: string | null) => void;
-  /** The prop nearest the middle of the view, by name. */
-  lookingAt: () => string | null;
+  /** The interactive object visible at the center of the view. */
+  lookingAt: () => Object3D | null;
   /** The heartbeat (about 1 Hz while the desk is in view): add a function to run on it. */
   pulses: Set<() => void>;
   sound: {

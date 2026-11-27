@@ -740,6 +740,20 @@ function endRoom() {
   fn?.();
 }
 
+let rackPan = 0.65;
+let rackPresence = 0.35;
+let fanMix: { pan: StereoPannerNode | null; level: GainNode; filter: BiquadFilterNode } | null = null;
+
+export function setRackMix(pan: number, presence: number) {
+  rackPan = pan;
+  rackPresence = presence;
+  if (!fanMix || !ctx) return;
+  const now = ctx.currentTime;
+  fanMix.pan?.pan.setTargetAtTime(pan, now, 0.12);
+  fanMix.level.gain.setTargetAtTime(0.3 + 1.4 * presence, now, 0.15);
+  fanMix.filter.frequency.setTargetAtTime(720 + 780 * presence, now, 0.15);
+}
+
 function startHum() {
   if (stopHum || !wantLoop.hum || muted || !ctx || !ambFilter || !brownBuf) return;
   const now = ctx.currentTime;
@@ -778,10 +792,18 @@ function startHum() {
   fbp.frequency.value = 1150;
   fbp.Q.value = 0.7;
   const fg = ctx.createGain();
-  fg.gain.value = 0.009;
+  fg.gain.value = 0.021;
   fan.connect(fbp);
   fbp.connect(fg);
-  fg.connect(gain);
+  const pan = ctx.createStereoPanner?.() ?? null;
+  const level = ctx.createGain();
+  if (pan) pan.pan.value = rackPan;
+  level.gain.value = 0.3 + 1.4 * rackPresence;
+  fbp.frequency.value = 720 + 780 * rackPresence;
+  fg.connect(level);
+  level.connect(pan ?? gain);
+  pan?.connect(gain);
+  fanMix = { pan, level, filter: fbp };
   fan.start(now, Math.random() * 1.2);
   const flutter = ctx.createOscillator();
   flutter.frequency.value = 0.31;
@@ -806,7 +828,18 @@ function startHum() {
     o.start(now);
     srcs.push(o);
   }
-  stopHum = () => fadeStop(gain, srcs, 300);
+  const motor = ctx.createOscillator();
+  const motorLevel = ctx.createGain();
+  motor.frequency.value = 109;
+  motorLevel.gain.value = 0.008;
+  motor.connect(motorLevel);
+  motorLevel.connect(level);
+  motor.start(now);
+  srcs.push(motor);
+  stopHum = () => {
+    fanMix = null;
+    fadeStop(gain, srcs, 300);
+  };
 }
 
 function endHum() {

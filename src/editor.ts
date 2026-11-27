@@ -3,6 +3,7 @@
 // Every change is kept as a draft in this browser; "save" writes src/layout.json through the dev
 // server (vite.config.ts), and "copy" puts the same JSON on the clipboard to paste anywhere.
 // Loaded only in edit mode, so visitors never download it.
+import { firstSurface } from "./picking";
 import { Box3Helper, Box3, Raycaster, Vector2, Vector3, type Object3D, type PerspectiveCamera, type Scene } from "three";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -41,6 +42,7 @@ export function startEditor(opts: {
 
   const gizmo = new TransformControls(camera, canvas);
   gizmo.setSize(0.8);
+  gizmo.getHelper().userData.ignorePick = true;
   scene.add(gizmo.getHelper());
   const box = new Box3();
   const outline = new Box3Helper(box, "#7ee787");
@@ -166,10 +168,6 @@ export function startEditor(opts: {
     for (let p = o; p; p = p.parent) if (p.name && props.get(p.name) === p) return p.name;
     return null;
   };
-  const shown = (o: Object3D) => {
-    for (let p: Object3D | null = o; p; p = p.parent) if (!p.visible) return false;
-    return true;
-  };
   let down: { x: number; y: number } | null = null;
   canvas.addEventListener("pointerdown", (e) => (down = { x: e.clientX, y: e.clientY }));
   canvas.addEventListener("pointerup", (e) => {
@@ -179,7 +177,7 @@ export function startEditor(opts: {
     const rect = canvas.getBoundingClientRect();
     pointer.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
     ray.setFromCamera(pointer, camera);
-    const hit = ray.intersectObjects([...props.values()], true).find((h) => shown(h.object));
+    const hit = firstSurface(ray, scene);
     select(owner(hit?.object ?? null));
   });
 
