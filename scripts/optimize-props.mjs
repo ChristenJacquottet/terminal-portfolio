@@ -95,32 +95,13 @@ function simplifyAttr(prim, ratio, error, flags = ["Permissive", "LockBorder"]) 
 }
 
 
-function pruneHeadphonesScene(scene) {
-  const keep = new Set();
-  const markAncestorsAndSelf = (node) => {
-    let cur = node;
-    while (cur && !cur.isDisposed?.()) {
-      keep.add(cur);
-      cur = cur.getParentNode?.() ?? null;
-    }
-    const markDesc = (n) => {
-      keep.add(n);
-      for (const c of n.listChildren()) markDesc(c);
-    };
-    markDesc(node);
-  };
-  const findTarget = (n) => {
-    if (n.getName() === "headset_Material_0" || n.getName() === "headset") markAncestorsAndSelf(n);
-    for (const c of n.listChildren()) findTarget(c);
-  };
-  for (const c of scene.listChildren()) findTarget(c);
-  if (keep.size === 0) return;
-
-  const sweep = (n) => {
-    for (const c of [...n.listChildren()]) sweep(c);
-    if (!keep.has(n)) n.dispose();
-  };
-  for (const c of [...scene.listChildren()]) sweep(c);
+// This display plane belongs to the product scan. It would enlarge the NAS bounds and hover rim.
+function removeNasPlane(scene) {
+  const planes = [];
+  scene.traverse((node) => {
+    if (node.getName() === "Plane__0") planes.push(node);
+  });
+  for (const plane of planes) plane.dispose();
 }
 
 function cleanSceneMaterialsAndAttributes(scene, prop) {
@@ -218,7 +199,7 @@ if (isDir) {
     await subDoc.transform(dequantize());
     for (const a of subDoc.getRoot().listAnimations()) a.dispose();
     const sc = subDoc.getRoot().listScenes()[0];
-    if (prop.name === "headphones") pruneHeadphonesScene(sc);
+    if (prop.name === "nas") removeNasPlane(sc);
     if (!prop.keepHierarchy) {
       await subDoc.transform(palette({ min: 3 }), flatten(), join());
     }
@@ -261,7 +242,7 @@ const bumpTex = (tex, maxDim, quality) => {
 for (let i = 0; i < PROPS.length; i++) {
   const prop = PROPS[i];
   const sc = scenes[i];
-  if (prop.name === "headphones") pruneHeadphonesScene(sc);
+  if (prop.name === "nas") removeNasPlane(sc);
   cleanSceneMaterialsAndAttributes(sc, prop);
 
   const boundsBefore = getBounds(sc);
@@ -316,14 +297,12 @@ for (let i = 0; i < PROPS.length; i++) {
   for (const c of sc.listChildren()) walk(c);
 
   const boundsAfter = getBounds(sc);
-  if (prop.name !== "headphones") {
-    const relShift = Math.max(
-      ...boundsBefore.min.map((v, k) => Math.abs(v - boundsAfter.min[k]) / sizeBefore[k]),
-      ...boundsBefore.max.map((v, k) => Math.abs(v - boundsAfter.max[k]) / sizeBefore[k]),
-    );
-    if (relShift > 0.02) {
-      console.warn(`warning: [${prop.name}] bounds shifted by ${(relShift * 100).toFixed(2)}%`);
-    }
+  const relShift = Math.max(
+    ...boundsBefore.min.map((v, k) => Math.abs(v - boundsAfter.min[k]) / sizeBefore[k]),
+    ...boundsBefore.max.map((v, k) => Math.abs(v - boundsAfter.max[k]) / sizeBefore[k]),
+  );
+  if (relShift > 0.02) {
+    console.warn(`warning: [${prop.name}] bounds shifted by ${(relShift * 100).toFixed(2)}%`);
   }
 }
 

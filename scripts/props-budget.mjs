@@ -27,7 +27,6 @@ export const PROPS = [
   { name: "breadboard", bc: 256, aux: 128, ratio: 0.1, error: 0.02, pruneSmall: true },
   { name: "multimeter", bc: 512, aux: 128, ratio: 0.26, error: 0.01 },
   { name: "joystick", bc: 256, aux: 128, ratio: 0.26, error: 0.012 },
-  { name: "headphones", bc: 256, aux: 128, ratio: 0.32, error: 0.012, keepHierarchy: true },
   { name: "answering", bc: 256, aux: 128, ratio: 0.36, error: 0.01 },
   { name: "rack", bc: 384, aux: 128, ratio: 1, error: 0 }, // unsimplified: vertical raycast finds shelf heights
   { name: "switch", bc: 256, aux: 128, ratio: 0.5, error: 0.01 },
@@ -39,7 +38,6 @@ export const PROPS = [
   { name: "cutters", bc: 256, aux: 128, ratio: 0.35, error: 0.012 },
   { name: "thinkpad", bc: 256, aux: 128, ratio: 0.55, error: 0.008 },
   { name: "macbook", bc: 256, aux: 128, ratio: 0.5, error: 0.008 },
-  { name: "mac128k", bc: 512, aux: 192, ratio: 0.3, error: 0.01 },
   { name: "c64", bc: 384, aux: 128, ratio: 0.35, error: 0.01 },
   { name: "ivy", bc: 256, aux: 128, ratio: 0.75, error: 0.008 },
   { name: "monstera", bc: 256, aux: 128, ratio: 0.45, error: 0.01 },
@@ -119,14 +117,6 @@ export function materialBudget(prop, matName) {
       aux = 0;
       dropAux = true;
     } else if (/crt_top/i.test(matName)) {
-      bc = 256;
-      aux = 128;
-    }
-  } else if (prop.name === "mac128k") {
-    if (/mouse/i.test(matName)) {
-      bc = 128;
-      aux = 128;
-    } else if (/keyboard/i.test(matName)) {
       bc = 256;
       aux = 128;
     }

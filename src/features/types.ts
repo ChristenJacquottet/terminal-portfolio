@@ -75,7 +75,7 @@ export type ActionCtx = {
   /** A sound, panned to `at` (an object on screen) if given. */
   sfx: (cue: Cue | string, at?: Object3D, volume?: number) => void;
   music: (on: boolean) => void;
-  /** Sit at the computer and type a command. */
+  /** Frame the Apple II and type a command on its screen. */
   sitDownAndRun: (command: string) => Promise<void>;
   motions: Motions;
   /** Runs `fn` for `object` unless it's already moving. */
@@ -130,7 +130,7 @@ export type DeskApi = {
     /** Clears the terminal and boots it again, banner and all. */
     reboot: () => Promise<void>;
   };
-  /** Sit back down at the screen. */
+  /** Bring the physical monitor into view. */
   sitDown: () => Promise<void>;
   /** The Sony PVM's screen, if the lab loaded (see alive.ts `PvmScreen`). */
   pvm: () => PvmScreen | null;

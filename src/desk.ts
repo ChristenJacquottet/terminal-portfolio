@@ -54,6 +54,7 @@ import { CSS3DObject, CSS3DRenderer } from "three/examples/jsm/renderers/CSS3DRe
 import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { bus } from "./bus";
 import { MODEL_CREDIT } from "./credit";
 import { editing, locked } from "./layout";
 import { fileName, projects } from "./content";
@@ -421,7 +422,7 @@ function contactShadow(): Mesh {
 }
 
 /** A plain beige stand-in until the real model is in public/models. */
-function standIn(): { root: Group; screen: Screen } {
+function standIn(): { root: Group; screen: Screen; tube: Mesh } {
   const root = new Group();
   const beige = new MeshStandardMaterial({ color: "#d9cdb0", roughness: 0.6 });
   const dark = new MeshStandardMaterial({ color: "#2b2620", roughness: 0.8 });
@@ -434,7 +435,7 @@ function standIn(): { root: Group; screen: Screen } {
   const bezel = new Mesh(new BoxGeometry(0.32, 0.24, 0.01), dark);
   bezel.position.set(0, 0.25, 0.102);
   root.add(base, keys, monitor, bezel);
-  return { root, screen: { center: new Vector3(0, 0.25, 0.108), normal: new Vector3(0, 0, 1), up: new Vector3(0, 1, 0), width: 0.29, height: 0.2175 } };
+  return { root, tube: bezel, screen: { center: new Vector3(0, 0.25, 0.108), normal: new Vector3(0, 0, 1), up: new Vector3(0, 1, 0), width: 0.29, height: 0.2175 } };
 }
 
 async function loadModel(onProgress: (f: number) => void): Promise<{ root: Group; screen: Screen; tube: Mesh } | null> {
@@ -613,8 +614,8 @@ export async function createDesk(opts: {
   // Desktops draw through the finishing pass (post.ts: AO, bloom, grade), which anti-aliases its own
   // scene target, so the canvas needs none; phones keep the plain path and the canvas's MSAA.
   const renderer = new WebGLRenderer({ antialias: isPhone, alpha: true, powerPreference: "high-performance" });
-  // Crisp on retina desktops (the scene only draws while something moves, so idle costs nothing).
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, isPhone ? 1.25 : 2));
+  // A stable render grid avoids resampling fine lines and reallocating the HDR targets on each drag.
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, isPhone ? 1.25 : 1.5));
   const maxAniso = Math.min(8, renderer.capabilities.getMaxAnisotropy());
   renderer.outputColorSpace = SRGBColorSpace;
   renderer.toneMapping = ACESFilmicToneMapping;
@@ -691,7 +692,7 @@ export async function createDesk(opts: {
   const roomAssets = loadRoom();
   // Progress: the computer is the first third, the props the rest.
   const loaded = await loadModel((f) => opts.onProgress(f * 0.35));
-  const { root, screen } = loaded ?? standIn();
+  const { root, screen, tube } = loaded ?? standIn();
   root.name = "computer"; // the Apple II, for features (the caption names it)
   scene.add(root);
   const room = buildRoom(scene, await roomAssets, new Box3().setFromObject(root), {
@@ -786,8 +787,9 @@ export async function createDesk(opts: {
   setTime(time);
 
   const glass = glassMaterial(screen, room.windowCenter.clone().sub(screen.center).normalize());
+  tube.material = glass;
+  tube.renderOrder = 1;
   if (loaded) {
-    loaded.tube.material = glass;
     // The model's plastics are near white. Keep them that way (a clean machine, not a yellowed
     // one): only a whisper of warmth, so the warm lamp and sun do the tinting, and a satin finish.
     loaded.root.traverse((o) => {
@@ -801,7 +803,6 @@ export async function createDesk(opts: {
         mat.envMapIntensity = post ? 1.15 : 1.6; // a little of the room (captured, see captureRoom) in the plastic's sheen
       }
     });
-    loaded.tube.renderOrder = 1;
   }
 
   // The screen lights the room in the theme's colour: the keys, the desk in front, the drives.
@@ -843,6 +844,7 @@ export async function createDesk(opts: {
   let vh = 0;
   let seated = true;
   let transitioning = false;
+  let monitorFocused = false;
   const resize = () => {
     vw = window.innerWidth;
     vh = window.innerHeight;
@@ -854,6 +856,7 @@ export async function createDesk(opts: {
     // A little closer or further than the wide shot, never into the keys or out of the room.
     // (The layout editor frees the camera and sets its own limits.)
     // At the desk, keep where you're looking but sit where the new window shape puts you.
+    if (monitorFocused && !transitioning) place(monitorPose());
     if (!seated && !transitioning && !editing && look.active) {
       sitAt(widePose());
       const [minYaw, maxYaw] = yawBounds();
@@ -870,17 +873,24 @@ export async function createDesk(opts: {
   let tubeW = SCREEN_W;
   let tubeH = SCREEN_H;
   function fitTube() {
-    tubeH = Math.max(TUBE_MIN_H, Math.round(closeUp().rect.h));
+    const term = screenEl.querySelector<HTMLElement>(".term");
+    const atBottom = term && term.scrollHeight - term.scrollTop - term.clientHeight < 3;
+    // Match the projected size for reading in the monitor. The wider desk view uses the
+    // fullscreen hand-off dimensions so the slide into and out of the glass still lines up.
+    tubeH = monitorFocused
+      ? Math.max(210, Math.round(monitorPose().rect.h))
+      : Math.max(TUBE_MIN_H, Math.round(closeUp().rect.h));
     tubeW = Math.round((tubeH * SCREEN_W) / SCREEN_H);
     holder.style.width = `${tubeW}px`;
     holder.style.height = `${tubeH}px`;
     screenObject.scale.setScalar(worldH / tubeH);
+    if (term && atBottom) term.scrollTop = term.scrollHeight;
   }
 
   /** Camera distance where the screen fills FILL of the window, and the rect it lands on. */
-  const closeUp = () => {
+  const closeUp = (fill = FILL) => {
     const tan = Math.tan((FOV * Math.PI) / 360);
-    const k = Math.min(FILL, (FILL * camera.aspect * worldH) / worldW);
+    const k = Math.min(fill, (fill * camera.aspect * worldH) / worldW);
     const distance = worldH / (2 * tan * k);
     const h = k * vh;
     const w = (worldW / worldH) * h;
@@ -890,6 +900,8 @@ export async function createDesk(opts: {
       rect: { x: (vw - w) / 2, y: (vh - h) / 2, w, h },
     };
   };
+
+  const monitorPose = () => closeUp(camera.aspect < 1 ? 0.51 : 0.56); // leave the housing and the desk around the tube in view
 
   /** Far enough back to frame the room around the desk (about 2.4 m of it). */
   function wideDistance() {
@@ -956,11 +968,6 @@ export async function createDesk(opts: {
   }
 
   // Render on demand only.
-  /**
-   * The scene's resolution while the camera moves, on screens with a device pixel ratio of ~2
-   * (1.5x effective, still sharper than a 1x screen). Never on 1x screens or phones (no post).
-   */
-  const MOVING_SCALE = post && renderer.getPixelRatio() >= 1.75 ? 0.75 : 1;
   let running = false;
   let tween: ((now: number) => boolean) | null = null;
   /** Props in motion (interact.ts): each returns false when it's done. */
@@ -968,7 +975,7 @@ export async function createDesk(opts: {
   let frameMs = 0; // how long the last frame took: the heartbeat stays away from a slow machine
   let nextDraw = 0; // when the next frame is due (rAF time)
   /** Counters for devtools (`__desk.stats`): frames drawn, frames that redrew the shadow maps, frames skipped by the cap. */
-  const stats = { frames: 0, shadowFrames: 0, capped: 0, lowRes: 0 };
+  const stats = { frames: 0, shadowFrames: 0, capped: 0 };
   const frame = (now: number) => {
     // At most ~60 frames a second. ProMotion and other 120/144 Hz displays call rAF twice as often,
     // and each frame here is a full HDR render with AO and bloom: the extra frames only make heat.
@@ -990,11 +997,6 @@ export async function createDesk(opts: {
     // shadow-casting light really moved (including the last step of an animation).
     if (shadowsMoved()) renderer.shadowMap.needsUpdate = true;
     if (renderer.shadowMap.needsUpdate) stats.shadowFrames++;
-    // While the camera itself moves, a high-DPI screen draws the scene at a lower resolution (the eye
-    // can't resolve it in motion); the frame it settles on is always full resolution.
-    const lowRes = (tweening || moving) && MOVING_SCALE < 1;
-    post?.setScale(lowRes ? MOVING_SCALE : 1);
-    if (lowRes) stats.lowRes++;
     // Seated, the canvas is hidden: motions still finish, but nothing is drawn that nobody sees.
     if (!host.hidden) {
       const t0 = performance.now();
@@ -1130,7 +1132,8 @@ export async function createDesk(opts: {
   // ── framing a prop up close (DeskApi.frame), and coming back to the seat ─────────────────────
   let framedNow = false;
   const frameOn = async (target: Object3D | Box3, o: { dir?: Vector3; fill?: number; ms?: number } = {}) => {
-    if (seated || (transitioning && !framedNow)) return;
+    if (seated || transitioning) return;
+    setMonitorFocus(false);
     const box = target instanceof Box3 ? target.clone() : new Box3().setFromObject(target);
     const centre = box.getCenter(new Vector3());
     const radius = Math.max(0.03, box.getSize(new Vector3()).length() / 2);
@@ -1147,7 +1150,8 @@ export async function createDesk(opts: {
     transitioning = false;
   };
   const unframe = async (ms = 900) => {
-    if (!framedNow || seated) return;
+    if (!framedNow || seated || transitioning) return;
+    setMonitorFocus(false);
     transitioning = true;
     const wide = widePose();
     await fly(wide, ms, glass.uniforms.uStrength.value as number, ease);
@@ -1336,8 +1340,38 @@ export async function createDesk(opts: {
     }
     captionEl.hidden = !captionText || seated || (transitioning && !framedNow) || editing; // a close-up keeps it
   };
-  if (hint && coarsePointer) {
-    hint.textContent = "drag to look · pinch to lean · tap anything · tap screen to sit";
+  const wideHint = coarsePointer ? "drag to look · pinch to lean · tap the Apple II to zoom in" : hint?.textContent ?? "";
+  const backButton = document.createElement("button");
+  backButton.textContent = "Back to desk";
+  backButton.onclick = () => void unframe();
+  const enterButton = document.createElement("button");
+  enterButton.textContent = "Enter terminal";
+  enterButton.onclick = () => void api.sitDown();
+  function setMonitorFocus(focused: boolean) {
+    const changed = monitorFocused !== focused;
+    monitorFocused = focused;
+    if (changed) fitTube();
+    if (!hint) return;
+    if (focused) hint.replaceChildren(backButton, enterButton);
+    else hint.textContent = wideHint;
+  }
+  setMonitorFocus(false);
+
+  async function focusMonitor() {
+    if (monitorFocused || seated || transitioning) return;
+    if (look.active) {
+      camTarget.copy(lookTarget());
+      look.active = false;
+    }
+    transitioning = true;
+    framedNow = true;
+    touch.leave();
+    bus.emit("desk:focus", { name: "computer" });
+    await fly(monitorPose(), 800, 1);
+    place(monitorPose()); // account for a resize during the flight
+    transitioning = false;
+    setMonitorFocus(true);
+    request();
   }
   const credit = document.getElementById("credit");
   if (credit && loaded) {
@@ -1349,11 +1383,13 @@ export async function createDesk(opts: {
   // The canvas is on top, so clicks on the glass are found by ray: a click (not a drag) sits you down.
   const ray = new Raycaster();
   const pointer = new Vector2();
-  const onGlass = (e: PointerEvent) => {
-    if (!loaded) return true;
+  const onComputer = (e: PointerEvent, exact = false) => {
     pointer.set((e.clientX / vw) * 2 - 1, -(e.clientY / vh) * 2 + 1);
     ray.setFromCamera(pointer, camera);
-    return ray.intersectObject(loaded.tube, false).length > 0;
+    if (!ray.ray.intersectsBox(bounds)) return false;
+    if (exact) return ray.intersectObject(root, true).length > 0;
+    return computerOccluders.some((box) => ray.ray.intersectsBox(box)) ||
+      ray.intersectObject(tube, false).length > 0;
   };
   const canvas = renderer.domElement;
   const activePointers = new Map<number, { x: number; y: number }>();
@@ -1417,7 +1453,7 @@ export async function createDesk(opts: {
           if (touch.leave()) request();
         }, 1800);
       }
-    } else if (onGlass(e)) void api.sitDown();
+    } else if (onComputer(e, true)) void (monitorFocused ? api.sitDown() : focusMonitor());
     else if (framedNow) void unframe(); // a click on nothing comes back from a close-up
   });
   // Hover: one raycast per frame at most, however fast the pointer moves.
@@ -1454,8 +1490,8 @@ export async function createDesk(opts: {
         hoverEvent = null;
         if (seated || transitioning) return touch.leave();
         const target = touch.pick(ev, vw, vh);
-        const glassy = !target && onGlass(ev);
-        if (glassy ? touch.say("Apple II", "sit back down", ev, loaded?.tube) : touch.hover(target, ev)) request();
+        const glassy = !target && onComputer(ev);
+        if (glassy ? touch.say("Apple II", monitorFocused ? "enter terminal" : "zoom in", ev, tube) : touch.hover(target, ev)) request();
         canvas.style.cursor = target ? "pointer" : glassy ? "zoom-in" : "grab";
       });
     }
@@ -1490,9 +1526,9 @@ export async function createDesk(opts: {
   const computerOccluders: Box3[] = [];
   root.traverse((x) => {
     const m = x as Mesh;
-    if (m.isMesh && m !== loaded?.tube) computerOccluders.push(new Box3().setFromObject(m));
+    if (m.isMesh && m !== tube) computerOccluders.push(new Box3().setFromObject(m));
   });
-  mergeStaticLeaves("computer", root, (o) => o === loaded?.tube);
+  mergeStaticLeaves("computer", root, (o) => o === tube);
 
   if (editing) {
     const { OrbitControls } = await import("three/examples/jsm/controls/OrbitControls.js");
@@ -1528,7 +1564,7 @@ export async function createDesk(opts: {
     },
     setMuted: (m) => opts.sound?.setMuted(m),
     sitDownAndRun: async (command) => {
-      await api.sitDown();
+      await focusMonitor();
       opts.run(command);
     },
   });
@@ -1545,8 +1581,10 @@ export async function createDesk(opts: {
     },
 
     async stepBack() {
+      if (monitorFocused) return unframe();
       if (!seated || transitioning) return;
       await ready;
+      if (!seated || transitioning) return;
       transitioning = true;
       seated = false;
       host.hidden = false;
@@ -1602,9 +1640,11 @@ export async function createDesk(opts: {
     },
 
     async sitDown() {
-      if (seated || (transitioning && !framedNow)) return;
+      if (seated || transitioning) return;
       transitioning = true;
       framedNow = false;
+      setMonitorFocus(false);
+      touch.leave();
       clearTouchChip();
       activePointers.clear();
       down = null;
@@ -1766,7 +1806,7 @@ export async function createDesk(opts: {
         ? { play: (cue, o) => opts.sound!.play(cue as Cue, o), music: (on) => opts.sound!.music(on), loop: (name, on) => opts.sound!.loop(name, on), muted: () => opts.sound!.muted() }
         : null,
       terminal: { run: opts.run, reboot: opts.reboot ?? (async () => {}) },
-      sitDown: () => api.sitDown(),
+      sitDown: focusMonitor,
       pvm: () => (props.get("crt")?.userData.pvm as PvmScreen | undefined) ?? null,
       activate: (object, o) => touch.activate(object, o),
       frame: frameOn,

@@ -11,7 +11,10 @@ import {
   CanvasTexture,
   CatmullRomCurve3,
   Color,
+  CurvePath,
   CylinderGeometry,
+  LineCurve3,
+  QuadraticBezierCurve3,
   Float32BufferAttribute,
   Group,
   Mesh,
@@ -378,8 +381,23 @@ export function ethernetRun(from: Vector3, out: Vector3, via: Vector3[], hex: st
   const boot = new Mesh(new CylinderGeometry(0.0032, 0.0045, 0.012, 10), mat);
   boot.position.copy(from).addScaledVector(out, 0.023);
   boot.quaternion.setFromUnitVectors(new Vector3(0, 1, 0), out);
-  const curve = new CatmullRomCurve3([from.clone().addScaledVector(out, 0.02), from.clone().addScaledVector(out, 0.045), ...via]);
-  g.add(plug, boot, new Mesh(new TubeGeometry(curve, Math.max(12, via.length * 10), 0.0022, 6), mat));
+  // Round each corner locally so long vertical drops cannot pull a curve through the shelf.
+  const points = [from.clone().addScaledVector(out, 0.025), from.clone().addScaledVector(out, 0.045), ...via];
+  const knots = points.filter((p, i) => i === 0 || p.distanceToSquared(points[i - 1]) > 1e-10);
+  const path = new CurvePath<Vector3>();
+  let start = knots[0];
+  for (let i = 1; i < knots.length - 1; i++) {
+    const corner = knots[i];
+    const radius = Math.min(0.022, corner.distanceTo(knots[i - 1]) / 2, corner.distanceTo(knots[i + 1]) / 2);
+    if (radius < 1e-5) continue;
+    const before = corner.clone().add(knots[i - 1].clone().sub(corner).setLength(radius));
+    const after = corner.clone().add(knots[i + 1].clone().sub(corner).setLength(radius));
+    path.add(new LineCurve3(start, before));
+    path.add(new QuadraticBezierCurve3(before, corner, after));
+    start = after;
+  }
+  path.add(new LineCurve3(start, knots[knots.length - 1]));
+  g.add(plug, boot, new Mesh(new TubeGeometry(path, Math.min(112, Math.ceil(path.getLength() / 0.006)), 0.0022, 6), mat));
   return g;
 }
 

@@ -78,7 +78,6 @@ const BY_NAME: Record<string, Hotspot> = {
   books: { kind: "wiggle", label: "books" },
   rack: { kind: "wiggle", label: "the home lab", hint: "it hums" },
   crt: { kind: "crt", label: "Sony PVM", hint: "lab status · run neofetch", nav: true, command: "neofetch" },
-  mac128k: { kind: "hop", label: "Macintosh 128K", hint: "1984 · 128 kilobytes" },
   c64: { kind: "wiggle", label: "Commodore 64", hint: "1982 · 64 kilobytes" },
   switch: { kind: "wiggle", label: "8-port switch", hint: "link lights on" },
   nas: { kind: "wiggle", label: "the NAS", hint: "backups" },
@@ -122,7 +121,7 @@ export function createInteractions(o: {
   /** Runs `step(t)` (0 → 1) each frame for `ms`, redrawing (and re-shadowing) as it goes. */
   animate: (ms: number, step: (t: number) => void) => Promise<void>;
   relight: () => void;
-  /** Sit at the computer and type a command into the terminal. */
+  /** Frame the Apple II and type a command on its screen. */
   sitDownAndRun: (command: string) => Promise<void>;
   lamp: SpotLight;
   flash: PointLight;

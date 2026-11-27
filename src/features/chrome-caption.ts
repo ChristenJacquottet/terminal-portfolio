@@ -34,7 +34,7 @@ function ofKind(root: Object3D, kind: string) {
   return out;
 }
 const present = (desk: DeskApi, names: string[]) => names.filter((n) => desk.props.has(n)).length;
-const LAB = ["switch", "nas", "crt", "picluster", "ups", "thinkpad", "macbook", "mac128k", "c64"];
+const LAB = ["switch", "nas", "crt", "picluster", "ups", "thinkpad", "macbook", "c64"];
 const PEGS = ["pliers", "screwdrivers", "cutters", "tape", "cableloop", "rule"];
 /** A story paper: "Printout" on the left, its project (from its hint, "RAG Crawler · read it") on the right. */
 const paper = (thing: string) => (_: DeskApi, o: Object3D): Caption => [thing, (spotOf(o)?.hint ?? "").replace(/ · read it$/, "")];
@@ -112,7 +112,6 @@ const CAPTIONS: Record<string, Say> = {
   powerstrip: ["Power strip", "everything on one switch"],
   thinkpad: ["Laptops", "a few generations of them"],
   macbook: ["Laptops", "a few generations of them"],
-  mac128k: ["Macintosh 128K", "1984 · 128 KB"],
   c64: ["Commodore 64", "1982 · 64 KB"],
   pegboard: (desk) => ["The pegboard", plural(present(desk, PEGS), "tool")],
   pliers: ["Pliers", "on the pegboard"],

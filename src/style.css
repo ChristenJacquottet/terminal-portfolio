@@ -264,6 +264,7 @@ body {
 }
 
 /* Scaling 1px repeating scanlines inside the CSS3D monitor tube creates moiré bands; keep vignette only. */
+.desk:not([hidden]) ~ .screen .fx-scan,
 .desk-css .fx-scan {
   display: none;
 }
@@ -337,6 +338,24 @@ body {
   bottom: calc(var(--strip) + max(0px, env(safe-area-inset-bottom)) + 14px);
   transform: translateX(-50%);
   white-space: nowrap;
+}
+
+.desk-hint button {
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+  pointer-events: auto;
+  border: 0;
+  padding: 5px 9px;
+}
+.desk-hint button + button {
+  border-left: 1px solid var(--ink);
+}
+.desk-hint button:hover,
+.desk-hint button:focus-visible {
+  color: var(--teal);
+  text-decoration: underline;
 }
 
 /* c-na.dev's little square, in teal: this is where to start */

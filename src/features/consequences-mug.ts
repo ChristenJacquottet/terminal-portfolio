@@ -1,5 +1,5 @@
 // The mug, as a cup of coffee you can drink. Each click is a sip: the cup lifts and tips towards
-// you, the coffee drops (the surface, the crema line and the column under it go down together and
+// you, the coffee drops (the surface and crema line go down together and
 // the inside of the cup shows), a slurp, and it's set back down with a slosh. Three sips and it's
 // empty: no steam, a faint dry ring at the bottom. `coffee` (or `make coffee`) in the terminal
 // pours another: you see it fill if you're looking at the desk, or find it full when you step back.
@@ -39,6 +39,7 @@ const blobsOf = (holder: Object3D): Object3D[] =>
   });
 
 const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
+const phase = (t: number, start: number, end: number) => ease(Math.min(1, Math.max(0, (t - start) / (end - start))));
 const easeOut = (t: number) => 1 - (1 - t) ** 3;
 
 function report(desk: DeskApi | null) {
@@ -71,9 +72,11 @@ async function stepCoffee(desk: DeskApi, liquid: Liquid) {
 }
 
 /** Lifts the cup and tips it towards the camera by `tip(t)` radians while `during(t)` runs. */
-async function lift(desk: DeskApi, holder: Object3D, liquid: Liquid | null, ms: number, height: (t: number) => number, tip: (t: number) => number, during?: (t: number) => void) {
+async function lift(desk: DeskApi, holder: Object3D, liquid: Liquid | null, ms: number, reach: (t: number) => number, tip: (t: number) => number, during?: (t: number) => void) {
   const cup = holder;
-  const y0 = cup.position.y;
+  const rest = cup.position.clone();
+  const near = desk.camera.localToWorld(new Vector3(0.065, -0.085, -0.34));
+  cup.parent?.worldToLocal(near);
   const q0 = cup.quaternion.clone();
   // the horizontal direction to the camera, in the cup's parent's space, and the axis to tip about
   const toCam = desk.camera.getWorldPosition(new Vector3()).sub(cup.getWorldPosition(new Vector3()));
@@ -98,7 +101,9 @@ async function lift(desk: DeskApi, holder: Object3D, liquid: Liquid | null, ms: 
   }
   await desk.animate(ms, (t) => {
     const a = tip(t);
-    cup.position.y = y0 + height(t);
+    const k = reach(t);
+    cup.position.lerpVectors(rest, near, k);
+    cup.position.y += Math.sin(k * Math.PI) * 0.055;
     cup.quaternion.copy(q.setFromAxisAngle(axis, a)).multiply(q0);
     if (liquid?.hold) {
       liquid.hold.x = a * local.x;
@@ -106,7 +111,7 @@ async function lift(desk: DeskApi, holder: Object3D, liquid: Liquid | null, ms: 
     }
     during?.(t);
   });
-  cup.position.y = y0;
+  cup.position.copy(rest);
   cup.quaternion.copy(q0);
   cup.updateMatrixWorld(true);
   for (const b of blobs) cup.attach(b);
@@ -124,15 +129,15 @@ async function sip(desk: DeskApi, cup: Object3D, sfx: (cue: string, at?: Object3
     cup,
     liquid,
     1350,
-    // up, a moment at the lips, back down with a small settle
-    (t) => (t < 0.28 ? 0.06 * easeOut(t / 0.28) : t < 0.7 ? 0.06 : 0.06 * (1 - ease((t - 0.7) / 0.3))),
-    (t) => (t < 0.28 ? 0.3 * easeOut(t / 0.28) : t < 0.7 ? 0.3 + 0.12 * Math.sin(((t - 0.28) / 0.42) * Math.PI) : 0.3 * (1 - ease((t - 0.7) / 0.3))),
+    // Pick up upright, tip once at the lips, then straighten before setting it down.
+    (t) => phase(t, 0, 0.38) - phase(t, 0.66, 1),
+    (t) => 0.43 * (phase(t, 0.26, 0.48) - phase(t, 0.6, 0.78)),
     (t) => {
-      if (!slurped && t > 0.3) {
+      if (!slurped && t >= 0.48) {
         slurped = true;
         sfx("sip", cup);
       }
-      if (liquid && t > 0.3 && t < 0.7) liquid.setLevel(from + (to - from) * ease((t - 0.3) / 0.4));
+      if (liquid && t >= 0.48) liquid.setLevel(from + (to - from) * phase(t, 0.48, 0.66));
     },
   );
   liquid?.setLevel(to);
@@ -147,7 +152,7 @@ async function sip(desk: DeskApi, cup: Object3D, sfx: (cue: string, at?: Object3
 
 /** An empty cup: you lift it, look in, and go make another. */
 async function peek(desk: DeskApi, cup: Object3D, sfx: (cue: string, at?: Object3D, volume?: number) => void) {
-  await lift(desk, cup, null, 800, (t) => 0.035 * Math.sin(t * Math.PI), (t) => 0.5 * Math.sin(t * Math.PI));
+  await lift(desk, cup, null, 800, (t) => 0.35 * Math.sin(t * Math.PI), (t) => 0.5 * Math.sin(t * Math.PI));
   sfx("tap", cup, 0.7);
 }
 
@@ -197,13 +202,15 @@ const mug: Feature = {
     async mug({ object, desk, sfx, once, sitDownAndRun, leave }) {
       const d = desk();
       if (!d || pouring) return;
-      if (sips > 0) {
-        await once(object, () => sip(d, object, sfx));
-        return;
-      }
       leave();
-      await once(object, () => peek(d, object, sfx));
-      await sitDownAndRun("make coffee");
+      await once(object, async () => {
+        if (sips > 0) {
+          await sip(d, object, sfx);
+        } else {
+          await peek(d, object, sfx);
+          await sitDownAndRun("make coffee");
+        }
+      });
     },
   },
   label(object) {

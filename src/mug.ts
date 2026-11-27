@@ -5,7 +5,7 @@
 import {
   BufferGeometry,
   CanvasTexture,
-  CylinderGeometry,
+  CircleGeometry,
   Float32BufferAttribute,
   Group,
   LatheGeometry,
@@ -33,7 +33,7 @@ export type Liquid = {
   step(dt: number, now: number, camera: Camera, tilt?: { x: number; z: number }): boolean;
   /** How full the cup is, 0 (empty: no steam, a dry ring) to 1 (full). */
   level(): number;
-  /** Moves the surface, the crema line and the column under it to `k` of full (0..1). */
+  /** Moves the surface, the crema line to `k` of full (0..1). */
   setLevel(k: number): void;
   /** When set, the cup's tilt for `step`, whoever is stepping (a sip holds it while it lifts the cup). */
   hold: { x: number; z: number } | null;
@@ -128,17 +128,14 @@ export function mug(): Group {
   });
   const surface = new Mesh(geo, liquidMat);
   surface.name = "coffee";
-  surface.position.y = LEVEL;
-  // Under the surface, a dark column so the inside of the cup never shows through a wave trough.
-  const depth = new Mesh(new CylinderGeometry(0.0349, 0.0349, 0.004, 40), new MeshStandardMaterial({ color: "#1a0b04", roughness: 0.9 }));
-  depth.position.y = LEVEL - 0.0021;
   // The crema ring where the coffee climbs the wall.
   const meniscus = new Mesh(new TorusGeometry(RADIUS - 0.0006, 0.0008, 6, 48), new MeshStandardMaterial({ color: "#6a3b1c", roughness: 0.45, transparent: true }));
   meniscus.rotation.x = Math.PI / 2;
-  meniscus.position.y = LEVEL + 0.0004;
+  meniscus.position.y = 0.0004;
   const coffee = new Group();
   coffee.add(surface, meniscus);
-  g.add(depth, coffee);
+  coffee.position.y = LEVEL;
+  g.add(coffee);
   // What an empty cup keeps: a faint dried ring on the floor where the last of it sat.
   const ringCanvas = document.createElement("canvas");
   ringCanvas.width = ringCanvas.height = 128;
@@ -153,7 +150,7 @@ export function mug(): Group {
   rg.fillRect(0, 0, 128, 128);
   const ringMap = new CanvasTexture(ringCanvas);
   ringMap.colorSpace = SRGBColorSpace;
-  const dry = new Mesh(new PlaneGeometry(0.069, 0.069), new MeshStandardMaterial({ map: ringMap, transparent: true, depthWrite: false, roughness: 0.6, polygonOffset: true, polygonOffsetFactor: -1 }));
+  const dry = new Mesh(new CircleGeometry(0.0345, SEGS), new MeshStandardMaterial({ map: ringMap, transparent: true, depthWrite: false, roughness: 0.6, polygonOffset: true, polygonOffsetFactor: -1 }));
   dry.rotation.x = -Math.PI / 2;
   dry.position.y = FLOOR + 0.0004;
   dry.visible = false;
@@ -189,11 +186,9 @@ export function mug(): Group {
     setLevel(k) {
       full = Math.max(0, Math.min(1, k));
       const y = FLOOR + (LEVEL - FLOOR) * full;
-      surface.position.y = y;
-      meniscus.position.y = y + 0.0004;
-      depth.position.y = Math.max(FLOOR + 0.0021, y - 0.0021);
+      coffee.position.y = y;
       const wet = full > 0.004;
-      surface.visible = meniscus.visible = depth.visible = wet;
+      coffee.visible = wet;
       dry.visible = !wet;
       if (!wet) steamUntil = 0;
     },
@@ -225,8 +220,11 @@ export function mug(): Group {
       slosh.vz += (-k * (slosh.z - tz) - c * slosh.vz) * dt;
       slosh.x += slosh.vx * dt;
       slosh.z += slosh.vz * dt;
-      coffee.rotation.x = slosh.x;
-      coffee.rotation.z = slosh.z;
+      // Pivot at the liquid surface and keep its low edge above the floor as the last sip drains.
+      const clearance = Math.min(coffee.position.y - FLOOR, 0.095 - coffee.position.y);
+      const limit = Math.atan2(clearance, RADIUS);
+      const tiltScale = Math.min(1, limit / Math.max(1e-6, Math.hypot(slosh.x, slosh.z)));
+      coffee.rotation.set(slosh.x * tiltScale, 0, slosh.z * tiltScale);
       if (Math.abs(slosh.vx) + Math.abs(slosh.vz) + Math.abs(slosh.x - tx) + Math.abs(slosh.z - tz) > 2e-3) moving = true;
 
       // Rings: a standing wave from the wall that fades over a second or so.
@@ -259,7 +257,7 @@ export function mug(): Group {
           w.position.set(Math.sin(t * 7 + (w.userData.phase as number) * 9) * 0.006, h, Math.cos(t * 5) * 0.004);
           w.scale.setScalar(0.65 + t * 0.9);
           w.quaternion.copy(camera.quaternion);
-          (w.material as MeshBasicMaterial).opacity = steaming ? 0.34 * fade : 0;
+          (w.material as MeshBasicMaterial).opacity = steaming ? 0.16 * fade : 0;
           w.visible = steaming;
         }
         moving = moving || steaming;

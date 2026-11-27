@@ -57,12 +57,6 @@ export type Post = {
   /** Ambient-occlusion strength (0 = off), the bloom's, and the vignette's. */
   settings: { ao: number; aoRadius: number; bloom: number; vignette: number; saturation: number; warmth: number };
   setEnabled(on: boolean): void;
-  /**
-   * The scene's resolution as a fraction of the canvas (1 = full). desk.ts drops it while the
-   * camera moves on high-DPI screens and puts it back for the frame the camera settles on, so the
-   * picture at rest is unchanged; the composite upsamples into the full-size canvas.
-   */
-  setScale(scale: number): void;
 };
 
 const quadVertex = /* glsl */ `
@@ -70,18 +64,6 @@ const quadVertex = /* glsl */ `
   void main() {
     vUv = uv;
     gl_Position = vec4(position.xy, 0.0, 1.0);
-  }`;
-
-/** A 4×4 ordered pattern: the AO's sample rotation repeats every 4 pixels, so a 4×4 blur averages it out exactly. */
-const bayer = /* glsl */ `
-  float bayer4(vec2 p) {
-    vec2 q = mod(floor(p), 4.0);
-    float i = q.x + q.y * 4.0;
-    // 0 8 2 10 / 12 4 14 6 / 3 11 1 9 / 15 7 13 5
-    vec4 r0 = vec4(0.0, 8.0, 2.0, 10.0), r1 = vec4(12.0, 4.0, 14.0, 6.0), r2 = vec4(3.0, 11.0, 1.0, 9.0), r3 = vec4(15.0, 7.0, 13.0, 5.0);
-    vec4 row = q.y < 0.5 ? r0 : q.y < 1.5 ? r1 : q.y < 2.5 ? r2 : r3;
-    float v = q.x < 0.5 ? row.x : q.x < 1.5 ? row.y : q.x < 2.5 ? row.z : row.w;
-    return (v + 0.5) / 16.0;
   }`;
 
 const AO_SAMPLES = 12;
@@ -105,7 +87,6 @@ function aoMaterial() {
       uniform vec2 uTexel;
       uniform float uRadius, uMaxPx, uIntensity;
       varying vec2 vUv;
-      ${bayer}
       vec3 viewPos(vec2 uv) {
         float d = texture2D(tDepth, uv).x;
         vec4 p = uInvProj * vec4(vec3(uv, d) * 2.0 - 1.0, 1.0);
@@ -125,12 +106,11 @@ function aoMaterial() {
         // A disc of uRadius metres around the point, on screen, capped so close-ups stay cheap.
         vec2 rad = vec2(uProj[0][0], uProj[1][1]) * uRadius * 0.5 / -P.z;
         rad *= min(1.0, uMaxPx * uTexel.y / rad.y);
-        float spin = bayer4(gl_FragCoord.xy) * 6.2831853;
         float occ = 0.0;
         float r2 = uRadius * uRadius;
         for (int i = 0; i < SAMPLES; i++) {
           float t = (float(i) + 0.5) / float(SAMPLES);
-          float a = float(i) * 2.3999632 + spin;
+          float a = float(i) * 2.3999632;
           vec3 S = viewPos(vUv + vec2(cos(a), sin(a)) * t * rad);
           vec3 v = S - P;
           float vv = dot(v, v);
@@ -146,7 +126,7 @@ function aoMaterial() {
   });
 }
 
-/** 4×4 depth-aware blur of the half-size AO (undoes the 4×4 rotation pattern, keeps edges). */
+/** Depth-aware blur of the half-size AO keeps contact edges defined. */
 function aoBlurMaterial() {
   return new ShaderMaterial({
     uniforms: { tAO: { value: null }, tDepth: { value: null }, uTexel: { value: new Vector2() }, uNear: { value: 0.05 }, uFar: { value: 30 } },
@@ -270,9 +250,6 @@ function compositeMaterial() {
         // Vignette: the edges fall off softly, the way a lens and a lit room do.
         vec2 p = (vUv - 0.5) * vec2(uAspect, 1.0);
         c *= 1.0 - uVignette * smoothstep(0.35, 1.05, length(p) * 1.2);
-        // Dither so the dark gradients don't band.
-        float n = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
-        c += (n - 0.5) / 255.0;
         vec3 glass = scene.rgb + bloom * 0.5;
         gl_FragColor = vec4(mix(glass, c, solid), min(scene.a, 1.0));
       }`,
@@ -367,7 +344,7 @@ export function createPost(renderer: WebGLRenderer, scene: Scene): Post {
   const size = new Vector2();
   const dpr = renderer.getPixelRatio();
   // The scene target carries the anti-aliasing (the canvas has none of its own on this path).
-  const sceneRT = new WebGLRenderTarget(1, 1, { type: HalfFloatType, samples: dpr > 1.5 ? 2 : 4, minFilter: LinearFilter, magFilter: LinearFilter, generateMipmaps: false });
+  const sceneRT = new WebGLRenderTarget(1, 1, { type: HalfFloatType, samples: dpr >= 1.5 ? 2 : 4, minFilter: LinearFilter, magFilter: LinearFilter, generateMipmaps: false });
   sceneRT.depthTexture = new DepthTexture(1, 1);
   sceneRT.depthTexture.minFilter = sceneRT.depthTexture.magFilter = NearestFilter;
   const aoRT = target(1, 1, UnsignedByteType);
@@ -387,7 +364,6 @@ export function createPost(renderer: WebGLRenderer, scene: Scene): Post {
   const quadCam = new OrthographicCamera(-1, 1, 1, -1, 0, 1);
 
   let enabled = true;
-  let scale = 1;
   const settings = { ao: 0.8, aoRadius: 0.09, bloom: 0.6, vignette: 0.22, saturation: 1.06, warmth: 0.03 };
 
   const pass = (material: ShaderMaterial, out: WebGLRenderTarget | null) => {
@@ -407,7 +383,7 @@ export function createPost(renderer: WebGLRenderer, scene: Scene): Post {
 
   const draw = (camera: Camera) => {
     renderer.getDrawingBufferSize(size);
-    const w = Math.max(1, Math.round(size.x * scale)), h = Math.max(1, Math.round(size.y * scale));
+    const w = Math.max(1, size.x), h = Math.max(1, size.y);
     if (w !== sceneRT.width || h !== sceneRT.height) resize(w, h);
     renderer.setRenderTarget(sceneRT);
     raw(scene, camera);
@@ -476,9 +452,6 @@ export function createPost(renderer: WebGLRenderer, scene: Scene): Post {
     settings,
     setEnabled(on) {
       enabled = on;
-    },
-    setScale(next) {
-      scale = Math.min(1, Math.max(0.25, next));
     },
   };
 }
