@@ -176,24 +176,7 @@ function drawPvmStatus(g: CanvasRenderingContext2D, now: Date, upMins: number, s
   }
   g.restore();
 
-  // Horizontal Trinitron aperture-grille scanlines.
-  g.fillStyle = "rgba(0, 0, 0, 0.24)";
-  for (let y = 0; y < H; y += 3) g.fillRect(0, y, W, 1);
 
-  // Curved-glass corner vignette + soft upper-left reflection arc.
-  const edge = g.createRadialGradient(W * 0.5, H * 0.5, W * 0.34, W * 0.5, H * 0.5, W * 0.68);
-  edge.addColorStop(0, "rgba(0, 0, 0, 0)");
-  edge.addColorStop(0.78, "rgba(0, 0, 0, 0.16)");
-  edge.addColorStop(1, "rgba(0, 0, 0, 0.72)");
-  g.fillStyle = edge;
-  g.fillRect(0, 0, W, H);
-
-  g.strokeStyle = "rgba(180, 255, 205, 0.06)";
-  g.lineWidth = 10;
-  g.beginPath();
-  g.moveTo(28, 86);
-  g.quadraticCurveTo(34, 28, 128, 24);
-  g.stroke();
 }
 
 /**

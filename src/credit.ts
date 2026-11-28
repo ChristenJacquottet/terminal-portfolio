@@ -18,7 +18,6 @@ export const PROP_CREDITS = [
   { title: "Wood Penny Skateboard", author: "natmr", url: "https://sketchfab.com/3d-models/wood-penny-skateboard-618044c27b3040ae8bea4e38b3e9555f" },
   { title: "Black film slate or clapperboard", author: "Bendar Multimedia", url: "https://sketchfab.com/3d-models/black-film-slate-or-clapperboard-f971698c983d4256a269424e88b17872" },
   { title: "Vintage Toy Airplane 2", author: "berilbasak", url: "https://sketchfab.com/3d-models/vintage-toy-airplane-2-b40dc984692746b3a5132adffc3a14ad" },
-  { title: "Spotlight", author: "katsiaryna_kruhlenia", url: "https://sketchfab.com/3d-models/spotlight-60fde1a809e24dc2b7afc6bfd9b016f1" },
   { title: "Old Suitcase // Game Ready", author: "Alex Murias", url: "https://sketchfab.com/3d-models/old-suitcase-game-ready-1c927d3999e643bcaba078f03b7b2ee7" },
   { title: "Old Computer Chair", author: "Slava Izvekov", url: "https://sketchfab.com/3d-models/old-computer-chair-a311529b1ec349c48f789bf4e1f99e89" },
   { title: "Set of Electronic Components", author: "literallylara", url: "https://sketchfab.com/3d-models/cc0-set-of-electronic-components-f4cb777b4ea3490587008e24b61bcf75" },
@@ -34,9 +33,4 @@ export const PROP_CREDITS = [
   { title: "Stylized Potted Ivy", author: "Meemoe_", url: "https://sketchfab.com/3d-models/stylized-potted-ivy-b7442c395ff943e19f3bbad32f6fa02f" },
   { title: "Potted Monstera Plant", author: "angemturc", url: "https://sketchfab.com/3d-models/potted-monstera-plant-a0cf794be6294479b1adb74db093984a" },
   { title: "Camera Kiev-4AM + Helios", author: "Ilya Maksimov", url: "https://sketchfab.com/3d-models/camera-kiev-4am-helios-6932f08350dc47179ec8dd1ac0d18ce8" },
-];
-
-/** CC0 textures from outside Poly Haven (no credit required, given anyway). */
-export const CC0_CREDITS = [
-  { title: "the wallpaper's paper relief (Wallpaper 001 A)", source: "ambientCG", url: "https://ambientcg.com/a/Wallpaper001A" },
 ];

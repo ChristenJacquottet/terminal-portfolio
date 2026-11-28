@@ -2,10 +2,9 @@
 // and scripts/upgrade-props.mjs (swap one prop's textures in place).
 import sharp from "sharp";
 
-// Order MUST match ORDER in src/props.ts and props=() in scripts/build-props.sh.
+// Order must match props=() in scripts/build-props.sh.
 export const PROPS = [
   { name: "lamp", bc: 384, aux: 128, ratio: 0.22, error: 0.018 },
-  { name: "cassette", bc: 512, aux: 192, ratio: 0.28, error: 0.01, keepHierarchy: true },
   { name: "pens", bc: 256, aux: 128, ratio: 0.35, error: 0.01, keepHierarchy: true },
   { name: "spectacles", bc: 256, aux: 128, ratio: 0.24, error: 0.012 },
   { name: "duck", bc: 128, aux: 128, ratio: 0.28, error: 0.012 },
@@ -21,7 +20,6 @@ export const PROPS = [
   { name: "skateboard", bc: 384, aux: 128, ratio: 0.26, error: 0.012 },
   { name: "clapper", bc: 256, aux: 128, ratio: 0.35, error: 0.01, keepHierarchy: true },
   { name: "biplane", bc: 256, aux: 128, ratio: 0.16, error: 0.024, pruneSmall: true },
-  { name: "studiolight", bc: 384, aux: 128, ratio: 0.24, error: 0.014 },
   { name: "chair", bc: 384, aux: 128, ratio: 0.35, error: 0.01 },
   { name: "suitcase", bc: 384, aux: 128, ratio: 0.35, error: 0.01 },
   { name: "breadboard", bc: 256, aux: 128, ratio: 0.1, error: 0.02, pruneSmall: true },
@@ -50,7 +48,6 @@ export const PROPS = [
 // scripts/upgrade-props.mjs swaps these into an existing props.glb without a full rebuild.
 const CLOSE_UP = {
   lamp: { bc: 1536, aux: 1024 },
-  cassette: { bc: 2048, aux: 1024 },
   pens: { bc: 1024, aux: 512 },
   spectacles: { bc: 1024, aux: 512 },
   duck: { bc: 512, aux: 512 },

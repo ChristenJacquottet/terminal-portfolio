@@ -3,7 +3,7 @@ import { EMPLOYER, FOLDERS, HOST, SOCIAL, STACK, USER, art, endYear, fileName, p
 import { HOME, display, findFile, lookup, resolve, type DirNode, type Node } from "./fs";
 import { isBlock, link, pad, run, s, swatch, text, type Line, type Span } from "./output";
 import { THEMES, crtOn, currentTheme, isTheme, nextTheme, setCrt, setTheme } from "./themes";
-import { CC0_CREDITS, MODEL_CREDIT, PROP_CREDITS } from "./credit";
+import { MODEL_CREDIT, PROP_CREDITS } from "./credit";
 
 export interface TermApi {
   clear(): void;
@@ -321,7 +321,7 @@ export const COMMANDS: Record<string, Command> = {
   },
 
   crt: {
-    desc: "scanlines, glow and tape noise on or off",
+    desc: "toggle terminal scanlines and text glow",
     usage: "crt [on | off]",
     run: (args) => {
       const arg = operands(args)[0];
@@ -404,9 +404,9 @@ export const COMMANDS: Record<string, Command> = {
       [s("code, copy and case studies  ", "dim"), s(profile.name)],
       [s("3d model                     ", "dim"), link(`“${MODEL_CREDIT.title}”`, MODEL_CREDIT.url), s(` by ${MODEL_CREDIT.author}, `), link(MODEL_CREDIT.license, MODEL_CREDIT.licenseUrl)],
       ...PROP_CREDITS.map((c, i): Line => [s(i ? "                             " : "desk props                   ", "dim"), link(`“${c.title}”`, c.url), s(` by ${c.author}, `), link(MODEL_CREDIT.license, MODEL_CREDIT.licenseUrl)]),
-      [s("                             ", "dim"), link("Poly Haven", "https://polyhaven.com"), s(" (CC0): the oak, the floor, lamp, cassette player, camera, plant, clock, frame, pens, spectacles, duck, multimeter, the lab's shelving, pliers and screwdrivers")],
-      ...CC0_CREDITS.map((c): Line => [s("                             ", "dim"), link(c.source, c.url), s(` (CC0): ${c.title}`)]),
-      [s("                             ", "dim"), s("made in code: the room, the Dallas skyline, the racquet, notebook, floppies, mug, card, pennant, bitcoin, Rubik's cube, grad cap, cork board, diploma and pixel portrait")],
+      [s("                             ", "dim"), link("Poly Haven", "https://polyhaven.com"), s(" (CC0): the oak, lamp, camera, plant, clock, frame, pens, spectacles, duck, multimeter, the lab's shelving, pliers and screwdrivers")],
+      [s("crawler exterior             ", "dim"), link("Kharkovchanka by Snupp", "https://sketchfab.com/3d-models/kharkovchanka-dc183abfd28048f5839d1edb43f660e3"), s(" · CC BY 4.0")],
+      [s("                             ", "dim"), s("made in code: the Kharkivchanka radio cabin, the racquet, notebook, floppies, mug, card, pennant, bitcoin, Rubik's cube, grad cap, cork board, diploma and pixel portrait")],
       [s("sound                        ", "dim"), s("synthesised in Web Audio + CC0 foley ("), link("Wikimedia Commons", "https://commons.wikimedia.org"), s(" / PDSounds) and "), link("“Synth Wave”", "https://opengameart.org/content/synth-wave"), s(" by Alex McCulloch (CC0)")],
       [s("                             ", "dim"), s("distance low-pass curve adapted from "), link("portfolio-website", "https://github.com/henryjeff/portfolio-website"), s(" by Henry Heffernan (MIT)")],
       [s("fonts                        ", "dim"), s("IBM Plex Mono, VT323 (SIL Open Font License)")],

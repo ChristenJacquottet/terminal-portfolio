@@ -50,7 +50,6 @@ const BY_NAME: Record<string, Hotspot> = {
   super8: { kind: "wiggle", label: "Super 8", hint: "filmmaking" },
   camera: { kind: "flash", label: "35mm camera", hint: "photography" },
   clapper: { kind: "hop", label: "the slate", hint: "directing" },
-  studiolight: { kind: "wiggle", label: "spotlight", hint: "shooting" },
   notebook: { kind: "wiggle", label: "graph-paper notebook", hint: "computer science" },
   card: { kind: "hop", label: "CAN YOU HEAR ME?", hint: "the call where the mic died" },
   racquet: { kind: "wiggle", label: "a wooden racquet", hint: "tennis at Taylor" },
@@ -115,7 +114,7 @@ const MATERIAL_CUES: Record<string, string> = {
 
 // These actions require the room's mains or would navigate to the unpowered Apple II.
 const POWERED = new Set(["computer", "lamp", "time", "server", "ups", "nas", "picluster", "soldering",
-  "games-arcade", "breadboard", "slate", "keylight"]);
+  "games-arcade", "breadboard", "slate"]);
 
 /** The defaults, with every feature's labels over them (src/features). */
 const HOTSPOTS: Record<string, Hotspot> = { ...BY_NAME, ...featureHotspots };
@@ -146,6 +145,7 @@ export function createInteractions(o: {
   relight: () => void;
   /** Frame the Apple II and type a command on its screen. */
   sitDownAndRun: (command: string) => Promise<void>;
+  openExterior: (wheel?: Object3D) => Promise<void>;
   lamp: SpotLight;
   flash: PointLight;
   drive: Drive | null;
@@ -813,8 +813,20 @@ export function createInteractions(o: {
           if (!stay) await o.sitDownAndRun("contact");
         });
         return;
+      case "exterior":
+        leave();
+        if (!stay) void o.openExterior(object);
+        return;
+      case "cabinPlate":
+        leave();
+        if (!stay) void o.desk()?.frame(object, { dir: object.getWorldDirection(new Vector3()), fill: .84 * Math.min(1, camera.aspect), ms: 480 });
+        return;
+      case "radioLog":
+        sfx("switch", object, 0.48);
+        if (!stay) void o.sitDownAndRun("cat ~/watch.log");
+        return;
       case "time":
-        sfx("lidClose", object); // the blinds
+        sfx("tap", object, 0.4);
         o.setTime(o.time() === "dusk" ? "night" : "dusk");
         return;
       case "mug":

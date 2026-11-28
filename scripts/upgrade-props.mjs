@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// Swaps higher-resolution textures into an existing public/models/props.glb, one prop at a time,
+// Swaps higher-resolution textures into a named prop pack, one prop at a time,
 // without rebuilding (the Sketchfab sources aren't in the repo). Geometry, node names, scene order
 // and every other prop stay byte-for-byte as they are; only the listed props' texture images change.
 //
-//   node scripts/upgrade-props.mjs <restyle-dir> [props.glb] [prop,prop,...]
+//   node scripts/upgrade-props.mjs <restyle-dir> [pack.glb] [prop,prop,...]
 //
 // <restyle-dir> holds <name>-restyle.glb files from scripts/restyle.py (Blender, or the bpy wheel:
 // `uv pip install bpy` into a Python 3.13 venv, then `python scripts/restyle.py -- in out art/restyle.json`).
@@ -19,9 +19,9 @@ import { MeshoptDecoder, MeshoptEncoder } from "meshoptimizer";
 import sharp from "sharp";
 import { PROPS, compactGlb, encodeWebp, materialBudget } from "./props-budget.mjs";
 
-const [dir, glbPath = "public/models/props.glb", onlyArg] = process.argv.slice(2);
+const [dir, glbPath = "public/models/bench.glb", onlyArg] = process.argv.slice(2);
 if (!dir) {
-  console.error("usage: node scripts/upgrade-props.mjs <restyle-dir> [props.glb] [prop,prop,...]");
+  console.error("usage: node scripts/upgrade-props.mjs <restyle-dir> [pack.glb] [prop,prop,...]");
   process.exit(1);
 }
 const only = onlyArg ? new Set(onlyArg.split(",")) : null;
@@ -34,7 +34,7 @@ const io = new NodeIO()
 const doc = await io.read(glbPath);
 const root = doc.getRoot();
 const scenes = root.listScenes();
-if (scenes.length !== PROPS.length) throw new Error(`Expected ${PROPS.length} prop scenes, found ${scenes.length}`);
+const budgets = new Map(PROPS.map(prop => [prop.name, prop]));
 
 const SLOTS = [
   ["BaseColor", "bc"],
@@ -46,8 +46,9 @@ const SLOTS = [
 const sizeOf = (img) => img?.byteLength ?? 0;
 const before = fs.statSync(glbPath).size;
 
-for (let i = 0; i < PROPS.length; i++) {
-  const prop = PROPS[i];
+for (const scene of scenes) {
+  const prop = budgets.get(scene.getName());
+  if (!prop) throw new Error(`Unrecognised prop scene: ${scene.getName()}`);
   if (only && !only.has(prop.name)) continue;
   const file = path.join(dir, `${prop.name}-restyle.glb`);
   if (!fs.existsSync(file)) continue;
@@ -55,7 +56,7 @@ for (let i = 0; i < PROPS.length; i++) {
   const src = await io.read(file);
   const srcMats = new Map(src.getRoot().listMaterials().map((m) => [m.getName(), m]));
   const mats = new Set();
-  scenes[i].traverse((n) => {
+  scene.traverse((n) => {
     for (const p of n.getMesh()?.listPrimitives() ?? []) if (p.getMaterial()) mats.add(p.getMaterial());
   });
 

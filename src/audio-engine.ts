@@ -12,7 +12,6 @@ type LoopName = "room" | "hum";
 const MASTER_GAIN = 0.42;
 
 const URLS = {
-  room: "/audio/room.mp3",
   music: "/audio/music.mp3",
   tapeIn: "/audio/tape-insert.mp3",
   tapeBtn1: "/audio/tape-button.mp3",
@@ -47,7 +46,6 @@ let deskWarmed = false;
 
 const wantLoop: Record<LoopName, boolean> = { room: false, hum: false };
 let stopRoom: (() => void) | null = null;
-let roomTok = 0;
 let stopHum: (() => void) | null = null;
 
 let wantMusic = false;
@@ -703,55 +701,48 @@ function fadeStop(gain: GainNode, nodes: AudioScheduledSourceNode[], ms = 340) {
 }
 
 function startRoom() {
-  if (stopRoom || !wantLoop.room || muted || !ctx || !ambFilter) return;
-  const tok = ++roomTok;
-  void loadBuf(URLS.room).then((buf) => {
-    if (!buf || tok !== roomTok || !wantLoop.room || muted || !ctx || !ambFilter || stopRoom) return;
-    const now = ctx.currentTime;
-    const gain = ctx.createGain();
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.linearRampToValueAtTime(0.105, now + 1.4);
-    gain.connect(ambFilter);
+  if (stopRoom || !wantLoop.room || muted || !ctx || !ambFilter || !pinkBuf) return;
+  const c = ctx;
+  const gain = c.createGain();
+  gain.gain.setValueAtTime(0.0001, c.currentTime);
+  gain.gain.linearRampToValueAtTime(0.115, c.currentTime + 1.8);
+  gain.connect(ambFilter);
+  const port = c.createStereoPanner();
+  port.pan.value = -0.48;
+  port.connect(gain);
+  const wind = c.createBufferSource();
+  wind.buffer = pinkBuf;
+  wind.loop = true;
+  const seal = c.createBiquadFilter();
+  seal.type = "bandpass";
+  seal.frequency.value = 470;
+  seal.Q.value = 0.62;
+  wind.connect(seal);
+  seal.connect(port);
+  wind.start();
 
-    const rain = ctx.createBufferSource();
-    rain.buffer = buf;
-    rain.loop = true;
-    rain.connect(gain);
-    rain.start(now, Math.random() * Math.max(0.1, buf.duration - 1));
-
-    // Leave space between events. Small drops on the sill and a car on wet pavement
-    // come from the window at the left, through the same distance and mute controls.
-    const c = ctx;
-    const sill = panned(c, gain, -0.5);
-    let timer = 0;
-    function schedule() {
-      timer = window.setTimeout(() => {
-        if (document.visibilityState === "visible") {
-          if (Math.random() < 0.30) {
-            nb(c, sill, pinkBuf, 2.8, 0.21, 440, 0.7, 0, 1050, 0.96);
-            nb(c, sill, brownBuf, 2.1, 0.17, 320, 0.8, 0.7, 140, 0.55);
-          } else {
-            for (let i = 0, n = 1 + Math.floor(Math.random() * 3); i < n; i++) {
-              const dt = i * (0.16 + Math.random() * 0.14);
-              const pitch = 1400 + Math.random() * 730;
-              td(c, sill, 0.083, pitch, pitch * 0.71, 0.081, "sine", dt);
-              nb(c, sill, pinkBuf, 0.03, 0.19, pitch * 1.5, 0.9, dt);
-            }
-          }
+  let timer = 0;
+  function drift() {
+    timer = window.setTimeout(() => {
+      if (document.visibilityState === "visible") {
+        const gust = Math.random();
+        seal.frequency.setTargetAtTime(280 + gust * 580, c.currentTime, 1.3);
+        if (gust > 0.6) {
+          // A short scatter of windblown grains against the metal lip.
+          for (let i = 0; i < 4; i++) nb(c, port, pinkBuf, 0.06, 0.11, 1850 + Math.random() * 600, 1.5, i * 0.13);
         }
-        schedule();
-      }, 6500 + Math.random() * 10500);
-    }
-    schedule();
-    stopRoom = () => {
-      clearTimeout(timer);
-      fadeStop(gain, [rain], 350);
-    };
-  });
+      }
+      drift();
+    }, 4200 + Math.random() * 7800);
+  }
+  drift();
+  stopRoom = () => {
+    clearTimeout(timer);
+    fadeStop(gain, [wind], 350);
+  };
 }
 
 function endRoom() {
-  roomTok++;
   const fn = stopRoom;
   stopRoom = null;
   fn?.();

@@ -1,5 +1,5 @@
 // The arcade's phosphor: a 5x7 pixel font, the P1 greens of the PVM's status page (alive.ts
-// `drawPvmStatus`), and the glass over it (glow, a little persistence, scanlines, vignette).
+// `drawPvmStatus`), and the glass over it (glow, a little persistence).
 // Not a feature (no default export): games-arcade.ts and the cartridges draw with it.
 
 export const GREEN = {
@@ -43,8 +43,7 @@ export const pad = (n: number, width = 6) => String(Math.max(0, Math.floor(n))).
 /**
  * The tube: draws `content` (in greens, on a transparent layer) onto `g` the way the PVM shows
  * its status page: a deep phosphor base with a soft bloom, the content with its glow, a trace
- * of the last frame (P1 persistence), then the aperture-grille scanlines, the curved glass's
- * vignette and the reflection arc.
+ * of the last frame (P1 persistence).
  */
 export function createTube(W: number, H: number) {
   const make = () => {
@@ -80,22 +79,6 @@ export function createTube(W: number, H: number) {
     g.shadowBlur = 0;
     g.restore();
 
-    g.fillStyle = "rgba(0, 0, 0, 0.24)";
-    for (let y = 0; y < H; y += 3) g.fillRect(0, y, W, 1);
-
-    const edge = g.createRadialGradient(W * 0.5, H * 0.5, W * 0.34, W * 0.5, H * 0.5, W * 0.68);
-    edge.addColorStop(0, "rgba(0, 0, 0, 0)");
-    edge.addColorStop(0.78, "rgba(0, 0, 0, 0.16)");
-    edge.addColorStop(1, "rgba(0, 0, 0, 0.72)");
-    g.fillStyle = edge;
-    g.fillRect(0, 0, W, H);
-
-    g.strokeStyle = "rgba(180, 255, 205, 0.06)";
-    g.lineWidth = 10;
-    g.beginPath();
-    g.moveTo(28, 86);
-    g.quadraticCurveTo(34, 28, 128, 24);
-    g.stroke();
   };
 }
 
