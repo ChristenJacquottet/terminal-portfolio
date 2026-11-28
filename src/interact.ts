@@ -145,7 +145,7 @@ export function createInteractions(o: {
   relight: () => void;
   /** Frame the Apple II and type a command on its screen. */
   sitDownAndRun: (command: string) => Promise<void>;
-  openExterior: () => Promise<void>;
+  openExterior: (wheel?: Object3D) => Promise<void>;
   lamp: SpotLight;
   flash: PointLight;
   drive: Drive | null;
@@ -815,7 +815,7 @@ export function createInteractions(o: {
         return;
       case "exterior":
         leave();
-        if (!stay) void o.openExterior();
+        if (!stay) void o.openExterior(object);
         return;
       case "cabinPlate":
         leave();

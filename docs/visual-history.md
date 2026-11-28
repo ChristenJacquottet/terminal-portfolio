@@ -61,3 +61,57 @@ Nika kept the erroneous slip and signed the correction. A visitor can read that 
 ![No. 23 on the ice at dusk, seen from its front corner with its four windshields, round side windows, ladder and tracks visible](progression/08-exterior.jpg)
 
 Until this revision, visitors knew the crawler by what they could see from inside it. Turning the aft hatch wheel now lets them see how high the bunks and radio bench ride above the ice. Snupp’s original paint keeps the blue stripe, vehicle number and worn metal around the fittings legible as the camera comes closer. The exterior loads on the first trip outside. [Model, license and rendering budget](relay-23.md#model-references)
+
+## Working aboard No. 23
+
+The left image in each pair is draft PR head `58b850c`. The right image is the crew refit. These are in-game captures at polar dusk. The cutaway supplied for the project establishes the vehicle the two operators found. The pockets, textiles and hardware show how they live with it. [Selected references and credits](relay-23-references.md)
+
+![Matched wheelhouse views. The paper chart now stands on a hinged board, and the repeater sits above the pressed engine lids.](progression/09-wheelhouse.jpg)
+
+The original low console stays in place. Three raised lids can be reached from inside the cab. Oleg's bag rides on the seat back within reach of the chart. The small compass sits on the fixed dash.
+
+![Matched berths. The upper bunk is made up in blue-grey wool. The lower terracotta cover has a turned-back end and a patch.](progression/09-berths.jpg)
+
+One crew member is up while the other sleeps. The lower pillow and blanket carry the weight of the last sleeper. The upper bunk has a tight hem aligned with the steel rail.
+
+![Matched views of the galley. A bail-handled kettle sits in the stove fiddle. The formed sink has an integral draining board.](progression/09-galley.jpg)
+
+A pan hangs by its handle to keep the counter clear. The door below the sink was cut from birch and finished with a kick strip to protect its lower edge. The mugs and Nika's saved bread heel stay beside the hob.
+
+![Matched exterior views showing the tool rack below the blue stripe, forward panes and snow meeting the tracks.](progression/09-exterior-wide.jpg)
+
+The offset brackets and straps carry a service scoop without blocking the ladder. The two parked wipers stand off from the flat glass on pivot washers. Both tread trails align with the running gear. The inherited hull and paint are Sergey Gorbatenko (Snupp)'s CC BY 4.0 work. [Original model and modifications](../public/models/kharkovchanka.LICENSE.txt)
+
+![Portrait comparison with four original station and orbit views across the top and their refits below.](progression/09-phone.jpg)
+
+The phone pairs reuse the original camera positions and orientations. During ordinary play the wheelhouse and galley shortcuts now frame their fittings for portrait screens. At the bench, the portrait camera stays inside the hull. Visitors can read Nika's exchange docket on the outbound meter and resume walking where they stopped. [Read the docket in the game view](progression/09-exchange-docket.jpg)
+
+### Cost on the same route
+
+Chromium on Windows, 1152 × 720 desktop and 390 × 844 with touch emulation, both at DPR 1. Each cold browser entered `exit`, selected each station, walked, opened the exterior through the wheel, orbited and returned. The matched phone measurements use the original camera, apart from the repaired opening desk. Each cell reads **before → after**.
+
+| View | Desktop draws / triangles | Phone draws / triangles |
+| --- | ---: | ---: |
+| Radio bench | 447 / 333,403 → 443 / 314,023 | 188 / 233,063 → 69 / 77,081 |
+| Wheelhouse | 28 / 22,608 → 27 / 32,876 | 24 / 17,844 → 24 / 21,522 |
+| Berths | 42 / 29,366 → 41 / 39,634 | 25 / 22,598 → 25 / 32,872 |
+| Galley | 31 / 38,398 → 33 / 47,782 | 26 / 33,094 → 27 / 39,870 |
+| Grow rack | 29 / 29,660 → 29 / 34,770 | 26 / 22,546 → 26 / 21,800 |
+| Water and heat | 28 / 20,258 → 28 / 20,794 | 24 / 20,250 → 24 / 20,786 |
+| Exterior | 6 / 48,592 → 9 / 57,764 | 6 / 48,592 → 9 / 57,764 |
+
+| Cumulative cost | Desktop | Phone |
+| --- | ---: | ---: |
+| Opening desk, transfer in KiB | 6,397.0 → 6,097.2 | 5,248.5 → 5,170.7 |
+| Opening desk, tracked texture storage in MiB | 371.7 → 366.4 | 162.0 → 113.2 |
+| All five bays, transfer in KiB | 6,414.0 → 6,573.2 | 5,265.5 → 5,424.8 |
+| All five bays, tracked texture storage in MiB | 397.6 → 397.8 | 188.5 → 147.0 |
+| First exterior orbit, transfer in KiB | 7,265.8 → 7,484.5 | 6,117.4 → 6,336.1 |
+| First exterior orbit, tracked texture storage in MiB | 434.6 → 434.8 | 225.5 → 184.0 |
+
+
+Draws and triangles come from Three.js renderer counters for the settled frame. Transfer is the sum of browser Resource Timing transfer sizes for the production preview, including response headers. Texture storage is an estimate of live WebGL `texStorage2D` allocations for recognized formats including mip levels and cube faces. The estimate excludes driver overhead, renderbuffers and untracked formats. The figures include resident desk assets throughout the route.
+
+In a separate run with ordinary camera motion, median time from entering `exit` to the desk controls over three alternating cold launches was 8.11 → 7.82 s on desktop and 5.14 → 4.98 s at phone size. These are local preview timings on the same Windows machine.
+
+The three interior close-ups were also checked on night watch, with the power strip off, and after power was restored. Physical phone GPU performance and a comparison against the missing second vehicle archive remain unverified. [Blender rebuild instructions](relay-23.md#the-crews-working-refit)

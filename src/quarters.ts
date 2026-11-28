@@ -26,6 +26,7 @@ import {
   Vector2,
   Vector3,
 } from "three";
+import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { mergeGeometries, mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
@@ -160,7 +161,9 @@ function wheelhouse(b: Bay) {
     for (let k = 0; k < 5; k++)
       b.box([-2.887, 0.68 + k * 0.09, z], [0.022, 0.02, 0.44], "#aa8761", 0.009, [0, 0, 0.1]);
     for (const dz of [-0.2, 0.2]) b.box([-3.09, 0.12, z + dz], [0.66, 0.07, 0.055], steel);
+    b.box([-3.56, .23, z], [.17, .38, .39], olive, .025);
     for (const dz of [-0.12, 0.12]) {
+      b.can([-3.56, .422, z + dz], .045, .025, rubber, [0, 0, 0], .031);
       b.pipe(
         [
           [-3.56, 0.42, z + dz],
@@ -170,20 +173,20 @@ function wheelhouse(b: Bay) {
         0.017,
         steel,
       );
-      b.can([-3.46, 0.87, z + dz], 0.028, 0.105, rubber, [0, 0, -0.25]);
+      // Cast phenolic handgrips swell at both ends so mittens cannot slip off.
+      const grip = [[.015,0],[.027,.009],[.027,.019],[.023,.026],[.021,.055],
+        [.023,.085],[.031,.101],[.03,.111],[.022,.118],[.001,.121]];
+      b.shape(new LatheGeometry(grip.map(([r,h]) => new Vector2(r,h)),16),
+        "#514c40", [-3.468,.828,z+dz], [0,0,-.29]);
     }
   }
   b.box([-3.98, 0.73, 1.91], [0.43, 0.47, 2.31], olive, 0.035);
   b.box([-3.91, 1.01, 1.9], [0.56, 0.1, 2.39], steel, 0.025);
   b.plate([-3.748, 0.73, 2.5], 0.53, 0.2, half, "ROUTE / 06", ["FLAGS TO RIDGE", "LAST FIX  04:10"]);
-  b.panel([-3.749, 0.8, 1.49], 0.9, 0.28, half, (g) => {
-    g.fillStyle = "#48534a";
-    g.fillRect(0, 0, 768, 320);
-    for (const [x, y, r] of [
-      [140, 150, 117],
-      [375, 132, 85],
-      [600, 132, 85],
-    ]) {
+  // Use the same millimetre-per-pixel scale for the printed faces and the turned rings.
+  const instruments = [[140,150,117], [375,132,85], [600,132,85]];
+  const dialFaces = b.panel([-3.749, .8, 1.49], .768, .32, half, (g) => {
+    for (const [x, y, r] of instruments) {
       g.fillStyle = "#a4a48d";
       g.beginPath();
       g.arc(x, y, r, 0, 7);
@@ -216,6 +219,14 @@ function wheelhouse(b: Bay) {
       g.restore();
     }
   });
+  dialFaces.material.alphaTest = .5;
+  for (const [px, py, radius] of instruments) {
+    const r = radius / 1000;
+    const bezel = [[r+.008,-.011],[r+.010,-.006],[r+.010,.002],[r+.006,.007],
+      [r+.001,.007],[r-.003,.003],[r-.003,0]];
+    b.shape(new LatheGeometry(bezel.map(([rad,h]) => new Vector2(rad,h)),40),
+      "#9a9e8d", [-3.749,.8+(160-py)/1000,1.49+(384-px)/1000], [0,0,-half]);
+  }
   for (let i = 0; i < 6; i++)
     b.can([-3.73, 0.59, 1.21 + i * 0.13], 0.018, 0.038, i === 2 ? primer : brass, [0, 0, half]);
   // Windshield mullions, seals, two parked wiper arms.
@@ -235,20 +246,14 @@ function wheelhouse(b: Bay) {
   for (let i = 0; i < 9; i++) b.box([-3.94 + i * 0.085, 0.66, 0.43], [0.035, 0.018, 0.4], rubber);
   for (const z of [1.45, 2.48]) {
     for (const off of [-0.19, 0.19]) b.box([-2.721, 0.87, z + off], [0.013, 0.54, 0.011], wood, 0, [0, 0, 0.1]);
+    if (z === 2.48) continue; // Oleg hangs his map satchel on this backrest.
     b.box([-2.71, 0.87, z], [0.026, 0.21, 0.29], olive, 0.018, [0, 0, 0.1]);
     b.box([-2.69, 0.96, z], [0.012, 0.014, 0.28], brass);
   }
-  // Lift-out engine access covers beneath the glazing, with folding handles on the aisle side.
-  for (const z of [1.15, 1.75, 2.38]) {
-    b.box([-3.92, 1.073, z], [.46, .021, .56], rubber, .012);
-    b.shape(new PlaneGeometry(.44, .54), "#b1b8a7", [-3.92, 1.085, z], [-half, 0, 0], "panel");
-    for (const dz of [-.05, .05]) b.box([-3.76, 1.094, z + dz], [.013, .02, .014], brass);
-    b.box([-3.76, 1.107, z], [.015, .012, .11], steel);
-  }
-  // A salvaged voice repeater nests between two original hatches. Straps let it travel here.
-  b.box([-3.93,1.19,1.78], [.205,.193,.39], "#65675b", .021);
-  b.box([-3.82,1.19,1.78], [.027,.174,.365], ink, .009);
-  b.panel([-3.803,1.207,1.754], .245,.090,half, g => {
+  // A folding sill shelf holds the repeater clear of the centre engine-cover handle.
+  b.box([-3.93,1.343,1.78], [.205,.193,.39], "#65675b", .021);
+  b.box([-3.82,1.343,1.78], [.027,.174,.365], ink, .009);
+  b.panel([-3.803,1.360,1.754], .245,.090,half, g => {
     g.fillStyle = "#182e2d"; g.fillRect(0,0,768,320);
     g.fillStyle = "#84bbae"; g.font = "bold 87px monospace"; g.fillText("HF   /   SIX",32,111);
     for (let i=0; i<20; i++) {
@@ -258,17 +263,17 @@ function wheelhouse(b: Bay) {
     g.fillStyle = "#d7c390"; g.font = "37px monospace"; g.fillText("VOICE WATCH",36,286);
   });
   for (const z of [1.62,1.92]) {
-    b.box([-3.93,1.291,z], [.186,.012,.022], cloth("#9f8058"));
-    b.can([-3.801,1.16,z],.022,.023,rubber,[0,0,half]);
-    b.box([-3.786,1.171,z], [.004,.012,.004], cream);
+    b.box([-3.93,1.444,z], [.186,.012,.022], cloth("#9f8058"));
+    b.can([-3.801,1.313,z],.022,.023,rubber,[0,0,half]);
+    b.box([-3.786,1.324,z], [.004,.012,.004], cream);
   }
   for (const [index,z] of [1.615,1.646].entries()) {
-    b.can([-3.806,1.232,z],.014,.024,brass,[0,0,half]);
-    b.pipe([[-3.79,1.232,z],[-3.746,1.192,z-.012],[-3.756,1.10,z-.062],
-      [-3.862,1.099,z-.107],[-3.963,1.097,z-.126]], .006, index ? rubber : primer);
+    b.can([-3.806,1.385,z],.014,.024,brass,[0,0,half]);
+    b.pipe([[-3.79,1.385,z],[-3.746,1.345,z-.012],[-3.756,1.253,z-.062],
+      [-3.862,1.252,z-.107],[-3.963,1.251,z-.126]], .006, index ? rubber : primer);
   }
   // The route survives a dead dispatch terminal as a grease-pencil line on a folded chart.
-  const chart = b.panel([-3.94, 1.09, 2.57], 0.65, 0.36, 0, (g) => {
+  const chart = b.panel([-4.068, 1.312, 2.565], 0.65, 0.36, 0, (g) => {
     g.fillStyle = "#cabd95";
     g.fillRect(0, 0, 768, 320);
     g.strokeStyle = "#a89873";
@@ -289,9 +294,9 @@ function wheelhouse(b: Bay) {
     // The terminal plotted the dashed crossing. Oleg marked the open lead and a new flag line.
     g.setLineDash([10,6]); g.strokeStyle = "#696b61"; g.lineWidth = 3;
     g.beginPath(); g.moveTo(189,214); g.lineTo(420,199); g.lineTo(528,143); g.stroke();
-    g.setLineDash([]); g.fillStyle = "#657f86";
+    g.setLineDash([]); g.fillStyle = "#527582";
     g.beginPath(); g.moveTo(392,157); g.lineTo(447,217); g.lineTo(420,202); g.lineTo(390,171); g.fill();
-    g.font = "italic 24px serif"; g.fillText("open lead / O.", 433,234);
+    g.font = "italic bold 29px serif"; g.fillText("open lead / O.", 428,246);
     g.strokeStyle = "#934b37";
     g.lineWidth = 6;
     g.beginPath();
@@ -304,13 +309,20 @@ function wheelhouse(b: Bay) {
     g.fillStyle = "#444e4c";
     g.font = "bold 27px monospace";
     g.fillText("06    /    RIDGE TRAVERSE", 38, 54);
-    g.fillText("x SIX", 636, 93);
+    g.fillText("x SIX", 604, 96);
+    g.fillStyle = "#8b4934";
+    for (const [x,y] of [[189,214],[344,126],[528,143]]) {
+      g.beginPath(); g.moveTo(x,y); g.lineTo(x,y-22); g.lineTo(x+13,y-19);
+      g.lineTo(x+2,y-13); g.lineTo(x+2,y); g.fill();
+    }
+    g.font = "italic 22px serif";
+    g.fillText("flags walked   04:31", 65, 280);
     g.fillStyle = "#eee2bf";
     g.fillRect(373, 0, 3, 320);
   });
-  chart.rotation.set(-half, 0, -half + 0.08);
-  b.box([-4.03, 1.075, 1.12], [0.21, 0.09, 0.23], ink, 0.014);
-  b.soft([-4.03, 1.126, 1.12], [0.077, 0.045, 0.077], brass);
+  chart.rotation.set(-Math.PI / 9, half, 0, "YXZ");
+  b.box([-3.94, 1.106, 2.94], [0.21, 0.09, 0.23], ink, 0.014);
+  b.soft([-3.94, 1.157, 2.94], [0.077, 0.045, 0.077], brass);
   b.pipe(
     [
       [-3.75, 0.69, 0.95],
@@ -323,15 +335,22 @@ function wheelhouse(b: Bay) {
   );
 }
 
-function berths(b: Bay, blanket?: BufferGeometry) {
-  for (const [i, deck] of [0.7, 1.42].entries()) {
-    if (blanket) {
-      b.shape(blanket.clone(), i ? "#d8ccac" : "#ffffff", [-2.76, deck + .045, .078], [0, 0, 0], "wool");
-    } else {
-      b.box([-2.66, deck, .38], [1.19, .076, .61], cloth(i ? "#7a7352" : "#84665b"), .03);
+function berths(b: Bay, bedding?: Group) {
+  if (bedding) b.group.add(bedding);
+  for (const deck of [.68744, 1.40744]) {
+    if (!bedding) {
+      b.box([-2.96, deck + .025, .38], [1.25, .058, .63], cloth("#808b83"), .025);
+      b.soft([-2.15, deck + .06, .38], [.195, .06, .26], cloth("#c9c2ab"));
     }
-    b.can([-2.17, deck + 0.105, 0.38], 0.096, 0.55, i ? blue : olive, [half, 0, 0]);
-    for (const z of [0.21, 0.53]) b.loop([-2.17, deck + 0.105, z], 0.098, 0.011, brass);
+    // Continuous perimeter tube returns into wall shoes at both ends of the canvas sling.
+    b.pipe([[-3.604, deck-.087, .08], [-3.604, deck-.087, .65],
+      [-3.59, deck-.087, .707], [-3.53, deck-.087, .724]], .018, steel);
+    b.can([-2.79, deck-.087, .724], .018, 1.49, steel, [0,0,half]);
+    b.pipe([[-2.045, deck-.087, .724], [-1.98, deck-.087, .714],
+      [-1.961, deck-.087, .67], [-1.961, deck-.087, .08]], .018, steel);
+    for (const x of [-3.49,-2.79,-2.02]) {
+      b.can([x, deck-.087, .724], .021, .034, "#868777", [0,0,half]);
+    }
   }
   for (const x of [-2.18, -1.98]) b.can([x, 0.69, 0.8], 0.018, 1.36, steel);
   for (const y of [0.26, 0.51, 0.76, 1.01, 1.26]) b.can([-2.08, y, 0.8], 0.016, 0.21, brass, [0, 0, half]);
@@ -381,30 +400,34 @@ function berths(b: Bay, blanket?: BufferGeometry) {
 
 function galley(b: Bay) {
   b.box([-0.93, 0.52, 3.17], [1.91, 0.88, 0.55], olive, 0.025);
-  b.box([-0.93, 1.0, 3.13], [2.0, 0.075, 0.67], wood, 0.022);
-  for (const x of [-1.58, -0.95, -0.32]) {
-    b.box([x, 0.54, 2.88], [0.58, 0.73, 0.035], cream, 0.016);
-    b.shape(new PlaneGeometry(.55, .68), "#ded6bc", [x, .54, 2.859], [0, Math.PI, 0], "panel");
-    b.box([x, 0.81, 2.847], [0.16, 0.024, 0.035], steel, 0.008);
-    for (const y of [0.27, 0.32, 0.37]) b.box([x, y, 2.856], [0.26, 0.012, 0.008], olive);
+  // Four sections leave an actual opening below the rolled sink flange.
+  for (const [x, z, w, d] of [
+    [-.653, 3.13, 1.446, .67], [-1.89, 3.13, .08, .67],
+    [-1.613, 2.889, .474, .188], [-1.613, 3.385, .474, .16],
+  ]) b.box([x, 1, z], [w, .075, d], wood, .012);
+  for (const [door, x] of [-1.58, -0.95, -0.32].entries()) {
+    // A birch offcut replaces the door under the sink. Two strap hinges
+    // distribute its weight and a folded metal shoe protects the wet end grain.
+    b.box([x, 0.54, 2.88], [0.58, 0.73, 0.035], door === 0 ? wood : cream, 0.016);
+    if (door === 0) {
+      b.box([x, .207, 2.86], [.565, .052, .014], steel, .004);
+      for (const y of [.31, .74]) {
+        b.box([x - .184, y, 2.855], [.19, .027, .009], steel, .004);
+        b.can([x - .273, y, 2.847], .011, .046, steel);
+        b.can([x - .107, y, 2.849], .007, .006, brass, [half, 0, 0]);
+      }
+    } else {
+      const face = new PlaneGeometry(.55, .68);
+      const uv = face.attributes.uv;
+      if (door === 1) {
+        for (let i = 0; i < uv.count; i++) uv.setXY(i, 1 - .82*uv.getX(i), .10 + .9*uv.getY(i));
+      }
+      b.shape(face, door === 1 ? "#c0b99e" : "#ded6bc", [x, .54, 2.859], [0, Math.PI, 0], "panel");
+      for (const y of [0.27, 0.32, 0.37]) b.box([x, y, 2.856], [0.26, 0.012, 0.008], olive);
+    }
+    b.box([x + (door === 0 ? .15 : 0), 0.81, 2.847], [0.16, 0.024, 0.035], steel, 0.008);
   }
-  // Recessed enamel washing bowl, deck-mounted swan-neck tap and two mismatched cups.
-  b.shape(
-    new LatheGeometry(
-      [
-        [0.06, 0],
-        [0.11, 0.02],
-        [0.19, 0.1],
-        [0.2, 0.115],
-        [0.18, 0.115],
-        [0.1, 0.026],
-        [0.06, 0.02],
-      ].map((a) => new Vector2(...(a as [number, number]))),
-      24,
-    ),
-    cream,
-    [-1.49, 1.04, 3.13],
-  );
+  // Deck-mounted swan-neck tap at the back of the pressed sink.
   b.pipe(
     [
       [-1.65, 1.04, 3.36],
@@ -415,12 +438,6 @@ function galley(b: Bay) {
     0.016,
     steel,
   );
-  b.box([-0.37, 1.08, 3.16], [0.53, 0.11, 0.44], ink, 0.018);
-  b.shape(new LatheGeometry([[.10,0],[.13,.008],[.146,.033],[.146,.184],[.151,.195],[.146,.207]]
-    .map(([r,h]) => new Vector2(r,h)), 32), blue, [-.37,1.145,3.17]);
-  b.can([-0.37, 1.36, 3.17], 0.15, 0.025, steel);
-  b.soft([-0.37, 1.39, 3.17], [0.035, 0.025, 0.035], rubber);
-  for (const x of [-0.56, -0.18]) b.box([x, 1.29, 3.17], [0.1, 0.031, 0.04], rubber, 0.012);
   for (const [i, x] of [-1.01, -0.81].entries()) {
     const cupWall = [[.034,0],[.042,.004],[.046,.094],[.048,.102],[.047,.106],
       [.043,.106],[.041,.099],[.037,.013],[.001,.012]];
@@ -430,10 +447,6 @@ function galley(b: Bay) {
   }
   // The bread card belongs to an actual meal: a cut loaf and the heel saved for next watch.
   b.box([-1.04,1.05,3.23],[.39,.023,.23],wood,.009,[0,.075,0]);
-  const loaf = new SphereGeometry(1,18,7,0,Math.PI*2,0,Math.PI/2);
-  b.shape(loaf.scale(.117,.083,.079), "#a1754b", [-1.09,1.064,3.235], [0,.11,0]);
-  for (const x of [-.92,-.898])
-    b.soft([x,1.085,3.24],[.012,.026,.063],"#c49d71",[0,.09,-.23]);
   for (const x of [-1.46, -.91, -.36]) {
     b.box([x,1.979,3.321],[.53,.203,.256], olive,.014);
     b.shape(new PlaneGeometry(.503,.174),"#c5c3ac",[x,1.979,3.186],[0,Math.PI,0],"panel");
@@ -458,7 +471,7 @@ function galley(b: Bay) {
     0.011,
     steel,
   );
-  b.plate([-0.92, 1.33, 3.439], 0.55, 0.21, Math.PI, "PANTRY / 2 CREW", ["OATS  18 KG", "BEANS  11 KG"]);
+  b.plate([-1.01, 1.33, 3.439], 0.52, 0.21, Math.PI, "PANTRY / 2 CREW", ["OATS  18 KG", "BEANS  11 KG"]);
   // A narrow drop-leaf eating surface and its folding leg, beside the stove.
   b.box([-2.26, 0.77, 3.03], [0.61, 0.045, 0.86], wood, 0.018);
   b.pipe(
@@ -503,17 +516,9 @@ function galley(b: Bay) {
       brass,
     );
   }
-  b.pipe(
-    [
-      [-1.82, 1.43, 3.45],
-      [-1.82, 1.56, 3.45],
-      [-0.23, 1.55, 3.45],
-      [-0.16, 1.47, 3.44],
-    ],
-    0.011,
-    steel,
-  );
-  for (const [i, x] of [-0.81, -0.72, -0.62].entries()) {
+  // Three cup hooks screw into the underside of the ration shelf.
+  for (const [i, x] of [-0.60, -0.51, -0.42].entries()) {
+    b.pipe([[x,1.604,3.43],[x,1.55,3.43],[x,1.526,3.418],[x,1.537,3.405]], .0045, brass);
     b.can([x, 1.45, 3.42], 0.009, 0.15, steel);
     b.soft([x, 1.35, 3.42], [0.031, i === 2 ? 0.033 : 0.046, 0.012], brass);
   }
@@ -682,18 +687,38 @@ function service(b: Bay) {
     b.box([3.828,.29,z], [.014,.035,.214], cloth("#756448"));
   }
   b.box([4.034,.70,2.36], [.21,.17,.34], blue, .018);
+  b.box([4.035,.602,2.36], [.24,.022,.38], steel, .006);
+  for (const z of [2.25,2.47]) {
+    b.pipe([[3.931,.588,z],[4.138,.45,z],[4.142,.575,z]], .012, steel);
+  }
   b.shape(new PlaneGeometry(.295,.13), "#d2b895", [3.923,.70,2.36], [0,-half,0], "panel");
   for (const z of [2.25,2.47]) b.box([3.914,.70,z],[.012,.17,.023], cloth("#91876a"));
+  // Nika threads the exchange docket through the case strap before the handover.
+  const docket = b.panel([3.895,.652,2.38], .212, .103, -half, g => {
+    g.fillStyle = "#d8c7a0"; g.fillRect(0,0,768,320);
+    g.fillStyle = "#49483c"; g.font = "bold 52px monospace"; g.fillText("SIX  /  FIRST SLEDGE",26,72);
+    g.fillRect(25,91,710,4);
+    g.font = "43px monospace"; g.fillText("2 CANS + PUMP METER",26,153);
+    g.fillStyle = "#344f68"; g.font = "italic 49px serif";
+    g.fillText("Bring their valve back.",27,224); g.fillText("Nika   04:52",29,285);
+    g.fillStyle = "#7a6c4d"; g.beginPath(); g.arc(710,37,18,0,2*Math.PI); g.fill();
+    g.fillStyle = "#39382f"; g.beginPath(); g.arc(710,37,8,0,2*Math.PI); g.fill();
+  });
+  docket.rotateZ(-.09);
+  docket.userData.hotspot = { kind: "cabinPlate", label: "Six · exchange docket", hint: "inspect docket" };
+  b.pipe([[3.917,.738,2.47],[3.897,.713,2.481],[3.891,.683,2.469]], .003, cloth("#ada284"));
   // Rear insulated hatch with a dogged wheel, kick plate and rubber perimeter.
   b.box([4.18, 1.0, 1.65], [0.08, 1.88, 0.92], rubber, 0.035);
   b.box([4.125, 1.0, 1.65], [0.072, 1.79, 0.84], olive, 0.033);
   b.box([4.081, 0.37, 1.65], [0.014, 0.4, 0.73], steel);
+  b.can([4.078,.98,1.39], .061, .023, steel, [0,0,half]);
+  b.can([4.048,.98,1.39], .023, .054, brass, [0,0,half]);
   // Keep the working hatch wheel pickable without splitting the other fittings into draw calls.
   const rim = new TorusGeometry(.115,.012,5,24);
   const spokes = [0, Math.PI/3, 2*Math.PI/3].map(a => new BoxGeometry(.219,.014,.019).rotateZ(a));
   const wheel = new Mesh(mergeGeometries([rim,...spokes]), new MeshStandardMaterial({ color: primer, roughness:.68, metalness:.2 }));
   rim.dispose(); spokes.forEach(spoke => spoke.dispose());
-  wheel.position.set(4.053,.98,1.39);
+  wheel.position.set(4.015,.98,1.39);
   wheel.rotation.y = -half;
   wheel.name = "aft hatch wheel";
   wheel.userData.hotspot = {kind:"exterior", label:"Aft hatch", hint:"step outside"};
@@ -762,14 +787,18 @@ function service(b: Bay) {
     0.016,
     ink,
   );
-  b.plate([4.075, 1.73, 1.65], .53, .155, -half, "SIX / OUTBOUND", ["2 FUEL CANS + METER"], primer, cream);
   b.box([4.05, 1.13, 2.98], [0.15, 0.26, 0.32], blue, 0.023);
   b.plate([3.969, 1.13, 2.98], 0.22, 0.13, -half, "SOAP", []);
 }
 
 export const builders = { wheelhouse, berths, galley, garden, service };
 let materials: Promise<[MeshStandardMaterial, MeshStandardMaterial]> | undefined;
-let cover: Promise<BufferGeometry | undefined> | undefined;
+const bayLoader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+const modelPaths: Partial<Record<keyof typeof builders, string>> = {
+  berths: "/models/watch-blanket.glb",
+  wheelhouse: "/models/wheelhouse-metalwork.glb",
+  galley: "/models/galley-metalwork.glb",
+};
 /** Four roughness/metalness pairs use the colour atlas UVs and stay in a single GPU batch. */
 function surfaceMaterial(map: Texture | null, tiles: [number, number][]) {
   const data = Uint8Array.from(tiles.flatMap(([rough, metal]) => [255, rough, metal, 255]));
@@ -796,14 +825,20 @@ async function bayMaterials(atlas: Texture | null): Promise<[MeshStandardMateria
 
 export async function buildBay(name: keyof typeof builders, atlas: Texture | null) {
   materials ??= bayMaterials(atlas);
+  const path = modelPaths[name];
+  const [finishes, asset] = await Promise.all([materials, path ? bayLoader.loadAsync(path) : undefined]);
+  const bay = new Bay(...finishes);
   if (name === "berths") {
-    cover ??= new GLTFLoader().loadAsync("/models/watch-blanket.glb")
-      .then(asset => (asset.scene.children[0] as Mesh<BufferGeometry>).geometry)
-      .catch(() => undefined);
+    berths(bay, asset?.scene);
+  } else {
+    builders[name](bay);
+    if (asset) {
+      asset.scene.traverse(object => {
+        if (object instanceof Mesh) object.material = finishes[0];
+      });
+      bay.group.add(asset.scene);
+    }
   }
-  const bay = new Bay(...await materials);
-  if (name === "berths") berths(bay, await cover);
-  else builders[name](bay);
   bay.group.name = name;
   return bay.finish();
 }

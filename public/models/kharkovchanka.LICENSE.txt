@@ -13,3 +13,8 @@ Portfolio adaptation: original mesh parts were joined and simplified, geometry w
 meshopt-compressed and the four original texture maps were resized and converted
 to WebP. The viewer sets the vehicle length to 8.5 m. The snowfield and the
 separately modeled inhabited interior are additions to the scene.
+
+Relay 23 crew refit: the viewer applies a snow-dust material treatment to
+the lower running gear. A separately authored Blender field kit adds the
+service scoop and its mounts, snow displaced by the tracks and glazing
+detail. The original hull geometry and paint maps retain the credit above.

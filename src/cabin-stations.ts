@@ -4,12 +4,13 @@ import type { builders } from "./quarters";
 
 type Station = keyof typeof builders;
 type XYZ = [number, number, number];
-type View = { label: string; eye: XYZ; at: XYZ; min: XYZ; max: XYZ };
+type View = { label: string; eye: XYZ; at: XYZ; portrait?: { eye: XYZ; at: XYZ }; min: XYZ; max: XYZ };
 export const stations: Record<Station, View> = {
   wheelhouse: {
     label: "Wheelhouse",
     eye: [-1.84, 1.57, 2.15],
     at: [-3.87, 1.02, 1.78],
+    portrait: { eye: [-1.52, 1.58, 2.17], at: [-4.0, 1.12, 2.28] },
     min: [-4.25, 0, 0],
     max: [-2.68, 1.98, 3.46],
   },
@@ -24,6 +25,7 @@ export const stations: Record<Station, View> = {
     label: "Galley",
     eye: [-1.64, 1.53, 1.3],
     at: [-0.98, 1.06, 3.16],
+    portrait: { eye: [-1.34, 1.55, 1.15], at: [-.64, 1.16, 3.18] },
     min: [-2.65, 0, 2.22],
     max: [0.08, 1.92, 3.5],
   },
@@ -57,6 +59,7 @@ export function cabinStations(scene: Scene, floorY: number, wallZ: number, atlas
     ]),
   );
   const pending = new Map<Station, Promise<void>>();
+  const retryAfter = new Map<Station, number>();
   const frustum = new Frustum(),
     projection = new Matrix4();
   function load(k: Station) {
@@ -65,10 +68,12 @@ export function cabinStations(scene: Scene, floorY: number, wallZ: number, atlas
     const job = import("./quarters")
       .then(async ({ buildBay }) => {
         group.add(await buildBay(k, atlas));
+        retryAfter.delete(k);
         request();
       })
       .catch((err) => {
         pending.delete(k);
+        retryAfter.set(k, performance.now() + 15_000);
         throw err;
       });
     pending.set(k, job);
@@ -76,9 +81,10 @@ export function cabinStations(scene: Scene, floorY: number, wallZ: number, atlas
   }
   return {
     pose(k: Station) {
+      const view = matchMedia("(orientation: portrait)").matches ? stations[k].portrait ?? stations[k] : stations[k];
       return {
-        position: new Vector3(...stations[k].eye).add(base),
-        target: new Vector3(...stations[k].at).add(base),
+        position: new Vector3(...view.eye).add(base),
+        target: new Vector3(...view.at).add(base),
       };
     },
     load,
@@ -88,8 +94,9 @@ export function cabinStations(scene: Scene, floorY: number, wallZ: number, atlas
       frustum.setFromProjectionMatrix(
         projection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
       );
+      const now = performance.now();
       for (const k of names)
-        if (!pending.has(k) && frustum.intersectsBox(bounds.get(k)!)) {
+        if (!pending.has(k) && now >= (retryAfter.get(k) ?? 0) && frustum.intersectsBox(bounds.get(k)!)) {
           void load(k).catch((err) => console.warn("Cabin bay could not load", err));
         }
     },

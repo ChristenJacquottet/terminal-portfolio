@@ -24,7 +24,7 @@ The galley stores the calories. The grow rack supplies fresh greens from six sha
 
 ## Scene and loading
 
-The hull, glazing and berths live in `src/cabin.ts`. The Apple II and bench pack load for the opening view. Peripheral fittings arrive after the camera settles. The camera tests the bounds of each cabin bay before importing and building its geometry. Choosing a station prepares it before the camera moves. Cabin fittings share a generated WebP atlas of rubbed enamel, duck canvas, birch and seat leather. Phones load a 512-pixel version and larger displays load a 1024-pixel version. Fixed objects are batched by bay for frustum culling. The cabin renders directly to an antialiased canvas. The polar horizon and its dusk-to-night blend are shared between the portholes and the windshield.
+The hull, glazing and berth supports live in `src/cabin.ts`. The Apple II and bench pack load for the opening view. Peripheral fittings arrive after the camera settles. The camera tests the bounds of each cabin bay before importing and building its geometry. Choosing a station prepares it before the camera moves. Cabin fittings share a generated WebP atlas of rubbed enamel, duck canvas, birch and seat leather. Phones load a 512-pixel version and larger displays load a 1024-pixel version. Fixed objects are batched by bay for frustum culling. The cabin renders directly to an antialiased canvas. The polar horizon and its dusk-to-night blend are shared between the portholes and the windshield.
 
 ## Model references
 
@@ -32,7 +32,7 @@ The exterior uses Snupp’s **Kharkovchanka**. Select **Vehicle exterior** in **
 
 The supplied exterior includes No. 23’s painted hull, portholes, tracked undercarriage, headlights and roof hardware. Its length is scaled uniformly to 8.5 m, with the windshield at the wheelhouse end. The lived-in cabin is a separate reconstruction from the supplied cutaways. The exterior uses the same polar landscape and the current dusk or night watch. [Original model by Snupp](https://sketchfab.com/3d-models/kharkovchanka-dc183abfd28048f5839d1edb43f660e3) · [License and modifications](../public/models/kharkovchanka.LICENSE.txt)
 
-For web delivery, 23 static meshes share one draw with 46,526 triangles. The original 4K paint was resized to 2K, the normal and packed material maps to 1K, and the emissive mask to 256 pixels. The 843.6 KiB GLB loads on the first trip outside. Returning inside releases the exterior geometry and textures. Rebuild it with `node scripts/optimize-crawler.mjs path/to/scene.gltf public/models/kharkovchanka.glb`.
+In the shipped hull, 23 static meshes share one draw with 46,526 triangles. The original 4K paint was resized to 2K, the normal and packed material maps to 1K, and the emissive mask to 256 pixels. The 843.6 KiB GLB loads on the first trip outside. Returning inside releases the exterior geometry and textures. Rebuild it with `node scripts/optimize-crawler.mjs path/to/scene.gltf public/models/kharkovchanka.glb`.
 
 Bohdan Lvov’s **Underground Bunker** is a reference for an inhabited radio installation and its practical lighting. [Bunker listing](https://sketchfab.com/3d-models/underground-bunker-720d2958484345d7b535554e14122b5c)
 
@@ -46,7 +46,7 @@ The vented galley cupboards and closely spaced work surfaces draw on Mike Hill�
 
 The corrected allocation slip beside the porthole records what the computer missed. Relay Six lost its meter. Irena answered the radio at 04:17 and confirmed eleven people. In the wheelhouse, Oleg’s pencilled route detours around the lead the routing model missed. By the rear hatch, two fuel cans and a replacement meter are packed for the next sledge. The crew is still waiting for the spare valve offered in return.
 
-The bunks use a mesh authored in Blender. Its UVs cross the curved edge so the weave follows the hanging cloth. Rebuild it from the repository root with `blender -b --python scripts/build-bunk-cover.py`. The fitted cabinets, engine covers, repeater and water equipment are modeled in Three.js. The wool, foil, can wrappers and chipped panel share an ImageGen texture sheet, with material-specific roughness and metalness. The scene loads the sheet when a bay is needed and requests the blanket mesh when the berths are built.
+At the first crew refit, the bunks shared one mesh authored in Blender. Its UVs cross the curved edge so the weave follows the hanging cloth. That revision used Three.js for the fitted cabinets, engine covers, repeater and water equipment. The wool, foil, can wrappers and chipped panel share an ImageGen texture sheet, with material-specific roughness and metalness. The scene loads the sheet when a bay is needed and requests the blanket mesh when the berths are built.
 
 ### Measured cost of the five bays
 
@@ -59,4 +59,22 @@ Measured at the crew refit (`1dc048d`) in Chromium after visiting the wheelhouse
 | Triangles across all five bays, including instanced leaves | 32,330 | 36,400 |
 | Mesh objects across the five bays | 25 | 30 |
 
-Adjacent faces now reuse matching vertices, and vertex tints use three bytes. That frees buffer space for curved leaf blades, cloth folds and small hardware. The 216 leaves still share one instanced mesh. Desktop downloads 290 KiB for the additional WebP sheet, phones download 68 KiB, and the reusable blanket mesh adds 17 KiB. These are transfer sizes. A decoded 1024-square RGBA texture with mipmaps occupies about 5.3 MiB of graphics memory.
+Adjacent faces now reuse matching vertices, and vertex tints use three bytes. That frees buffer space for curved leaf blades, cloth folds and small hardware. The 216 leaves still share one instanced mesh. At that revision desktop downloaded 290 KiB for the additional WebP sheet, phones downloaded 68 KiB, and the reusable blanket mesh added 17 KiB. These are transfer sizes. A decoded 1024-square RGBA texture with mipmaps occupies about 5.3 MiB of graphics memory.
+
+## The crew’s working refit
+
+Three fitted assemblies carry the most detail. In the wheelhouse, three individually gasketed lids sit below the glass. Oleg keeps the corrected crossing on a hinged chartboard. Two pinned stays hold the HF shelf above the middle lid so a mechanic can release it and get to the engine. The clutch levers have flared grips for mittens, and each printed dial sits in its own metal bezel.
+
+The upper blanket is tucked during watch. Down below, the weight of the last sleeper has left a depression in the pillow. The loose cover turns back to expose its lining and a darn at the edge. In the galley, the burner grate and fiddle restrain the kettle. The pressed sink drops through the counter beside a ribbed draining board. A replacement birch door below it has strap hinges and a metal kick strip. At the aft hatch, Nika tied the return-valve reminder to the replacement meter itself. Select the docket to read it.
+
+The Blender sources generate the fittings in metres. From the repository root, install the locked Node dependencies with `npm ci` and run:
+
+```sh
+blender -b --python scripts/build-cabin-metalwork.py
+blender -b --python scripts/build-bunk-cover.py
+blender -b --python scripts/build-crawler-rack.py
+```
+
+The wheelhouse and galley each add one Meshopt-compressed mesh using the existing atlas. On the berths, silhouette folds, binding and whipstitches are geometry. Blender projects a 73,728-triangle loom sample onto a 128-pixel tangent-space normal map. Both berths share one 96 mm repeating swatch, linear normal data and sRGB fabric colour modulated by vertex dye. The two embedded maps together use about 171 KiB at RGBA8 with mipmaps. The high-resolution source exists only during baking.
+
+The Apple II opens before any of the new GLBs are requested. Exploring the cabin starts loading visible bays, and selecting a station waits for its fittings before the camera moves. The exterior hull and field kit are requested on the first trip outside. [Matched views and rendering costs](visual-history.md#working-aboard-no-23) · [Reference pack and provenance](relay-23-references.md)

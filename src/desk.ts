@@ -925,9 +925,15 @@ export async function createDesk(opts: {
   const widePose = () => {
     const dir = new Vector3(...((savedView?.dir ?? [0.7, 0.57, 2.05]) as [number, number, number])).normalize();
     const at = savedView ? new Vector3(...(savedView.target as [number, number, number])) : target.clone();
-    // Share the portrait frame between the computer and the nearest porthole.
-    if (camera.aspect < 1) at.x = bounds.getCenter(new Vector3()).x - 0.22;
-    return { position: at.clone().addScaledVector(dir, wideDistance() * (savedView?.k ?? 1)), target: at };
+    // Leave some of the radio bench visible alongside the Apple II in portrait.
+    if (camera.aspect < 1) at.x = bounds.getCenter(new Vector3()).x - 0.09;
+    let distance = wideDistance() * (savedView?.k ?? 1);
+    if (camera.aspect < 1 && dir.z > 0) {
+      // A narrow screen can otherwise put the operator behind the opposite wall.
+      // Keep the chair on the aisle side of the galley, with room to lean back.
+      distance = Math.min(distance, (room.wallZ + 2.12 - at.z) / dir.z);
+    }
+    return { position: at.clone().addScaledVector(dir, distance), target: at };
   };
 
   // ── looking around, as someone sitting at the desk: the head stays put, the eyes turn ─────────
@@ -1029,7 +1035,10 @@ export async function createDesk(opts: {
     if (outside?.active) outside.draw();
     else if (!host.hidden) {
       const t0 = performance.now();
-      if (!transitioning && !seated && !darken) quarters.visible(camera);
+      // At the radio bench the galley bounds can graze the camera even though
+      // the worktop is behind the chair. Fetch bay fittings once we look away.
+      const exploring = walking || station || editing || Math.abs(look.yaw) + Math.abs(look.pitch) > .02;
+      if (exploring && !transitioning && !seated && !darken) quarters.visible(camera);
       renderer.render(scene, camera);
       css.render(scene, camera);
       const server = props.get("server");
@@ -1445,14 +1454,17 @@ export async function createDesk(opts: {
   stationSelect.add(new Option("Vehicle exterior", "exterior"));
   stationSelect.onchange = () => stationSelect.value === "exterior" ? void openExterior() : void visitStation(stationSelect.value as CabinStation);
   let openingExterior = false;
-  async function openExterior() {
+  async function openExterior(wheel?: Object3D) {
     if (openingExterior || outside?.active || transitioning || seated || darken) return;
     openingExterior = true;
     walk.clear();
     stationSelect.value = station ?? "";
     stationSelect.disabled = true;
     try {
-      const { crawlerExterior } = await import("./crawler-exterior");
+      const [{ crawlerExterior }] = await Promise.all([
+        import("./crawler-exterior"),
+        wheel && animate(360, t => { wheel.rotation.z = -.5 * Math.PI * ease(t); }),
+      ]);
       outside ??= crawlerExterior(renderer, assets.polarView, request, () => (stationSelect.isConnected ? stationSelect : renderer.domElement).focus({ preventScroll: true }));
       if (!transitioning && !seated && !darken) {
         touch.leave();
@@ -1461,6 +1473,7 @@ export async function createDesk(opts: {
     } catch {
       hint?.prepend(document.createTextNode("Exterior unavailable. Select it again to retry. "));
     } finally {
+      if (wheel) { wheel.rotation.z = 0; request(); }
       openingExterior = false;
       stationSelect.disabled = false;
     }

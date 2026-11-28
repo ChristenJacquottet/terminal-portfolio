@@ -219,12 +219,9 @@ export function buildCabin(scene: Scene, floorY: number, wallZ: number, polarVie
   for (let x = -3.8; x < 4.2; x += 0.64) box(0.024, 0.11, 0.067, x, 1.096, 0.025, steel);
 
   // A pair of canvas berths and rails at the end of the bench.
-  const pillow = clad(metal("#b1ad8a"), "canvas");
   for (const y of [-0.22, 0.50]) {
     box(1.73, 0.055, 0.66, -2.78, y, 0.38, steel);
     box(1.68, 0.092, 0.63, -2.78, y + 0.074, 0.38, canvas);
-    box(0.37, 0.085, 0.44, -3.36, y + 0.148, 0.38, pillow);
-    box(0.54, 0.027, 0.64, -2.29, y + 0.134, 0.38, vermilion);
   }
   for (const x of [-3.62,-1.94]) box(0.025, 1.42, 0.025, x, -0.05, 0.70, steel);
   const frame = new Group(); frame.name = "window";

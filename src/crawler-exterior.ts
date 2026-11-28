@@ -89,7 +89,7 @@ function snowfield(scene: Scene, night: boolean) {
   for (const side of [-1,1]) {
     const rut = new Mesh(new PlaneGeometry(17, .69), trailMat);
     rut.rotation.x = -Math.PI/2;
-    rut.position.set(10.65,.009,side*1.35);
+    rut.position.set(10.65,.009,side*1.54);
     scene.add(rut);
   }
   const shade = canvasMap(128,128,g => {
@@ -100,6 +100,27 @@ function snowfield(scene: Scene, night: boolean) {
   const contact = new Mesh(new PlaneGeometry(11,5.1), new MeshBasicMaterial({map:shade, transparent:true, depthWrite:false}));
   contact.rotation.x = -Math.PI/2; contact.position.y = .017;
   scene.add(contact);
+  return ground.material;
+}
+
+// The original export splits its paint, raw steel and tyres on one shared surface.
+// A small repeatable deposit of dry snow leaves the blade edges readable on a snow floor.
+function addTrackDust(hull: Group) {
+  hull.traverse(part => {
+    if (!(part instanceof Mesh) || !(part.material instanceof MeshStandardMaterial)) return;
+    part.material.onBeforeCompile = shader => {
+      shader.vertexShader = shader.vertexShader.replace("#include <common>", `#include <common>
+        varying vec2 vTrackRoom;`).replace("#include <project_vertex>", `#include <project_vertex>
+        vTrackRoom = (modelMatrix * vec4(transformed, 1.0)).xy;`);
+      shader.fragmentShader = shader.fragmentShader.replace("#include <common>", `#include <common>
+        varying vec2 vTrackRoom;`).replace("#include <map_fragment>", `#include <map_fragment>
+        float skirt = 1.0 - smoothstep(0.29, 1.19, vTrackRoom.y);
+        float dust = skirt * (0.34 + 0.035 * sin(2.3 * vTrackRoom.x) + 0.02 * cos(7.7*vTrackRoom.x));
+        vec3 powderedSurface = vec3(0.139, 0.147, 0.152);
+        diffuseColor.rgb = mix(diffuseColor.rgb, powderedSurface, dust);`).replace("#include <metalness_fragment>", `#include <metalness_fragment>
+        metalnessFactor *= (1.0 - dust);`);
+    };
+  });
 }
 
 function release(root: Scene | Group, shared: Texture | null) {
@@ -129,6 +150,7 @@ export function crawlerExterior(renderer: WebGLRenderer, horizon: Texture | null
   const [retry, back] = dialog.querySelectorAll("button");
   const camera = new PerspectiveCamera(38, 1, .1, 240);
   let controls: OrbitControls | undefined, world: Scene | undefined;
+  let snowMaterial: MeshStandardMaterial | undefined;
   let oldAspect = 0;
   let session = 0;
 
@@ -148,19 +170,42 @@ export function crawlerExterior(renderer: WebGLRenderer, horizon: Texture | null
 
   async function load() {
     const id = ++session;
+    const scene = world;
+    if (!scene) return;
     status.textContent = "Loading exterior…";
     retry.hidden = true;
     try {
-      const gltf = await new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync("/models/kharkovchanka.glb");
-      if (!dialog.open || id !== session || !world) { release(gltf.scene, null); return; }
-      const hull = gltf.scene;
+      const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+      const [crawler, modeledKit] = await Promise.allSettled([
+        loader.loadAsync("/models/kharkovchanka.glb"),
+        loader.loadAsync("/models/field-kit.glb"),
+      ]);
+      const obsolete = !dialog.open || id !== session;
+      if (obsolete || crawler.status === 'rejected') {
+        for (const part of [crawler, modeledKit]) {
+          if (part.status === 'fulfilled') release(part.value.scene, null);
+        }
+        if (!obsolete) throw new Error("Exterior mesh unavailable");
+        return;
+      }
+      const hull = crawler.value.scene;
       hull.rotation.y = -Math.PI/2; // Forward glazing faces the cabin's negative X end.
       const box = new Box3().setFromObject(hull, true);
       hull.scale.setScalar(hullLength/(box.max.x-box.min.x));
       box.setFromObject(hull, true);
       const center = box.getCenter(new Vector3());
       hull.position.set(-center.x,-box.min.y,-center.z);
-      world.add(hull);
+      addTrackDust(hull);
+      scene.add(hull);
+      if (modeledKit.status === 'fulfilled') {
+        const kit = modeledKit.value.scene;
+        const packed = kit.getObjectByName("Packed_track");
+        if (packed instanceof Mesh && packed.material instanceof MeshStandardMaterial && snowMaterial) {
+          packed.material.color.copy(snowMaterial.color);
+          packed.material.map = snowMaterial.map;
+        }
+        scene.add(kit);
+      }
       status.textContent = "Drag to orbit · scroll or pinch to zoom";
       request();
     } catch {
@@ -181,6 +226,7 @@ export function crawlerExterior(renderer: WebGLRenderer, horizon: Texture | null
       world.environment?.dispose();
     }
     world = undefined;
+    snowMaterial = undefined;
     restoreFocus();
     request();
   }
@@ -218,7 +264,7 @@ export function crawlerExterior(renderer: WebGLRenderer, horizon: Texture | null
       world.add(new HemisphereLight(night ? "#adc3e2" : "#e6efff", "#a5b2c3", night ? 1.1 : 1.85));
       const sun = new DirectionalLight(night ? "#c2d5ff" : "#ffe0c4", night ? 1.1 : 2.65);
       sun.position.set(-5,6,3); world.add(sun);
-      snowfield(world, night);
+      snowMaterial = snowfield(world, night);
       dialog.showModal();
       surface.focus({preventScroll:true});
       controls = new OrbitControls(camera,surface);
