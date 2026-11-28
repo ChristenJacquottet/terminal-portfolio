@@ -7,7 +7,7 @@ type Controller = {
   play(): void;
   togglePlay(): void;
   destroy(): void;
-  addListener(event: "ready", callback: () => void): void;
+  addListener(event: "ready" | "playback_started", callback: () => void): void;
 };
 type EmbedAPI = {
   createController(
@@ -44,33 +44,62 @@ export function createMixPlayer(host: HTMLElement, eject: () => void) {
   panel.setAttribute("aria-label", "Walkman");
   panel.hidden = true;
   const mount = document.createElement("div");
+  mount.id = "walkman-playback";
   const controls = document.createElement("div");
-  const link = document.createElement("a");
-  link.target = "_blank";
-  link.rel = "noopener noreferrer";
+  controls.className = "mix-toolbar";
+  const disclosure = document.createElement("button");
+  disclosure.type = "button";
+  disclosure.setAttribute("aria-controls", mount.id);
+  function expand(open: boolean) {
+    mount.hidden = !open;
+    disclosure.setAttribute("aria-expanded", String(open));
+  }
+  disclosure.onclick = () => expand(mount.hidden);
   const button = document.createElement("button");
   button.type = "button";
   button.textContent = "Eject tape";
   button.onclick = eject;
-  controls.append(link, button);
-  panel.append(mount, controls);
+  const manual = document.createElement("button");
+  manual.type = "button";
+  manual.textContent = "Open to play";
+  manual.hidden = true;
+  manual.onclick = () => {
+    expand(true);
+    mount.querySelector("iframe")?.focus();
+  };
+  controls.append(disclosure, manual, button);
+  panel.append(controls, mount);
   host.append(panel);
   let current: Volume | null = null;
+  let prepared: Volume | null = null;
   let controller: Controller | null = null;
+  let ready = false;
+  let wantsStart = false;
   let generation = 0;
+  let startTimer = 0;
 
   function clear() {
     generation++;
+    clearTimeout(startTimer);
+    manual.hidden = true;
     controller?.destroy();
     controller = null;
+    prepared = null;
+    ready = false;
+    wantsStart = false;
     mount.replaceChildren();
   }
-  async function display(volume: Volume, autoplay: boolean) {
-    clear();
+  function startPlayback() {
+    if (!controller || !ready || !wantsStart || audio.muted) return;
+    wantsStart = false;
+    controller.play();
+  }
+  async function prepare(volume: Volume) {
+    prepared = volume;
     const token = generation;
     const node = document.createElement("div");
     node.textContent = "Loading Spotify…";
-    mount.append(node);
+    mount.replaceChildren(node);
     try {
       const api = await loadAPI();
       if (generation !== token) return;
@@ -79,13 +108,23 @@ export function createMixPlayer(host: HTMLElement, eject: () => void) {
           c.destroy();
           return;
         }
+        const frame = mount.querySelector("iframe");
+        if (frame) frame.loading = "eager";
         controller = c;
+        c.addListener("playback_started", () => {
+          if (generation !== token) return;
+          clearTimeout(startTimer);
+          manual.hidden = true;
+        });
         c.addListener("ready", () => {
-          if (autoplay && generation === token && !audio.muted) c.play();
+          if (generation !== token) return;
+          ready = true;
+          startPlayback();
         });
       });
     } catch {
       if (generation !== token) return;
+      manual.hidden = false;
       const frame = document.createElement("iframe");
       frame.title = mixTitle(volume);
       frame.src = "https://open.spotify.com/embed/album/" + albums[volume];
@@ -94,21 +133,43 @@ export function createMixPlayer(host: HTMLElement, eject: () => void) {
     }
   }
   audio.onChange((muted) => {
-    if (muted) clear();
-    else if (current) void display(current, false);
+    if (muted) {
+      clear();
+      if (current) mount.textContent = "Sound is muted.";
+    } else if (current) void prepare(current);
   });
+  // Prepare the first album while entering the room so its Play command can run
+  // in the cassette's pointer event, even on a first visit with a cold cache.
+  if (!audio.muted) void prepare(1);
   return {
     load(volume: Volume) {
       current = volume;
-      link.href = "https://open.spotify.com/album/" + albums[volume];
-      link.textContent = mixTitle(volume) + " on Spotify ↗";
-      panel.hidden = false;
-      if (!audio.muted) void display(volume, true);
+      panel.hidden = true;
+      disclosure.textContent = mixTitle(volume);
+      expand(false);
+      if (audio.muted) {
+        mount.textContent = "Sound is muted.";
+        return;
+      }
+      if (prepared !== volume) {
+        clear();
+        void prepare(volume);
+      }
+      wantsStart = true;
+      clearTimeout(startTimer);
+      startTimer = window.setTimeout(() => { manual.hidden = false; }, 4500);
+      startPlayback();
+    },
+    seated() {
+      if (current) panel.hidden = false;
     },
     toggle() {
       if (audio.muted) return;
       if (controller) controller.togglePlay();
-      else mount.querySelector("iframe")?.focus();
+      else {
+        expand(true);
+        mount.querySelector("iframe")?.focus();
+      }
     },
     stop() {
       current = null;

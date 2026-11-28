@@ -1,86 +1,74 @@
-// A pair of studio headphones laid cushion-side down, with swivelling cups and a sprung band.
+// Lightweight TPS-L2-era open-back headphones, resting with their foam pads facing up.
 import {
-  CanvasTexture, CatmullRomCurve3, CircleGeometry, ExtrudeGeometry, Group, LatheGeometry, Mesh,
-  MeshStandardMaterial, Shape, SRGBColorSpace, TorusGeometry, TubeGeometry, Vector2, Vector3,
+  BoxGeometry, CanvasTexture, CatmullRomCurve3, CylinderGeometry, ExtrudeGeometry, Group,
+  LatheGeometry, Mesh, MeshStandardMaterial, RepeatWrapping, Shape, TubeGeometry, Vector2, Vector3,
 } from "three";
 
 export function headphones() {
   const set = new Group();
-  const rubber = new MeshStandardMaterial({ color: "#282528", roughness: 0.87 });
-  const shell = new MeshStandardMaterial({ color: "#353e41", roughness: 0.46 });
-  const metal = new MeshStandardMaterial({ color: "#aea799", metalness: 0.72, roughness: 0.34 });
-  const badge = new MeshStandardMaterial({ color: "#ae7746", metalness: 0.48, roughness: 0.45 });
+  const plastic = new MeshStandardMaterial({ color: "#242526", roughness: 0.54 });
+  const chrome = new MeshStandardMaterial({ color: "#c4c7c3", metalness: 0.78, roughness: 0.32 });
+  const cable = new MeshStandardMaterial({ color: "#222124", roughness: 0.85 });
 
-  // A perforated grille at close range, baked into one mipmapped texture for both cups.
-  const grille = document.createElement("canvas");
-  grille.width = grille.height = 128;
-  const g = grille.getContext("2d")!;
-  g.fillStyle = "#393936";
-  g.fillRect(0, 0, 128, 128);
-  for (let row = 0; row < 18; row++) {
-    for (let col = 0; col < 17; col++) {
-      const x = col * 8 + (row % 2) * 4, y = row * 7.5;
-      if (Math.hypot(x - 64, y - 64) > 57 || Math.abs(y - 64) < 9) continue;
-      g.beginPath();
-      g.arc(x, y, 2.5, 0, Math.PI * 2);
-      g.fillStyle = "#161719";
-      g.fill();
-    }
+  // One small repeatable bump map gives the soft foam pores without extra geometry.
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 64;
+  const g = canvas.getContext("2d")!;
+  const pixels = g.createImageData(64, 64);
+  let seed = 7;
+  for (let i = 0; i < pixels.data.length; i += 4) {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    pixels.data.fill(seed >>> 24, i, i + 3);
+    pixels.data[i + 3] = 255;
   }
-  g.font = "bold 13px sans-serif";
-  g.fillStyle = "#cfb998";
-  g.textAlign = "center";
-  g.fillText("STEREO", 64, 69);
-  const map = new CanvasTexture(grille);
-  map.colorSpace = SRGBColorSpace;
-  map.anisotropy = 4;
-  const grilleMaterial = new MeshStandardMaterial({ map, roughness: 0.6, metalness: 0.3 });
+  g.putImageData(pixels, 0, 0);
+  const grain = new CanvasTexture(canvas);
+  grain.wrapS = grain.wrapT = RepeatWrapping;
+  grain.repeat.set(5, 2);
+  const foam = new MeshStandardMaterial({ color: "#f48a26", roughness: 0.98, bumpMap: grain, bumpScale: 0.00028 });
 
-  // A flat padded band follows the crown, with two exposed spring wires at either end.
-  const arc = new Shape();
-  const start = 0.38, end = Math.PI - start;
-  arc.absarc(0, 0, 0.086, start, end, false);
-  arc.absarc(0, 0, 0.079, end, start, true);
-  arc.closePath();
-  const band = new Mesh(new ExtrudeGeometry(arc, {
-    depth: 0.014, bevelThickness: 0.0018, bevelSize: 0.0018, bevelSegments: 2, curveSegments: 24,
-  }), rubber);
-  band.rotation.x = -Math.PI / 2;
-  band.position.y = 0.009;
-  set.add(band);
+  const band = new Shape();
+  band.absarc(0, 0, 0.070, 0, Math.PI, false);
+  band.absarc(0, 0, 0.0688, Math.PI, 0, true);
+  band.closePath();
+  const spring = new Mesh(new ExtrudeGeometry(band, { depth: 0.006, bevelEnabled: false, curveSegments: 32 }), chrome);
+  spring.rotation.x = -Math.PI / 2;
+  spring.position.y = 0.003;
+  set.add(spring);
 
+  const pad = new LatheGeometry([
+    [0, 0.006], [0.018, 0.006], [0.021, 0.008], [0.022, 0.012],
+    [0.021, 0.016], [0.018, 0.018], [0.011, 0.0185], [0.004, 0.0175], [0, 0.017],
+  ].map(([x, y]) => new Vector2(x, y)), 48);
+  const cord = (points: number[][], radius: number) => {
+    const path = new CatmullRomCurve3(points.map(([x, y, z]) => new Vector3(x, y, z)));
+    set.add(new Mesh(new TubeGeometry(path, 32, radius, 6, false), cable));
+  };
   for (const side of [-1, 1]) {
+    const arm = new Mesh(new BoxGeometry(0.003, 0.005, 0.037), chrome);
+    arm.position.set(side * 0.0694, 0.006, 0.018);
+    const slider = new Mesh(new BoxGeometry(0.0065, 0.008, 0.014), plastic);
+    slider.position.set(side * 0.0694, 0.0065, 0.009);
     const cup = new Group();
-    cup.position.set(side * 0.060, 0, 0.037);
-    cup.rotation.y = side * 0.14;
-    const cushion = new Mesh(new TorusGeometry(0.024, 0.008, 12, 48), rubber);
-    cushion.rotation.x = Math.PI / 2;
-    cushion.scale.y = 1.25;
-    cushion.position.y = 0.008;
-    const housing = new Mesh(new LatheGeometry([
-      [0, 0.014], [0.029, 0.014], [0.032, 0.017], [0.032, 0.023],
-      [0.029, 0.027], [0.022, 0.0305], [0.015, 0.032], [0, 0.032],
-    ].map(([x, y]) => new Vector2(x, y)), 40), shell);
-    housing.scale.z = 1.22;
-    const inset = new Mesh(new CircleGeometry(0.0155, 40), grilleMaterial);
-    inset.rotation.x = -Math.PI / 2;
-    inset.position.y = 0.0323;
-    const trim = new Mesh(new TorusGeometry(0.0156, 0.0007, 6, 36), badge);
-    trim.rotation.x = Math.PI / 2;
-    trim.position.y = 0.0323;
-    cup.add(cushion, housing, inset, trim);
-    set.add(cup);
-
-    for (const rail of [-1, 1]) {
-      // The yoke splits at the slider and meets the cup on opposite sides.
-      const path = new CatmullRomCurve3([
-        new Vector3(side * 0.076, 0.016 + rail * 0.004, -0.036),
-        new Vector3(side * 0.083, 0.016 + rail * 0.004, -0.011),
-        new Vector3(side * (0.062 + rail * 0.028), 0.021, 0.009),
-        new Vector3(side * (0.060 + rail * 0.031), 0.020, 0.035),
-      ]);
-      set.add(new Mesh(new TubeGeometry(path, 18, 0.0019, 8), metal));
-    }
+    cup.position.set(side * 0.060, 0.009, 0.043);
+    cup.rotation.z = -side * 0.44;
+    const housing = new Mesh(new CylinderGeometry(0.0205, 0.016, 0.006, 36), plastic);
+    housing.position.y = 0.003;
+    cup.add(housing, new Mesh(pad, foam));
+    set.add(arm, slider, cup);
+    cord([[side * 0.060, 0.009, 0.056], [side * 0.056, 0.0014, 0.071],
+      [side * 0.038, 0.0013, 0.084], [-0.015, 0.0013, 0.083]], 0.00085);
   }
+  cord([[-0.015, 0.0013, 0.083], [-0.044, 0.0014, 0.093], [-0.084, 0.0015, 0.091],
+    [-0.094, 0.0015, 0.065], [-0.090, 0.0024, 0.048]], 0.0012);
+  const plug = new Group();
+  plug.position.set(-0.090, 0.003, 0.048);
+  plug.rotation.x = -Math.PI / 2;
+  const grip = new Mesh(new CylinderGeometry(0.003, 0.003, 0.013, 12), plastic);
+  grip.position.y = 0.0065;
+  const tip = new Mesh(new CylinderGeometry(0.00175, 0.00175, 0.012, 12), chrome);
+  tip.position.y = 0.019;
+  plug.add(grip, tip);
+  set.add(plug);
   return set;
 }

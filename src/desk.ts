@@ -592,7 +592,7 @@ export async function createDesk(opts: {
   screenEl: HTMLElement;
   glow: string;
   onSitDown: () => void;
-  onProgress: (fraction: number) => void;
+  onProgress: (fraction: number, phase: string) => void;
   /** Types a command into the terminal (a floppy opens its project, the phone runs contact). */
   run: (command: string) => void;
   /** Clears the terminal and boots it again (the power strip). */
@@ -692,11 +692,12 @@ export async function createDesk(opts: {
   Cache.enabled = true;
   if (imageFlights.size) await Promise.all([...imageFlights.values()]);
   const roomAssets = loadRoom();
-  // Progress: the computer is the first third, the props the rest.
-  const loaded = await loadModel((f) => opts.onProgress(f * 0.35));
+  // Leave room in the progress bar for scene assembly and GPU preparation.
+  const loaded = await loadModel((f) => opts.onProgress(f * 0.17, "loading Apple II"));
   const { root, screen, tube } = loaded ?? standIn();
   root.name = "computer"; // the Apple II, for features (the caption names it)
   scene.add(root);
+  opts.onProgress(0.18, "building room");
   const room = buildRoom(scene, await roomAssets, new Box3().setFromObject(root), {
     initTexture: (t) => renderer.initTexture(t),
     skyScale: isPhone ? 0.5 : 1,
@@ -1783,11 +1784,14 @@ export async function createDesk(opts: {
   };
 
   /** Uploads textures to WebGL in <= 6 ms slices so the fullscreen terminal stays responsive without burning 140 frames. */
-  const uploadTextures = async (set: Iterable<Texture>) => {
+  const uploadTextures = async (set: Set<Texture>) => {
+    let uploaded = 0;
     let slice = performance.now();
     for (const t of set) {
       renderer.initTexture(t);
+      uploaded++;
       if (performance.now() - slice > 6) {
+        opts.onProgress(0.83 + 0.13 * uploaded / set.size, "uploading textures");
         await nextFrame();
         slice = performance.now();
       }
@@ -1799,9 +1803,19 @@ export async function createDesk(opts: {
   resize();
   place(closeUp());
   const prepare = async (_arrivals: Object3D) => {
-    for (const [name, prop] of props) mergeStaticLeaves(name, prop);
+    let count = 0;
+    let slice = performance.now();
+    for (const [name, prop] of props) {
+      mergeStaticLeaves(name, prop);
+      count++;
+      if (performance.now() - slice > 8) {
+        opts.onProgress(0.55 + 0.14 * count / props.size, "assembling props");
+        await nextFrame();
+        slice = performance.now();
+      }
+    }
   };
-  const propsReady = loaded ? addProps(scene, roomLoader, bounds, room, lamp, props, prepare, relight, featuredDisks(), (f) => opts.onProgress(0.35 + f * 0.6)) : Promise.resolve();
+  const propsReady = loaded ? addProps(scene, roomLoader, bounds, room, lamp, props, prepare, relight, featuredDisks(), (f) => opts.onProgress(0.18 + f * 0.37, f >= 1 ? "assembling props" : "loading props")) : Promise.resolve();
   // `?edit`: the layout editor, for arranging the props (never loaded otherwise).
   if (editing && loaded && controls) {
     const editorControls = controls;
@@ -1811,6 +1825,7 @@ export async function createDesk(opts: {
   }
 
   const ready = propsReady.then(async () => {
+    opts.onProgress(0.69, "preparing materials");
     // Share one 64x64 radial-gradient blob shadow material across all placed props instead of 38 identical textures.
     let sharedBlobMat: MeshBasicMaterial | null = null;
     for (const [name, prop] of props) {
@@ -1892,16 +1907,21 @@ export async function createDesk(opts: {
       prepareGlow(scene); // what glows keys the bloom (post.ts); before the shaders compile
     }
     // With post the scene draws into a target (linear, tone mapped later), so compile for that.
+    opts.onProgress(0.75, "compiling shaders");
+    await nextFrame();
     const bound = renderer.getRenderTarget();
     if (post) renderer.setRenderTarget(post.target);
     const compiling = renderer.compileAsync(scene, camera);
     renderer.setRenderTarget(bound);
     await compiling;
+    opts.onProgress(0.83, "uploading textures");
     await uploadTextures(all);
+    opts.onProgress(0.97, "lighting room");
+    await nextFrame();
     renderer.shadowMap.needsUpdate = true;
     captureRoom(time); // the room, lit, as its own environment
     while (blobUrls.length) URL.revokeObjectURL(blobUrls.pop()!);
-    opts.onProgress(1);
+    opts.onProgress(1, "ready");
   });
 
   return api;

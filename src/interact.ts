@@ -666,17 +666,10 @@ export function createInteractions(o: {
     const ejectOnly = selected === loadedTape;
     try {
       leave();
-      player.stop();
-      if (!desk.framed()) {
-        const area = new Box3().setFromObject(deck, true);
-        for (const n of ["mix-1", "mix-2"]) {
-          const tape = desk.props.get(n);
-          if (tape) area.expandByObject(tape, true);
-        }
-        await desk.frame(area, { dir: new Vector3(0.08, 1, 0.72), fill: Math.min(0.88, camera.aspect * 0.85), ms: 520 });
-      }
+      if (ejectOnly) player.stop();
+      else player.load(selected.userData.volume as Volume);
       const open = -1.78;
-      sfx("lidOpen", deck);
+      sfx("lidOpen", deck, 0.46);
       await o.animate(240, (t) => { lid.rotation.x = open * ease(t); });
       const seat = {position: deck.localToWorld(new Vector3(0, BAY_Y, 0)), quaternion: deck.getWorldQuaternion(new Quaternion()), scale: deck.getWorldScale(new Vector3())};
       const above = { ...seat, position: deck.localToWorld(new Vector3(0, BAY_Y + 0.035, 0)) };
@@ -703,11 +696,12 @@ export function createInteractions(o: {
         selected.quaternion.identity();
         selected.scale.setScalar(1);
         loadedTape = selected;
-        sfx("tapeInsert", deck);
+        sfx("tapeInsert", deck, 0.55);
       }
       await o.animate(250, (t) => { lid.rotation.x = open * (1 - ease(t)); });
-      sfx("lidClose", deck);
-      if (loadedTape) player.load(loadedTape.userData.volume as Volume);
+      sfx("lidClose", deck, 0.38);
+      if (loadedTape) sfx("tapeMotor", deck, 0.52);
+      if (loadedTape) player.seated();
       o.relight();
     } finally {
       changingTape = false;
@@ -884,7 +878,7 @@ export function createInteractions(o: {
         const now = o.muted();
         if (now === null) return;
         o.setMuted(!now);
-        if (now) sfx("tapeButton", object);
+        if (now) sfx("tapeButton", object, 0.58);
         void once(object, () => hop(object, 0.015, 380));
         return;
       }
@@ -897,7 +891,7 @@ export function createInteractions(o: {
         return;
       case "walkman":
         if (changingTape) return;
-        sfx("tapeButton", object);
+        sfx("tapeButton", object, 0.58);
         if (loadedTape) player.toggle();
         else {
           const tape = o.desk()?.props.get("mix-1");

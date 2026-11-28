@@ -67,6 +67,20 @@ body {
   overflow-wrap: anywhere;
 }
 
+/* A compositor-driven cursor stays active during shader and lighting work. */
+.line.live::after {
+  content: "";
+  display: inline-block;
+  width: 0.5ch;
+  height: 0.85em;
+  margin-left: 0.5ch;
+  background: currentColor;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .line.live::after { animation: desk-pulse 1.2s ease-in-out infinite alternate; }
+}
+@keyframes desk-pulse { from { opacity: 0.25; } to { opacity: 0.9; } }
+
 .c-dim {
   color: var(--dim);
 }
@@ -666,7 +680,7 @@ body {
   z-index: 4;
   top: 54px;
   left: 12px;
-  width: min(300px, calc(100% - 24px));
+  max-width: calc(100% - 24px);
   padding: 5px;
   color: var(--ink);
   background: #eee7d8;
@@ -674,8 +688,11 @@ body {
   box-shadow: 2px 2px 0 #242322;
   font: 12px "IBM Plex Mono", monospace;
 }
+#walkman-playback { width: min(288px, calc(100vw - 40px)); margin-top: 5px; }
+.mix-toolbar [aria-expanded]::before { content: ""; display: inline-block; margin-right: 7px; border: 4px solid transparent; border-right: 0; border-left: 6px solid currentColor; }
+.mix-toolbar [aria-expanded="true"]::before { transform: rotate(90deg); }
 .mix-player[hidden] { display: none; }
 .mix-player iframe { display: block; width: 100%; height: 152px; border: 0; }
-.mix-player > div:last-child { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 3px 4px; }
-.mix-player a, .mix-player button { font: inherit; color: inherit; }
-.mix-player button { padding: 4px 7px; background: transparent; border: 1px solid; cursor: pointer; }
+.mix-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0; }
+.mix-player button { padding: 4px 7px; font: inherit; color: inherit; background: transparent; border: 1px solid; cursor: pointer; }
+.mix-toolbar button[aria-expanded] { border: 0; }
