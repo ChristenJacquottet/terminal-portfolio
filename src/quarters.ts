@@ -16,7 +16,7 @@ import {
   Mesh,
   MeshStandardMaterial,
   PlaneGeometry,
-  RepeatWrapping,
+  type Texture,
   SphereGeometry,
   SRGBColorSpace,
   TorusGeometry,
@@ -27,6 +27,11 @@ import {
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 
+import { mapSurface, type Surface } from "./cabin-surfaces";
+type Finish = string | { tint: string; surface: Surface };
+const cloth = (tint: string): Finish => ({ tint, surface: "canvas" });
+const leather = (tint: string): Finish => ({ tint, surface: "leather" });
+
 type XYZ = [number, number, number];
 const steel = "#485353",
   brass = "#b9a271",
@@ -36,74 +41,50 @@ const steel = "#485353",
   olive = "#77816b",
   blue = "#52727c",
   rubber = "#353935",
-  wood = "#b38863",
+  wood: Finish = { tint: "#d4b498", surface: "birch" },
   linen = "#c8bb98";
 const half = Math.PI / 2;
-let surface: MeshStandardMaterial | undefined;
-function wornPaint() {
-  if (surface) return surface;
-  const c = document.createElement("canvas");
-  c.width = c.height = 128;
-  const ctx = c.getContext("2d")!;
-  ctx.fillStyle = "#eeeae2";
-  ctx.fillRect(0, 0, 128, 128);
-  let seed = 1958;
-  const rand = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296;
-  for (let i = 0; i < 1100; i++) {
-    ctx.fillStyle = i % 3 ? "rgba(80,63,49,.085)" : "rgba(250,251,236,.40)";
-    ctx.fillRect(rand() * 128, rand() * 128, 0.6 + rand() * 3, 0.6 + rand());
-  }
-  const map = new CanvasTexture(c);
-  map.colorSpace = SRGBColorSpace;
-  map.wrapS = map.wrapT = RepeatWrapping;
-  return (surface = new MeshStandardMaterial({
-    vertexColors: true,
-    map,
-    metalness: 0.16,
-    roughness: 0.76,
-    side: DoubleSide,
-  }));
-}
-
 class Bay {
+  constructor(private readonly material: MeshStandardMaterial) {}
   readonly group = new Group();
   private parts: BufferGeometry[] = [];
-  shape(g: BufferGeometry, colour: string, p: XYZ, rotation: XYZ = [0, 0, 0]) {
+  shape(g: BufferGeometry, colour: Finish, p: XYZ, rotation: XYZ = [0, 0, 0]) {
     if (g.index) {
       const flat = g.toNonIndexed();
       g.dispose();
       g = flat;
     }
+    mapSurface(g, typeof colour === "string" ? "enamel" : colour.surface);
     g.clearGroups();
     g.rotateX(rotation[0])
       .rotateY(rotation[1])
       .rotateZ(rotation[2])
       .translate(...p);
-    const c = new Color(colour),
+    const c = new Color(typeof colour === "string" ? colour : colour.tint),
       count = g.attributes.position.count;
     const rgb = new Float32Array(count * 3);
     for (let i = 0; i < count; i++) c.toArray(rgb, 3 * i);
     g.setAttribute("color", new BufferAttribute(rgb, 3));
     this.parts.push(g);
   }
-  box(p: XYZ, size: XYZ, colour: string, radius = 0, tilt: XYZ = [0, 0, 0]) {
+  box(p: XYZ, size: XYZ, colour: Finish, radius = 0, tilt: XYZ = [0, 0, 0]) {
     this.shape(radius ? new RoundedBoxGeometry(...size, 1, radius) : new BoxGeometry(...size), colour, p, tilt);
   }
-  can(p: XYZ, r: number, h: number, colour: string, tilt: XYZ = [0, 0, 0], rTop = r) {
+  can(p: XYZ, r: number, h: number, colour: Finish, tilt: XYZ = [0, 0, 0], rTop = r) {
     this.shape(new CylinderGeometry(rTop, r, h, 18), colour, p, tilt);
   }
-  loop(p: XYZ, r: number, thickness: number, colour: string, rot: XYZ = [0, 0, 0]) {
+  loop(p: XYZ, r: number, thickness: number, colour: Finish, rot: XYZ = [0, 0, 0]) {
     this.shape(new TorusGeometry(r, thickness, 6, 26), colour, p, rot);
   }
-  pipe(points: XYZ[], r: number, colour: string) {
+  pipe(points: XYZ[], r: number, colour: Finish) {
     const path = new CatmullRomCurve3(points.map((a) => new Vector3(...a)));
     this.shape(new TubeGeometry(path, Math.max(8, points.length * 3), r, 6, false), colour, [0, 0, 0]);
   }
-  soft(p: XYZ, size: XYZ, colour: string, tilt: XYZ = [0, 0, 0]) {
+  soft(p: XYZ, size: XYZ, colour: Finish, tilt: XYZ = [0, 0, 0]) {
     this.shape(new SphereGeometry(1, 12, 8).scale(...size), colour, p, tilt);
   }
   finish() {
-    this.group.add(new Mesh(mergeGeometries(this.parts), wornPaint()));
+    this.group.add(new Mesh(mergeGeometries(this.parts), this.material));
     this.parts.forEach((p) => p.dispose());
     return this.group;
   }
@@ -123,7 +104,7 @@ class Bay {
     return plate;
   }
   plate(p: XYZ, w: number, h: number, yaw: number, header: string, lines: string[], bg = cream, fg = ink) {
-    this.panel(p, w, h, yaw, (g) => {
+    const plate = this.panel(p, w, h, yaw, (g) => {
       g.fillStyle = bg;
       g.fillRect(0, 0, 768, 320);
       g.strokeStyle = fg;
@@ -142,6 +123,7 @@ class Bay {
           g.fill();
         }
     });
+    plate.userData.hotspot = { kind: "cabinPlate", label: header, hint: "inspect plate" };
   }
 }
 
@@ -149,8 +131,8 @@ function wheelhouse(b: Bay) {
   // Narrow side-by-side seats, steering clutches, engine cover and a paper route kept at eye level.
   for (const z of [1.45, 2.48]) {
     b.box([-3.01, 0.31, z], [0.45, 0.38, 0.48], olive, 0.045);
-    b.box([-3.08, 0.56, z], [0.55, 0.15, 0.52], "#725240", 0.065);
-    b.box([-2.8, 0.88, z], [0.13, 0.63, 0.51], "#795a43", 0.057, [0, 0, 0.1]);
+    b.box([-3.08, 0.56, z], [0.55, 0.15, 0.52], leather("#725240"), 0.065);
+    b.box([-2.8, 0.88, z], [0.13, 0.63, 0.51], leather("#795a43"), 0.057, [0, 0, 0.1]);
     for (let k = 0; k < 5; k++)
       b.box([-2.887, 0.68 + k * 0.09, z], [0.022, 0.02, 0.44], "#aa8761", 0.009, [0, 0, 0.1]);
     for (const dz of [-0.2, 0.2]) b.box([-3.09, 0.12, z + dz], [0.66, 0.07, 0.055], steel);
@@ -276,7 +258,7 @@ function wheelhouse(b: Bay) {
 
 function berths(b: Bay) {
   for (const [i, deck] of [0.7, 1.42].entries()) {
-    const plaid = i ? "#7a7352" : "#84665b";
+    const plaid = cloth(i ? "#7a7352" : "#84665b");
     b.box([-2.66, deck, 0.38], [1.19, 0.076, 0.61], plaid, 0.03);
     for (let j = 0; j < 11; j++) {
       const x = -3.21 + j * 0.107;
@@ -306,7 +288,7 @@ function berths(b: Bay) {
     ink,
   );
   // A jacket on the end hook, and wet boots left toe-out under the ladder.
-  const coat = "#a87444";
+  const coat = cloth("#a87444");
   b.pipe(
     [
       [-3.55, 1.65, 0.1],
@@ -327,7 +309,7 @@ function berths(b: Bay) {
   }
   // A cloth edge hangs over the bunk frame and breaks the silhouette of the folded bedding.
   for (const [i, y] of [0.7, 1.42].entries()) {
-    b.box([-2.67, y - 0.057, 0.685], [0.79, 0.15, 0.028], i ? "#74805c" : "#95695b", 0.012);
+    b.box([-2.67, y - 0.057, 0.685], [0.79, 0.15, 0.028], cloth(i ? "#74805c" : "#95695b"), 0.012);
     for (let j = 0; j < 7; j++)
       b.box([-3.01 + j * 0.109, y - 0.055, 0.702], [0.012, 0.14, 0.008], i ? "#b1aa81" : "#c3a78d");
   }
@@ -410,7 +392,7 @@ function galley(b: Bay) {
   );
   b.box([-2.24, 0.48, 2.47], [0.38, 0.07, 0.31], blue, 0.027);
   for (const x of [-2.38, -2.1]) b.box([x, 0.24, 2.47], [0.035, 0.45, 0.24], steel);
-  const towel = "#b9a493";
+  const towel = cloth("#b9a493");
   b.can([-0.85, 0.82, 2.8], 0.012, 0.32, steel, [0, 0, half]);
   for (let i = 0; i < 6; i++)
     b.box(
@@ -671,8 +653,10 @@ function service(b: Bay) {
 }
 
 export const builders = { wheelhouse, berths, galley, garden, service };
-export function buildBay(name: keyof typeof builders) {
-  const bay = new Bay();
+let finish: MeshStandardMaterial | undefined;
+export function buildBay(name: keyof typeof builders, atlas: Texture | null) {
+  finish ??= new MeshStandardMaterial({ map: atlas, roughness: .8, metalness: .12, vertexColors: true, side: DoubleSide });
+  const bay = new Bay(finish);
   builders[name](bay);
   bay.group.name = name;
   return bay.finish();

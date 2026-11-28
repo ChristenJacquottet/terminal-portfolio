@@ -7,7 +7,7 @@ import {
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { buildCabin } from "./cabin";
 
-export type RoomAssets = { polarView: Texture | null };
+export type RoomAssets = { polarView: Texture | null; surfaceAtlas: Texture | null };
 
 /** What the props need to know about the room. Desk top is y = 0; the wall faces +z. */
 export type Room = {
@@ -41,17 +41,23 @@ export const ROOM_TEXTURES = [
   surface("oak_nor_gl"),
   surface("oak_rough"),
   "/textures/world-map.webp",
+  surface("cabin-surfaces"),
 ] as const;
 
 export async function loadRoom(): Promise<RoomAssets> {
   Cache.enabled = true;
   const images = new ImageLoader();
-  const [polarView] = await Promise.all([
+  const [polarView, surfaceAtlas] = await Promise.all([
     new TextureLoader().loadAsync(ROOM_TEXTURES[0]).catch(() => null),
-    ...ROOM_TEXTURES.slice(1).map(url => images.loadAsync(url).catch(() => null)),
+    new TextureLoader().loadAsync(surface("cabin-surfaces")).catch(() => null),
+    ...ROOM_TEXTURES.slice(1, -1).map(url => images.loadAsync(url).catch(() => null)),
   ] as const);
   if (polarView) polarView.colorSpace = SRGBColorSpace;
-  return { polarView };
+  if (surfaceAtlas) {
+    surfaceAtlas.colorSpace = SRGBColorSpace;
+    surfaceAtlas.anisotropy = 4;
+  }
+  return { polarView, surfaceAtlas };
 }
 
 const boxGeo = (w: number, h: number, d: number, x: number, y: number, z: number) => new BoxGeometry(w, h, d).translate(x, y, z);
@@ -120,7 +126,7 @@ export function buildRoom(
   const floorY = deskBox.min.y;
   const wallZ = deskBox.min.z - 0.03;
 
-  const cabin = buildCabin(scene, floorY, wallZ, assets.polarView);
+  const cabin = buildCabin(scene, floorY, wallZ, assets.polarView, assets.surfaceAtlas);
   const { x: cx, y: cy, radius } = cabin;
   const win = { x0: cx - radius, x1: cx + radius, y0: cy - radius, y1: cy + radius };
 

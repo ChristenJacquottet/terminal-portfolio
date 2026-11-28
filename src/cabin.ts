@@ -7,6 +7,8 @@ import {
 } from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
+import { mapSurface, type Surface } from "./cabin-surfaces";
+
 const length = 8.5, width = 3.5, height = 2.1;
 const ports = [-1.69, -0.76, 2.38];
 const portY = 0.52, radius = 0.235;
@@ -112,17 +114,27 @@ function receiver() {
   return set;
 }
 
-export function buildCabin(scene: Scene, floorY: number, wallZ: number, polarView: Texture | null) {
+export function buildCabin(scene: Scene, floorY: number, wallZ: number, polarView: Texture | null, atlas: Texture | null) {
   const shell = new Group();
   shell.name = "Kharkivchanka No. 23";
   shell.position.z = wallZ;
   scene.add(shell);
   const enamel = new MeshStandardMaterial({ map: skin(), roughness: 0.65, metalness: 0.18, shadowSide: DoubleSide });
   const steel = metal("#414e4c"), alloy = metal("#a9afa5", 0.42), vermilion = metal("#984d36"), canvas = metal("#6d634b");
+  const swatches = new Map<MeshStandardMaterial, Surface>();
+  function clad(mat: MeshStandardMaterial, tile: Surface) {
+    swatches.set(mat, tile);
+    mat.map = atlas;
+    return mat;
+  }
+  clad(steel, "enamel"); clad(canvas, "canvas");
   const panels = new Map<MeshStandardMaterial, BoxGeometry[]>();
   const box = (w: number, h: number, d: number, x: number, y: number, z: number, mat: MeshStandardMaterial) => {
     const parts = panels.get(mat) ?? [];
-    parts.push(new BoxGeometry(w, h, d).translate(x, y, z));
+    const geometry = new BoxGeometry(w, h, d);
+    const tile = swatches.get(mat);
+    if (tile) mapSurface(geometry, tile);
+    parts.push(geometry.translate(x, y, z));
     panels.set(mat, parts);
   };
   const roof = floorY + height;
@@ -156,7 +168,7 @@ export function buildCabin(scene: Scene, floorY: number, wallZ: number, polarVie
   for (let x = -3.8; x < 4.2; x += 0.64) box(0.024, 0.11, 0.067, x, 1.096, 0.025, steel);
 
   // A pair of canvas berths and rails at the end of the bench.
-  const pillow = metal("#b1ad8a");
+  const pillow = clad(metal("#b1ad8a"), "canvas");
   for (const y of [-0.22, 0.50]) {
     box(1.73, 0.055, 0.66, -2.78, y, 0.38, steel);
     box(1.68, 0.092, 0.63, -2.78, y + 0.074, 0.38, canvas);
@@ -197,6 +209,7 @@ export function buildCabin(scene: Scene, floorY: number, wallZ: number, polarVie
   watchLight.position.set(-0.81, 0.94, 0.23); shell.add(watchLight);
   // Ribbed deck plates down the passage, kick panels, cable trunk and guarded overhead lamps.
   const casePaint = metal("#78816c"), tread = deckMat(), lining = metal("#b6b39d");
+  clad(casePaint, "enamel"); clad(lining, "enamel");
   for (let i=0;i<13;i++) {
     const x=-3.9+i*.65;
     box(.633,.014,1.22,x,floorY+.008,1.78,tread);

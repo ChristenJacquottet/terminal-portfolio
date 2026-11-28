@@ -1,5 +1,5 @@
 // Camera and sight-line bounds in metres from the port wall and the deck.
-import { Box3, Frustum, Group, Matrix4, Vector3, type PerspectiveCamera, type Scene } from "three";
+import { Box3, Frustum, Group, Matrix4, Vector3, type PerspectiveCamera, type Scene, type Texture } from "three";
 import type { builders } from "./quarters";
 
 type Station = keyof typeof builders;
@@ -44,7 +44,7 @@ export const stations: Record<Station, View> = {
 };
 export type CabinStation = Station;
 
-export function cabinStations(scene: Scene, floorY: number, wallZ: number, request: () => void) {
+export function cabinStations(scene: Scene, floorY: number, wallZ: number, atlas: Texture | null, request: () => void) {
   const base = new Vector3(0, floorY, wallZ);
   const group = new Group();
   group.position.copy(base);
@@ -64,7 +64,7 @@ export function cabinStations(scene: Scene, floorY: number, wallZ: number, reque
     if (cached) return cached;
     const job = import("./quarters")
       .then(({ buildBay }) => {
-        group.add(buildBay(k));
+        group.add(buildBay(k, atlas));
         request();
       })
       .catch((err) => {

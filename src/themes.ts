@@ -160,7 +160,7 @@ const rgba = (hex: string, a: number) => {
 };
 
 let current: Scheme = THEMES[0];
-let crt = true;
+let crt = false;
 
 export const isTheme = (name: string) => THEMES.some((t) => t.name === name);
 export const currentTheme = () => current.name;
@@ -212,8 +212,6 @@ window.matchMedia("(max-width: 560px)").addEventListener("change", () => apply()
 export function restoreDisplay() {
   const saved = store.get("cjsh.theme");
   current = THEMES.find((t) => t.name === saved) ?? THEMES[0];
-  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const savedCrt = store.get("cjsh.crt");
-  crt = savedCrt ? savedCrt === "on" : !reduced;
+  crt = store.get("cjsh.crt") === "on";
   apply();
 }

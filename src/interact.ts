@@ -812,6 +812,10 @@ export function createInteractions(o: {
           if (!stay) await o.sitDownAndRun("contact");
         });
         return;
+      case "cabinPlate":
+        leave();
+        if (!stay) void o.desk()?.frame(object, { dir: object.getWorldDirection(new Vector3()), fill: .84 * Math.min(1, camera.aspect), ms: 480 });
+        return;
       case "radioLog":
         sfx("switch", object, 0.48);
         if (!stay) void o.sitDownAndRun("cat ~/watch.log");

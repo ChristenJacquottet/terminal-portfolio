@@ -221,25 +221,6 @@ body {
   }
 }
 
-/* CRT: scanlines and a soft vignette. `crt off` removes both. */
-.fx {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-
-.fx-scan {
-  background: repeating-linear-gradient(to bottom, rgba(0, 0, 0, 0.22) 0, rgba(0, 0, 0, 0.22) 1px, transparent 1px, transparent 3px);
-}
-
-.fx-vignette {
-  background: radial-gradient(ellipse at center, transparent 62%, rgba(0, 0, 0, 0.45) 100%);
-}
-
-[data-crt="off"] .fx {
-  display: none;
-}
-
 /* The desk: WebGL canvas plus the CSS3D layer that carries the screen. */
 .desk {
   position: fixed;
@@ -275,12 +256,6 @@ body {
 .desk-css .screen {
   position: absolute;
   inset: 0;
-}
-
-/* Scaling 1px repeating scanlines inside the CSS3D monitor tube creates moiré bands; keep vignette only. */
-.desk:not([hidden]) ~ .screen .fx-scan,
-.desk-css .fx-scan {
-  display: none;
 }
 
 /*
@@ -707,3 +682,28 @@ body {
 .mix-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0; }
 .mix-player button { padding: 4px 7px; font: inherit; color: inherit; background: transparent; border: 1px solid; cursor: pointer; }
 .mix-toolbar button[aria-expanded] { border: 0; }
+
+.walk-pad { display: none; }
+@media (pointer: coarse) {
+  .walk-pad:not([hidden]) {
+    position: fixed;
+    bottom: calc(130px + env(safe-area-inset-bottom));
+    left: max(12px, env(safe-area-inset-left));
+    z-index: 3;
+    display: grid;
+    grid-template-columns: repeat(3, 42px);
+    gap: 3px;
+    touch-action: none;
+  }
+  .walk-pad button {
+    background: #f3eee2;
+    color: #16130f;
+    border: 1px solid currentColor;
+    min-height: 42px;
+    font: 20px monospace;
+    touch-action: none;
+    user-select: none;
+  }
+  .walk-pad button:first-child { grid-column: 2; }
+  .walk-pad button:nth-child(2) { grid-column: 1; }
+}
