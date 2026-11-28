@@ -923,7 +923,7 @@ export async function addProps(
   const onWall = (o: Object3D, x: number, y: number, height: number) => hang(o, x, y, wall, height);
   // The window sill: things stand on it inside the reveal, against the glass.
   const sill = room.window;
-  const onSill = (o: Object3D, x: number, opts: PlaceOpts) => place(o, x, wall - 0.07, { ...opts, y: sill.y0 + 0.01, shadow: true });
+  const onSill = (o: Object3D, x: number, opts: PlaceOpts) => place(o, x, wall + 0.09, { ...opts, y: 0.201, shadow: true });
   const mid = (min.x + max.x) / 2;
 
   // The code-made props first: they cost nothing to load.
@@ -960,9 +960,9 @@ export async function addProps(
   put("diploma", onShelf(diplomaFrame, 0.08, { height: 0.15, rotY: -0.05 }));
   const portrait = pixelPortrait();
   portrait.rotation.x = -0.12; // leaning back against the glass
-  put("pixelart", onSill(portrait, sill.x0 + 0.42, { height: 0.15 }));
+  put("pixelart", onSill(portrait, sill.x0 - 0.32, { height: 0.15 }));
   put("corkboard", onWall(corkboard(), shelfX, 0.32, 0.3));
-  put("mortarboard", onSill(mortarboard(), sill.x1 - 0.2, { width: 0.18, rotY: 0.3 }));
+  put("mortarboard", onSill(mortarboard(), sill.x0 - 0.09, { width: 0.18, rotY: 0.3 }));
 
   // Period paper props from published work: one opaque material each, hoisted onto their holder.
   const hoistSpot = (sheet: Mesh, holder: Group) => {
@@ -1134,7 +1134,7 @@ export async function addProps(
       spool.userData.hotspot = spot("a spool of cat6", "for the next run");
     }
     const iron = onLevel("soldering", solderingStation(), 2, 0.272, 0.15, { width: 0.15, rotY: -0.14 }, spot("soldering station", "the tip's cold"));
-    const upsBox = onLevel("ups", ups(), 1, -0.302, 0.08, { height: 0.145 }, spot("the UPS", "for the Dallas storms"));
+    const upsBox = onLevel("ups", ups(), 1, -0.302, 0.08, { height: 0.145 }, spot("the UPS", "relay backup power"));
     onLevel("drives", spareDrives(), 2, 0.158, 0.08, { width: 0.088, rotY: 0.12 }, spot("spare drives", "backups of the backups"));
 
     // Ethernet from the lit ports: the uplink down the back, one to the NAS, one to the Pis, one up

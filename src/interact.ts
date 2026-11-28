@@ -813,8 +813,12 @@ export function createInteractions(o: {
           if (!stay) await o.sitDownAndRun("contact");
         });
         return;
+      case "radioLog":
+        sfx("switch", object, 0.48);
+        if (!stay) void o.sitDownAndRun("cat ~/watch.log");
+        return;
       case "time":
-        sfx("lidClose", object); // the blinds
+        sfx("tap", object, 0.4);
         o.setTime(o.time() === "dusk" ? "night" : "dusk");
         return;
       case "mug":

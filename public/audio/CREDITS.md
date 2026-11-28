@@ -8,7 +8,7 @@ The ambient distance low-pass and volume-ducking curve (`audio.setInside`) is ad
 
 | File | Cue / Loop | Original Work & Source URL | Author | Licence |
 | :--- | :--- | :--- | :--- | :--- |
-| `room.mp3` | `loop("room")` | ["Rain against the Window"](https://commons.wikimedia.org/wiki/File:Rain_against_the_window.ogg) (PDSounds #389), trimmed to a 26 s crossfaded mono loop | `cori` (via PDSounds / Wikimedia Commons) | Public Domain / [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) |
+| `room.mp3` | Earlier room ambience (the cabin wind uses Web Audio) | ["Rain against the Window"](https://commons.wikimedia.org/wiki/File:Rain_against_the_window.ogg) (PDSounds #389), trimmed to a 26 s crossfaded mono loop | `cori` (via PDSounds / Wikimedia Commons) | Public Domain / [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) |
 | `tape-insert.mp3` | `tapeInsert` | ["Car Stereo Tapedeck"](https://commons.wikimedia.org/wiki/File:Car_stereo_tapedeck.ogg) (PDSounds, `0.20s–0.72s`) | `stephan` (via PDSounds / Wikimedia Commons) | Public Domain / [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) |
 | `tape-button.mp3` | `tapeButton` (variant 1) | ["Car Stereo Tapedeck"](https://commons.wikimedia.org/wiki/File:Car_stereo_tapedeck.ogg) (PDSounds, `5.70s–6.06s`) | `stephan` (via PDSounds / Wikimedia Commons) | Public Domain / [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) |
 | `tape-button-2.mp3` | `tapeButton` (variant 2) | ["Car Stereo Tapedeck"](https://commons.wikimedia.org/wiki/File:Car_stereo_tapedeck.ogg) (PDSounds, `3.17s–3.41s`) | `stephan` (via PDSounds / Wikimedia Commons) | Public Domain / [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) |

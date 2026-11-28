@@ -42,7 +42,7 @@ const paper = (thing: string) => (_: DeskApi, o: Object3D): Caption => [thing, (
 /** Every prop by name (props.ts `put`, lab, the window), in c-na.dev's words. */
 const CAPTIONS: Record<string, Say> = {
   computer: ["Apple II", "the terminal lives here"],
-  window: (desk) => ["The window", desk.time() === "night" ? "2 AM" : "golden hour"],
+  window: (desk) => ["Porthole", desk.time() === "night" ? "night watch" : "polar dusk"],
   floppies: (desk) => {
     const disks = ofKind(desk.scene, "disk");
     const out = disks.filter((d) => d.parent === desk.scene).length; // one in the drive sits in the room
@@ -107,7 +107,7 @@ const CAPTIONS: Record<string, Say> = {
   drawers: ["Parts drawers", "resistors, mostly"],
   soldering: ["Soldering station", "the tip's cold"],
   spool: ["Cat6 spool", "for the next run"],
-  ups: ["The UPS", "for the Dallas storms"],
+  ups: ["The UPS", "relay backup power"],
   drives: ["Spare drives", "backups of the backups"],
   powerstrip: ["Power strip", "everything on one switch"],
   server: ["Build server", "two removable drives"],
@@ -182,7 +182,7 @@ const caption: Feature = {
       if (focus && !desk.framed()) focus = null;
       const object = focus ? scene.getObjectByName(focus) : desk.lookingAt();
       const text = object ? captionOf(desk, object) : null;
-      last = text ?? (desk.time() === "night" ? "The desk · 2 AM" : "The desk · golden hour");
+      last = text ?? (desk.time() === "night" ? "Relay 23 · night watch" : "Relay 23 · polar dusk");
       desk.caption(last);
     }
     // A light timer, not a render loop: it only reads the camera (one ray when the view has moved).

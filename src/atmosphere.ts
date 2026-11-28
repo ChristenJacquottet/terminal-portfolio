@@ -66,7 +66,7 @@ export function createAtmosphere(scene: Scene, room: Room, lamp: SpotLight, pixe
   const rand = () => ((s = (s * 16807) % 2147483647) / 2147483647);
   const p = new Vector3();
   for (let i = 0; i < count; i++) {
-    // Under the raised blinds the sun comes straight in; most of the dust is there.
+    // Concentrate the motes near the lower lip of the porthole.
     const y0 = win.y0 + 0.03, y1 = rand() < 0.9 ? win.y0 + (win.y1 - win.y0) * 0.5 : win.y1 - 0.06;
     p.set(win.x0 + 0.04 + rand() * (win.x1 - win.x0 - 0.08), y0 + rand() * (y1 - y0), room.wallZ);
     // Along the beam until it reaches the desk top, thinning out as it goes.
@@ -82,7 +82,7 @@ export function createAtmosphere(scene: Scene, room: Room, lamp: SpotLight, pixe
     ...airBlend,
     uniforms: {
       uTime: { value: 0 },
-      uColor: { value: new Color("#ffcf96") },
+      uColor: { value: new Color("#d5e9ed") },
       uStrength: { value: 1 },
       uScale: { value: pixelRatio },
       uDir: { value: dir },
@@ -117,7 +117,7 @@ export function createAtmosphere(scene: Scene, room: Room, lamp: SpotLight, pixe
   motes.raycast = () => {};
   // ── the shaft through the window, and the haze in the lamp's cone: soft cards along each beam ──
   const from = new Vector3((win.x0 + win.x1) / 2, win.y0 + (win.y1 - win.y0) * 0.27, room.wallZ - 0.05);
-  const shaft = beamCard("#ffc58a");
+  const shaft = beamCard("#c8e6ef");
   shaft.set(from, dir, Math.min(1.7, (from.y + 0.05) / Math.max(0.05, -dir.y)), (win.x1 - win.x0) * 0.62, (win.x1 - win.x0) * 0.84);
   const haze = beamCard("#ffb36b");
   group.add(shaft.mesh, haze.mesh, motes);
@@ -141,8 +141,8 @@ export function createAtmosphere(scene: Scene, room: Room, lamp: SpotLight, pixe
     haze.strength(base.haze * Math.min(1, lamp.intensity / 14));
   };
 
-  const duskDust = new Color("#ffcf96"), nightDust = new Color("#9db6ff");
-  const duskShaft = new Color("#ffc58a"), nightShaft = new Color("#7f9be0");
+  const duskDust = new Color("#d5e9ed"), nightDust = new Color("#9db6ff");
+  const duskShaft = new Color("#c8e6ef"), nightShaft = new Color("#7f9be0");
   return {
     object: group,
     blend(k) {

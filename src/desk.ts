@@ -699,8 +699,6 @@ export async function createDesk(opts: {
   scene.add(root);
   opts.onProgress(0.18, "building room");
   const room = buildRoom(scene, await roomAssets, new Box3().setFromObject(root), {
-    initTexture: (t) => renderer.initTexture(t),
-    skyScale: isPhone ? 0.5 : 1,
     sunMapSize: isPhone ? 1024 : 2048,
   });
   // The home-lab corner, past the right end of the desk, sits in the wall's shadow from the low
@@ -722,7 +720,7 @@ export async function createDesk(opts: {
   let timeK = 0; // 0 dusk … 1 night, where the light is right now
   let screenGlow: PointLight | null = null; // made below, with the screen
   const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
-  const fillDusk = new Color("#e6d5bf"), fillNight = new Color("#4d6fb8");
+  const fillDusk = new Color("#cee1e1"), fillNight = new Color("#4d6fb8");
   const groundDusk = new Color("#2e1d12"), groundNight = new Color("#101524");
   const labDusk = new Color("#e9dece"), labNight = new Color("#5f83cc");
   /** Puts every light at `k` of the way from dusk to night. */
@@ -922,8 +920,8 @@ export async function createDesk(opts: {
   const widePose = () => {
     const dir = new Vector3(...((savedView?.dir ?? [0.7, 0.57, 2.05]) as [number, number, number])).normalize();
     const at = savedView ? new Vector3(...(savedView.target as [number, number, number])) : target.clone();
-    // Tall screens crop the sides: centre on the machine so it isn't cut off.
-    if (camera.aspect < 1) at.x = bounds.getCenter(new Vector3()).x;
+    // Share the portrait frame between the computer and the nearest porthole.
+    if (camera.aspect < 1) at.x = bounds.getCenter(new Vector3()).x - 0.22;
     return { position: at.clone().addScaledVector(dir, wideDistance() * (savedView?.k ?? 1)), target: at };
   };
 
@@ -1646,7 +1644,6 @@ export async function createDesk(opts: {
           onIdle(() => {
             if (running || transitioning) scheduleWarmNight();
             else {
-              room.warmNight();
               if (!envs.night || stale.night) captureRoom("night"); // so the first click on the window doesn't pop
             }
           });

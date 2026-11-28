@@ -85,6 +85,18 @@ function build(): DirNode {
     ]),
   );
 
+  add(me, file("watch.log", () => [
+    [s("KHARKIVCHANKA 23  /  RADIO WATCH", "bright")],
+    [s("Polar plateau · relief traverse 41", "dim")],
+    [],
+    [s("04:10  Dispatch still lists Relay Six as empty. Its meter went dark six weeks ago. The allocation model moved their diesel to a busier route.")],
+    [s("04:17  Heard a spoon tapping a mug over the carrier. Then Irena, reading the serial number off their pump. Eleven people there. The meter was the only thing they lost.")],
+    [s("04:31  Used the old routing model to work out a crossing. Oleg walked the first flags and found the lead it missed. Pencil correction on the chart.")],
+    [s("04:52  Six acknowledged two cans and a replacement meter on the next sledge. They offered their spare radio valve. Wrapped it in a mitten for us.")],
+    [],
+    [s("Next watch: call at first light. Wait for a voice before closing the entry.", "accent")],
+  ], { summary: "No. 23 crew radio log" }));
+
   const archive = dir("archive", "older work, kept for the story");
   for (const folder of FOLDERS) {
     const d = dir(folder.dir, folder.label);

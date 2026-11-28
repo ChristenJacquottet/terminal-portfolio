@@ -35,8 +35,3 @@ export const PROP_CREDITS = [
   { title: "Potted Monstera Plant", author: "angemturc", url: "https://sketchfab.com/3d-models/potted-monstera-plant-a0cf794be6294479b1adb74db093984a" },
   { title: "Camera Kiev-4AM + Helios", author: "Ilya Maksimov", url: "https://sketchfab.com/3d-models/camera-kiev-4am-helios-6932f08350dc47179ec8dd1ac0d18ce8" },
 ];
-
-/** CC0 textures from outside Poly Haven (no credit required, given anyway). */
-export const CC0_CREDITS = [
-  { title: "the wallpaper's paper relief (Wallpaper 001 A)", source: "ambientCG", url: "https://ambientcg.com/a/Wallpaper001A" },
-];

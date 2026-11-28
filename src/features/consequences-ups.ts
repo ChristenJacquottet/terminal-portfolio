@@ -107,7 +107,7 @@ async function outage(desk: DeskApi, ups: Object3D, sfx: (cue: string, at?: Obje
 
 const ups: Feature = {
   name: "consequences-ups",
-  hotspots: { ups: { kind: "ups", label: "the UPS", hint: "for the Dallas storms · pull the plug" } },
+  hotspots: { ups: { kind: "ups", label: "the UPS", hint: "relay backup power · pull the plug" } },
   actions: {
     async ups({ object, desk, sfx, leave }) {
       const d = desk();
