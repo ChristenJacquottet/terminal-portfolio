@@ -1,6 +1,6 @@
 # From a desk to Relay 23
 
-Development captures from November 27, 2026. The Apple II is a useful landmark across these images. At first it occupies most of the room you can see. By the last image, you can stand up, turn your back on it and find out what the crew is growing for the next settlement.
+Development captures from November 27, 2026. The Apple II is a useful landmark across these images. At first it occupies most of the room you can see. Later captures follow the crew through the grow rack and out onto the ice.
 
 ## The desk before the vehicle
 
@@ -55,3 +55,9 @@ From the driver’s seat, the biggest change sits just under the windshields. Th
 ![The allocation slip pinned between two portholes, with the automatic headcount of zero crossed out and eleven confirmed by radio](progression/07-dispatch-correction.jpg)
 
 Nika kept the erroneous slip and signed the correction. A visitor can read that somebody called back before learning the rest of the story in the terminal log.
+
+## Through the aft hatch
+
+![No. 23 on the ice at dusk, seen from its front corner with its four windshields, round side windows, ladder and tracks visible](progression/08-exterior.jpg)
+
+Until this revision, visitors knew the crawler by what they could see from inside it. Turning the aft hatch wheel now lets them see how high the bunks and radio bench ride above the ice. Snupp’s original paint keeps the blue stripe, vehicle number and worn metal around the fittings legible as the camera comes closer. The exterior loads on the first trip outside. [Model, license and rendering budget](relay-23.md#model-references)

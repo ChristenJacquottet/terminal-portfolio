@@ -688,8 +688,16 @@ function service(b: Bay) {
   b.box([4.18, 1.0, 1.65], [0.08, 1.88, 0.92], rubber, 0.035);
   b.box([4.125, 1.0, 1.65], [0.072, 1.79, 0.84], olive, 0.033);
   b.box([4.081, 0.37, 1.65], [0.014, 0.4, 0.73], steel);
-  b.loop([4.053, 0.98, 1.39], 0.115, 0.012, primer, [0, half, 0]);
-  for (const a of [0, 1.05, 2.1]) b.box([4.054, 0.98, 1.39], [0.019, 0.014, 0.22], primer, 0, [a, 0, 0]);
+  // Keep the working hatch wheel pickable without splitting the other fittings into draw calls.
+  const rim = new TorusGeometry(.115,.012,5,24);
+  const spokes = [0, Math.PI/3, 2*Math.PI/3].map(a => new BoxGeometry(.219,.014,.019).rotateZ(a));
+  const wheel = new Mesh(mergeGeometries([rim,...spokes]), new MeshStandardMaterial({ color: primer, roughness:.68, metalness:.2 }));
+  rim.dispose(); spokes.forEach(spoke => spoke.dispose());
+  wheel.position.set(4.053,.98,1.39);
+  wheel.rotation.y = -half;
+  wheel.name = "aft hatch wheel";
+  wheel.userData.hotspot = {kind:"exterior", label:"Aft hatch", hint:"step outside"};
+  b.group.add(wheel);
   b.plate([4.08, 1.5, 1.65], 0.57, 0.21, -half, "AIRLOCK / 23", ["DOG BEFORE MOVING"]);
   for (const [i, z] of [0.41, 0.94].entries()) {
     b.can([3.72, 0.68, z], 0.22, 1.04, i ? blue : olive);

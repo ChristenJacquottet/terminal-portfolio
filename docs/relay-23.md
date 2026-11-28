@@ -4,7 +4,7 @@ The Apple II is the radio operator’s terminal aboard a recommissioned Kharkivc
 
 ![The radio bench, expedition plate, and illuminated relay hut seen through the porthole](relay-23.jpg)
 
-[Follow the build from the original desk to the walkable interior.](visual-history.md)
+[Follow the build from the original desk to the ice outside.](visual-history.md)
 
 ## What happened to the world
 
@@ -28,7 +28,11 @@ The hull, glazing and berths live in `src/cabin.ts`. The Apple II and bench pack
 
 ## Model references
 
-Snupp’s **Kharkovchanka** is listed as downloadable under CC BY 4.0. The listing describes a PBR tracked vehicle with a 4K texture set. Inspect the downloaded mesh for interior coverage and match the porthole locations before mounting an exterior. The prototype builds its own cabin from the supplied cutaways. [Vehicle listing](https://sketchfab.com/3d-models/kharkovchanka-dc183abfd28048f5839d1edb43f660e3) · [License](https://creativecommons.org/licenses/by/4.0/)
+The exterior uses Snupp’s **Kharkovchanka**. Select **Vehicle exterior** in **Explore cabin**, or turn the aft hatch wheel in the water and heat bay. Drag to orbit, scroll or pinch to zoom. The arrow keys and +/− also work in the exterior view. **Back inside** or Escape restores your cabin position.
+
+The supplied exterior includes No. 23’s painted hull, portholes, tracked undercarriage, headlights and roof hardware. Its length is scaled uniformly to 8.5 m, with the windshield at the wheelhouse end. The lived-in cabin is a separate reconstruction from the supplied cutaways. The exterior uses the same polar landscape and the current dusk or night watch. [Original model by Snupp](https://sketchfab.com/3d-models/kharkovchanka-dc183abfd28048f5839d1edb43f660e3) · [License and modifications](../public/models/kharkovchanka.LICENSE.txt)
+
+For web delivery, 23 static meshes share one draw with 46,526 triangles. The original 4K paint was resized to 2K, the normal and packed material maps to 1K, and the emissive mask to 256 pixels. The 843.6 KiB GLB loads on the first trip outside. Returning inside releases the exterior geometry and textures. Rebuild it with `node scripts/optimize-crawler.mjs path/to/scene.gltf public/models/kharkovchanka.glb`.
 
 Bohdan Lvov’s **Underground Bunker** is a reference for an inhabited radio installation and its practical lighting. [Bunker listing](https://sketchfab.com/3d-models/underground-bunker-720d2958484345d7b535554e14122b5c)
 
@@ -46,7 +50,7 @@ The bunks use a mesh authored in Blender. Its UVs cross the curved edge so the w
 
 ### Measured cost of the five bays
 
-Measured in Chromium after visiting the wheelhouse, berths, galley, garden and service bay, with the same station cameras on both revisions. The figures below cover the five station groups. The original desk, hull and texture memory are outside this count.
+Measured at the crew refit (`1dc048d`) in Chromium after visiting the wheelhouse, berths, galley, garden and service bay, with the same station cameras on both revisions. The figures below cover the five station groups. The original desk, hull and texture memory are outside this count.
 
 | Resident station geometry | Before the refit | After the refit |
 | --- | ---: | ---: |

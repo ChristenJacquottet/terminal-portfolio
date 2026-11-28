@@ -832,9 +832,10 @@ export async function createDesk(opts: {
   const quarters = cabinStations(scene, room.floorY, room.wallZ, assets.surfaceAtlas, request);
   let walking = false;
   let walkReturn: { position: Vector3; target: Vector3 } | null = null;
-  const walk = cabinWalk(() => walking && look.active && !seated && !transitioning && !darken && !document.hidden, request);
+  const walk = cabinWalk(() => !outside?.active && walking && look.active && !seated && !transitioning && !darken && !document.hidden, request);
   host.append(walk.pad);
   let station: CabinStation | null = null;
+  let outside: ReturnType<typeof import("./crawler-exterior").crawlerExterior> | undefined;
   const camera = new PerspectiveCamera(FOV, 1, 0.05, 30);
   const bounds = new Box3().setFromObject(root);
   const size = bounds.getSize(new Vector3());
@@ -1025,7 +1026,8 @@ export async function createDesk(opts: {
     if (shadowsMoved()) renderer.shadowMap.needsUpdate = true;
     if (renderer.shadowMap.needsUpdate) stats.shadowFrames++;
     // Seated, the canvas is hidden: motions still finish, but nothing is drawn that nobody sees.
-    if (!host.hidden) {
+    if (outside?.active) outside.draw();
+    else if (!host.hidden) {
       const t0 = performance.now();
       if (!transitioning && !seated && !darken) quarters.visible(camera);
       renderer.render(scene, camera);
@@ -1159,7 +1161,7 @@ export async function createDesk(opts: {
   // The heartbeat: about once a second while the desk is in view, the lab's activity lights
   // re-roll and one frame is drawn. Nothing else runs between frames.
   window.setInterval(() => {
-    if (host.hidden || seated || transitioning || darken || document.hidden || reduced() || !pulses.size || running || frameMs > 40) return;
+    if (outside?.active || host.hidden || seated || transitioning || darken || document.hidden || reduced() || !pulses.size || running || frameMs > 40) return;
     for (const pulse of pulses) pulse();
     request();
   }, 1100);
@@ -1245,7 +1247,7 @@ export async function createDesk(opts: {
     request();
   };
   window.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && framedNow && !seated && !transitioning) void unframe();
+    if (e.key === "Escape" && !outside?.active && framedNow && !seated && !transitioning) void unframe();
   });
 
   const fly = (to: { position: Vector3; target: Vector3 }, ms: number, glassTo = glass.uniforms.uStrength.value as number, curve = ease, fov = FOV, alongAisle = false) =>
@@ -1440,7 +1442,29 @@ export async function createDesk(opts: {
   const walkButton = document.createElement("button");
   walkButton.textContent = "Walk";
   walkButton.onclick = () => void startWalk();
-  stationSelect.onchange = () => void visitStation(stationSelect.value as CabinStation);
+  stationSelect.add(new Option("Vehicle exterior", "exterior"));
+  stationSelect.onchange = () => stationSelect.value === "exterior" ? void openExterior() : void visitStation(stationSelect.value as CabinStation);
+  let openingExterior = false;
+  async function openExterior() {
+    if (openingExterior || outside?.active || transitioning || seated || darken) return;
+    openingExterior = true;
+    walk.clear();
+    stationSelect.value = station ?? "";
+    stationSelect.disabled = true;
+    try {
+      const { crawlerExterior } = await import("./crawler-exterior");
+      outside ??= crawlerExterior(renderer, assets.polarView, request, () => (stationSelect.isConnected ? stationSelect : renderer.domElement).focus({ preventScroll: true }));
+      if (!transitioning && !seated && !darken) {
+        touch.leave();
+        outside.open(time === "night");
+      }
+    } catch {
+      hint?.prepend(document.createTextNode("Exterior unavailable. Select it again to retry. "));
+    } finally {
+      openingExterior = false;
+      stationSelect.disabled = false;
+    }
+  }
   async function visitStation(key: CabinStation) {
     if (!stations[key] || transitioning || seated || darken) return;
     transitioning = true;
@@ -1576,7 +1600,7 @@ export async function createDesk(opts: {
       void (monitorFocused ? api.sitDown() : focusMonitor());
     } else if (target) {
       touch.click(target);
-      if (e.pointerType === "touch" && !target.spot.nav && target.spot.kind !== "cabinPlate") {
+      if (e.pointerType === "touch" && !target.spot.nav && target.spot.kind !== "cabinPlate" && target.spot.kind !== "exterior") {
         if (touch.hover(target, e)) request(); // the bubble sits over the prop itself
         touchChipTimer = window.setTimeout(() => {
           touchChipTimer = 0;
@@ -1671,6 +1695,7 @@ export async function createDesk(opts: {
   let deskApi: DeskApi | null = null;
   const touch = createInteractions({
     desk: () => deskApi,
+    openExterior,
     scene,
     camera,
     host,

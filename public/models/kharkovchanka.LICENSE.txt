@@ -1,0 +1,15 @@
+Model Information:
+* title:	Kharkovchanka
+* source:	https://sketchfab.com/3d-models/kharkovchanka-dc183abfd28048f5839d1edb43f660e3
+* author:	Snupp (https://sketchfab.com/snuupp)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Kharkovchanka" (https://sketchfab.com/3d-models/kharkovchanka-dc183abfd28048f5839d1edb43f660e3) by Snupp (https://sketchfab.com/snuupp) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+Portfolio adaptation: original mesh parts were joined and simplified, geometry was
+meshopt-compressed and the four original texture maps were resized and converted
+to WebP. The viewer sets the vehicle length to 8.5 m. The snowfield and the
+separately modeled inhabited interior are additions to the scene.
