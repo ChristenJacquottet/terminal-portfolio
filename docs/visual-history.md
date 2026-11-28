@@ -45,3 +45,13 @@ The seated terminal keeps a one-pixel dark line every three CSS pixels. Opening 
 ![First-person view toward the grow rack from the aisle, with walking and inspection controls visible](progression/06-walking.jpg)
 
 This capture includes the walking controls. On leaving the terminal, the scanline layer switches off before the screen shrinks into the Apple II. In the aisle, the rack, its printed plate and the controls all render clearly.
+
+## Giving the cabins a working history
+
+![Three matched camera pairs showing the wheelhouse, bunks and galley before and after the crew refit](progression/07-interior-refit.jpg)
+
+From the driver’s seat, the biggest change sits just under the windshields. The line of handled engine covers follows an interior photograph. The little HF repeater strapped between them belongs to the later crew. At the bunks, the edge of a Blender-modeled blanket folds around the rail. At the galley, an open tin shelf, rubbed cabinet doors and the saved bread heel make Nika’s recipe part of the room. [Interior references and measured rendering cost](relay-23.md#what-informed-the-refit)
+
+![The allocation slip pinned between two portholes, with the automatic headcount of zero crossed out and eleven confirmed by radio](progression/07-dispatch-correction.jpg)
+
+Nika kept the erroneous slip and signed the correction. A visitor can read that somebody called back before learning the rest of the story in the terminal log.

@@ -9,6 +9,7 @@ import {
   Color,
   CylinderGeometry,
   DoubleSide,
+  DataTexture,
   Group,
   InstancedMesh,
   LatheGeometry,
@@ -17,6 +18,7 @@ import {
   MeshStandardMaterial,
   PlaneGeometry,
   type Texture,
+  TextureLoader,
   SphereGeometry,
   SRGBColorSpace,
   TorusGeometry,
@@ -24,7 +26,8 @@ import {
   Vector2,
   Vector3,
 } from "three";
-import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { mergeGeometries, mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 
 import { mapSurface, type Surface } from "./cabin-surfaces";
@@ -44,17 +47,32 @@ const steel = "#485353",
   wood: Finish = { tint: "#d4b498", surface: "birch" },
   linen = "#c8bb98";
 const half = Math.PI / 2;
+// Four scanned finishes in one atlas. Wrap labels address one strip of the lower-left tile.
+type Trim = "foil" | "wool" | "panel" | 0 | 1 | 2 | 3;
+function mapTrim(g: BufferGeometry, tile: Trim) {
+  const uv = g.attributes.uv;
+  const label = typeof tile === "number";
+  const left = tile === "wool" || tile === "panel" ? .5 : 0;
+  const bottom = tile === "foil" || tile === "wool" ? .5 : 0;
+  for (let i = 0; i < uv.count; i++) {
+    const v = label ? (3 - tile + .025 + uv.getY(i) * .95) / 4 : uv.getY(i);
+    uv.setXY(i, left + (8 + uv.getX(i) * 496) / 1024, bottom + (8 + v * 496) / 1024);
+  }
+}
+
 class Bay {
-  constructor(private readonly material: MeshStandardMaterial) {}
+  constructor(private readonly material: MeshStandardMaterial, private readonly trimMaterial: MeshStandardMaterial) {}
   readonly group = new Group();
   private parts: BufferGeometry[] = [];
-  shape(g: BufferGeometry, colour: Finish, p: XYZ, rotation: XYZ = [0, 0, 0]) {
+  private trimParts: BufferGeometry[] = [];
+  shape(g: BufferGeometry, colour: Finish, p: XYZ, rotation: XYZ = [0, 0, 0], tile?: Trim) {
     if (g.index) {
       const flat = g.toNonIndexed();
       g.dispose();
       g = flat;
     }
-    mapSurface(g, typeof colour === "string" ? "enamel" : colour.surface);
+    if (tile === undefined) mapSurface(g, typeof colour === "string" ? "enamel" : colour.surface);
+    else mapTrim(g, tile);
     g.clearGroups();
     g.rotateX(rotation[0])
       .rotateY(rotation[1])
@@ -62,19 +80,20 @@ class Bay {
       .translate(...p);
     const c = new Color(typeof colour === "string" ? colour : colour.tint),
       count = g.attributes.position.count;
-    const rgb = new Float32Array(count * 3);
-    for (let i = 0; i < count; i++) c.toArray(rgb, 3 * i);
-    g.setAttribute("color", new BufferAttribute(rgb, 3));
-    this.parts.push(g);
+    const rgb = new Uint8Array(count * 3);
+    const tint = [Math.round(255*c.r), Math.round(255*c.g), Math.round(255*c.b)];
+    for (let i = 0; i < count; i++) rgb.set(tint, 3*i);
+    g.setAttribute("color", new BufferAttribute(rgb, 3, true));
+    (tile === undefined ? this.parts : this.trimParts).push(g);
   }
   box(p: XYZ, size: XYZ, colour: Finish, radius = 0, tilt: XYZ = [0, 0, 0]) {
     this.shape(radius ? new RoundedBoxGeometry(...size, 1, radius) : new BoxGeometry(...size), colour, p, tilt);
   }
   can(p: XYZ, r: number, h: number, colour: Finish, tilt: XYZ = [0, 0, 0], rTop = r) {
-    this.shape(new CylinderGeometry(rTop, r, h, 18), colour, p, tilt);
+    this.shape(new CylinderGeometry(rTop, r, h, r < .012 ? 8 : r < .035 ? 12 : 20), colour, p, tilt);
   }
   loop(p: XYZ, r: number, thickness: number, colour: Finish, rot: XYZ = [0, 0, 0]) {
-    this.shape(new TorusGeometry(r, thickness, 6, 26), colour, p, rot);
+    this.shape(new TorusGeometry(r, thickness, 5, r < .065 ? 16 : 24), colour, p, rot);
   }
   pipe(points: XYZ[], r: number, colour: Finish) {
     const path = new CatmullRomCurve3(points.map((a) => new Vector3(...a)));
@@ -84,8 +103,13 @@ class Bay {
     this.shape(new SphereGeometry(1, 12, 8).scale(...size), colour, p, tilt);
   }
   finish() {
-    this.group.add(new Mesh(mergeGeometries(this.parts), this.material));
-    this.parts.forEach((p) => p.dispose());
+    for (const [parts, material] of [[this.parts, this.material], [this.trimParts, this.trimMaterial]] as const) {
+      if (!parts.length) continue;
+      const combined = mergeGeometries(parts);
+      this.group.add(new Mesh(mergeVertices(combined), material));
+      parts.forEach(p => p.dispose());
+      combined.dispose();
+    }
     return this.group;
   }
   panel(p: XYZ, w: number, h: number, yaw: number, draw: (g: CanvasRenderingContext2D) => void) {
@@ -178,9 +202,17 @@ function wheelhouse(b: Bay) {
         g.fillRect(-2, -r + 16, 4, i % 3 ? 10 : 18);
         g.restore();
       }
+      g.fillStyle = "#dfdebf";
+      g.font = "bold 20px monospace"; g.textAlign = "center";
+      g.fillText(x === 140 ? "ОБ/МИН" : x === 375 ? "МАСЛО" : "ТЕМП", 0, 32);
+      for (let number = 0; number <= 6; number++) {
+        const a = -2.4 + number * .79;
+        g.fillText(String(number), (r-38)*Math.sin(a), -(r-38)*Math.cos(a)+5);
+      }
       g.rotate(x / 280 - 1.6);
       g.fillStyle = "#f4ac6c";
       g.fillRect(-3, -r + 31, 6, r - 16);
+      g.fillStyle = "#978e71"; g.beginPath(); g.arc(0,0,8,0,Math.PI*2); g.fill();
       g.restore();
     }
   });
@@ -206,8 +238,37 @@ function wheelhouse(b: Bay) {
     b.box([-2.71, 0.87, z], [0.026, 0.21, 0.29], olive, 0.018, [0, 0, 0.1]);
     b.box([-2.69, 0.96, z], [0.012, 0.014, 0.28], brass);
   }
+  // Lift-out engine access covers beneath the glazing, with folding handles on the aisle side.
+  for (const z of [1.15, 1.75, 2.38]) {
+    b.box([-3.92, 1.073, z], [.46, .021, .56], rubber, .012);
+    b.shape(new PlaneGeometry(.44, .54), "#b1b8a7", [-3.92, 1.085, z], [-half, 0, 0], "panel");
+    for (const dz of [-.05, .05]) b.box([-3.76, 1.094, z + dz], [.013, .02, .014], brass);
+    b.box([-3.76, 1.107, z], [.015, .012, .11], steel);
+  }
+  // A salvaged voice repeater nests between two original hatches. Straps let it travel here.
+  b.box([-3.93,1.19,1.78], [.205,.193,.39], "#65675b", .021);
+  b.box([-3.82,1.19,1.78], [.027,.174,.365], ink, .009);
+  b.panel([-3.803,1.207,1.754], .245,.090,half, g => {
+    g.fillStyle = "#182e2d"; g.fillRect(0,0,768,320);
+    g.fillStyle = "#84bbae"; g.font = "bold 87px monospace"; g.fillText("HF   /   SIX",32,111);
+    for (let i=0; i<20; i++) {
+      g.fillStyle = i<13 ? "#9fc7a5" : "#3d5950";
+      g.fillRect(38+i*33,180-i*2,22,45+i*2);
+    }
+    g.fillStyle = "#d7c390"; g.font = "37px monospace"; g.fillText("VOICE WATCH",36,286);
+  });
+  for (const z of [1.62,1.92]) {
+    b.box([-3.93,1.291,z], [.186,.012,.022], cloth("#9f8058"));
+    b.can([-3.801,1.16,z],.022,.023,rubber,[0,0,half]);
+    b.box([-3.786,1.171,z], [.004,.012,.004], cream);
+  }
+  for (const [index,z] of [1.615,1.646].entries()) {
+    b.can([-3.806,1.232,z],.014,.024,brass,[0,0,half]);
+    b.pipe([[-3.79,1.232,z],[-3.746,1.192,z-.012],[-3.756,1.10,z-.062],
+      [-3.862,1.099,z-.107],[-3.963,1.097,z-.126]], .006, index ? rubber : primer);
+  }
   // The route survives a dead dispatch terminal as a grease-pencil line on a folded chart.
-  const chart = b.panel([-3.92, 1.065, 2.57], 0.65, 0.36, 0, (g) => {
+  const chart = b.panel([-3.94, 1.09, 2.57], 0.65, 0.36, 0, (g) => {
     g.fillStyle = "#cabd95";
     g.fillRect(0, 0, 768, 320);
     g.strokeStyle = "#a89873";
@@ -225,6 +286,12 @@ function wheelhouse(b: Bay) {
     g.setLineDash([7, 7]);
     g.strokeRect(26, 18, 715, 278);
     g.setLineDash([]);
+    // The terminal plotted the dashed crossing. Oleg marked the open lead and a new flag line.
+    g.setLineDash([10,6]); g.strokeStyle = "#696b61"; g.lineWidth = 3;
+    g.beginPath(); g.moveTo(189,214); g.lineTo(420,199); g.lineTo(528,143); g.stroke();
+    g.setLineDash([]); g.fillStyle = "#657f86";
+    g.beginPath(); g.moveTo(392,157); g.lineTo(447,217); g.lineTo(420,202); g.lineTo(390,171); g.fill();
+    g.font = "italic 24px serif"; g.fillText("open lead / O.", 433,234);
     g.strokeStyle = "#934b37";
     g.lineWidth = 6;
     g.beginPath();
@@ -256,16 +323,13 @@ function wheelhouse(b: Bay) {
   );
 }
 
-function berths(b: Bay) {
+function berths(b: Bay, blanket?: BufferGeometry) {
   for (const [i, deck] of [0.7, 1.42].entries()) {
-    const plaid = cloth(i ? "#7a7352" : "#84665b");
-    b.box([-2.66, deck, 0.38], [1.19, 0.076, 0.61], plaid, 0.03);
-    for (let j = 0; j < 11; j++) {
-      const x = -3.21 + j * 0.107;
-      b.box([x, deck + 0.039, 0.38], [0.012, 0.006, 0.6], i ? "#a89c73" : "#be9278");
+    if (blanket) {
+      b.shape(blanket.clone(), i ? "#d8ccac" : "#ffffff", [-2.76, deck + .045, .078], [0, 0, 0], "wool");
+    } else {
+      b.box([-2.66, deck, .38], [1.19, .076, .61], cloth(i ? "#7a7352" : "#84665b"), .03);
     }
-    for (const z of [0.19, 0.31, 0.56])
-      b.box([-2.66, deck + 0.043, z], [1.16, 0.004, 0.013], i ? "#515f52" : "#5d4951");
     b.can([-2.17, deck + 0.105, 0.38], 0.096, 0.55, i ? blue : olive, [half, 0, 0]);
     for (const z of [0.21, 0.53]) b.loop([-2.17, deck + 0.105, z], 0.098, 0.011, brass);
   }
@@ -307,12 +371,12 @@ function berths(b: Bay) {
     b.can([x, 0.155, 0.83], 0.058, 0.18, "#635544");
     b.can([x, 0.246, 0.83], 0.051, 0.004, ink);
   }
-  // A cloth edge hangs over the bunk frame and breaks the silhouette of the folded bedding.
-  for (const [i, y] of [0.7, 1.42].entries()) {
-    b.box([-2.67, y - 0.057, 0.685], [0.79, 0.15, 0.028], cloth(i ? "#74805c" : "#95695b"), 0.012);
-    for (let j = 0; j < 7; j++)
-      b.box([-3.01 + j * 0.109, y - 0.055, 0.702], [0.012, 0.14, 0.008], i ? "#b1aa81" : "#c3a78d");
-  }
+  // A reading pouch hangs from the upper rail. Two paperbacks and a pencil ride behind its lip.
+  b.box([-3.38, 1.29, .715], [.29, .23, .047], cloth("#80664c"), .022);
+  for (const dx of [-.10, .10]) b.box([-3.38 + dx, 1.397, .714], [.029, .13, .022], cloth("#c2a878"));
+  b.box([-3.41, 1.376, .733], [.141, .14, .017], "#626f74", 0, [0,0,.09]);
+  b.box([-3.30, 1.365, .735], [.072, .11, .013], "#bd935c", 0, [0,0,-.15]);
+  b.box([-3.38, 1.275, .747], [.285, .137, .012], cloth("#907856"), .004);
 }
 
 function galley(b: Bay) {
@@ -320,6 +384,7 @@ function galley(b: Bay) {
   b.box([-0.93, 1.0, 3.13], [2.0, 0.075, 0.67], wood, 0.022);
   for (const x of [-1.58, -0.95, -0.32]) {
     b.box([x, 0.54, 2.88], [0.58, 0.73, 0.035], cream, 0.016);
+    b.shape(new PlaneGeometry(.55, .68), "#ded6bc", [x, .54, 2.859], [0, Math.PI, 0], "panel");
     b.box([x, 0.81, 2.847], [0.16, 0.024, 0.035], steel, 0.008);
     for (const y of [0.27, 0.32, 0.37]) b.box([x, y, 2.856], [0.26, 0.012, 0.008], olive);
   }
@@ -351,20 +416,36 @@ function galley(b: Bay) {
     steel,
   );
   b.box([-0.37, 1.08, 3.16], [0.53, 0.11, 0.44], ink, 0.018);
-  b.can([-0.37, 1.24, 3.17], 0.145, 0.215, blue);
+  b.shape(new LatheGeometry([[.10,0],[.13,.008],[.146,.033],[.146,.184],[.151,.195],[.146,.207]]
+    .map(([r,h]) => new Vector2(r,h)), 32), blue, [-.37,1.145,3.17]);
   b.can([-0.37, 1.36, 3.17], 0.15, 0.025, steel);
   b.soft([-0.37, 1.39, 3.17], [0.035, 0.025, 0.035], rubber);
   for (const x of [-0.56, -0.18]) b.box([x, 1.29, 3.17], [0.1, 0.031, 0.04], rubber, 0.012);
   for (const [i, x] of [-1.01, -0.81].entries()) {
-    b.can([x, 1.1, 2.99], 0.047, 0.105, i ? primer : cream);
-    b.can([x, 1.154, 2.99], 0.041, 0.004, ink);
+    const cupWall = [[.034,0],[.042,.004],[.046,.094],[.048,.102],[.047,.106],
+      [.043,.106],[.041,.099],[.037,.013],[.001,.012]];
+    b.shape(new LatheGeometry(cupWall.map(([r,h]) => new Vector2(r,h)),24), i ? primer : cream, [x,1.04,2.99]);
+    if (i) b.can([x,1.118,2.99],.041,.003,"#49362a");
     b.loop([x + 0.051, 1.105, 2.99], 0.032, 0.008, i ? primer : cream);
+  }
+  // The bread card belongs to an actual meal: a cut loaf and the heel saved for next watch.
+  b.box([-1.04,1.05,3.23],[.39,.023,.23],wood,.009,[0,.075,0]);
+  const loaf = new SphereGeometry(1,18,7,0,Math.PI*2,0,Math.PI/2);
+  b.shape(loaf.scale(.117,.083,.079), "#a1754b", [-1.09,1.064,3.235], [0,.11,0]);
+  for (const x of [-.92,-.898])
+    b.soft([x,1.085,3.24],[.012,.026,.063],"#c49d71",[0,.09,-.23]);
+  for (const x of [-1.46, -.91, -.36]) {
+    b.box([x,1.979,3.321],[.53,.203,.256], olive,.014);
+    b.shape(new PlaneGeometry(.503,.174),"#c5c3ac",[x,1.979,3.186],[0,Math.PI,0],"panel");
+    for (let slot = -3; slot<=3; slot++) b.box([x+slot*.031,1.951,3.182],[.016,.048,.005], steel);
+    b.box([x+.168,1.986,3.172],[.045,.014,.018], brass,.003);
   }
   b.box([-0.91, 1.62, 3.31], [1.88, 0.036, 0.31], wood);
   for (let i = 0; i < 11; i++) {
     const x = -1.72 + i * 0.15;
-    b.can([x, 1.736, 3.3], 0.061, 0.18, i % 3 === 0 ? primer : i % 3 === 1 ? cream : blue);
-    b.can([x, 1.735, 3.3], 0.062, 0.055, i % 2 ? olive : brass);
+    b.can([x, 1.736, 3.3], .061, .182, steel);
+    const label = new CylinderGeometry(.062, .062, .152, 20, 1, true);
+    b.shape(label, "#ffffff", [x, 1.735, 3.3], [0, 2.7 + i * .62, 0], (i % 4) as 0 | 1 | 2 | 3);
     b.can([x, 1.829, 3.3], 0.063, 0.01, steel);
   }
   b.pipe(
@@ -377,7 +458,7 @@ function galley(b: Bay) {
     0.011,
     steel,
   );
-  b.plate([-0.92, 1.33, 3.475], 0.55, 0.21, Math.PI, "PANTRY / 2 CREW", ["OATS  18 KG", "BEANS  11 KG"]);
+  b.plate([-0.92, 1.33, 3.439], 0.55, 0.21, Math.PI, "PANTRY / 2 CREW", ["OATS  18 KG", "BEANS  11 KG"]);
   // A narrow drop-leaf eating surface and its folding leg, beside the stove.
   b.box([-2.26, 0.77, 3.03], [0.61, 0.045, 0.86], wood, 0.018);
   b.pipe(
@@ -438,36 +519,32 @@ function galley(b: Bay) {
   }
 }
 
+/** A botanical vein pattern shared by all 216 leaves; silhouettes live in the mesh. */
+function leafSkin() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 96; canvas.height = 192;
+  const g = canvas.getContext("2d")!;
+  const lamina = g.createLinearGradient(0,0,96,0);
+  lamina.addColorStop(0,"#a8b187"); lamina.addColorStop(.48,"#d1d5a1");
+  lamina.addColorStop(.54,"#dedeb2"); lamina.addColorStop(1,"#a8ba91");
+  g.fillStyle = lamina; g.fillRect(0,0,96,192);
+  g.strokeStyle = "#dfe1a9"; g.lineWidth = 1.6;
+  for (let y=36; y<180; y+=19) {
+    for (const side of [-1,1]) {
+      g.beginPath(); g.moveTo(48,y); g.quadraticCurveTo(48+side*21,y-5,48+side*42,y-22); g.stroke();
+    }
+  }
+  g.fillStyle = "#e0d7a8"; g.beginPath(); g.moveTo(44,192);
+  g.quadraticCurveTo(47,130,48,10); g.quadraticCurveTo(49,130,52,192); g.fill();
+  const map = new CanvasTexture(canvas); map.colorSpace = SRGBColorSpace;
+  return map;
+}
+
 function garden(b: Bay) {
   // The first grow light drained the battery. Salvaged foil now returns its light into the trays.
-  b.panel([1.07, 1.2, 3.434], 1.72, 1.4, Math.PI, (g) => {
-    const foil = g.createLinearGradient(0, 0, 768, 260);
-    foil.addColorStop(0, "#707b78");
-    foil.addColorStop(0.28, "#c0c8b9");
-    foil.addColorStop(0.55, "#929993");
-    foil.addColorStop(1, "#d5cbbd");
-    g.fillStyle = foil;
-    g.fillRect(0, 0, 768, 320);
-    let seed = 23;
-    const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-    for (let i = 0; i < 180; i++) {
-      const x = rand() * 768,
-        y = rand() * 320;
-      g.beginPath();
-      g.moveTo(x, y);
-      g.lineTo(x + rand() * 53, y + rand() * 24 - 12);
-      g.lineTo(x + rand() * 30, y + rand() * 42);
-      g.closePath();
-      g.fillStyle = i % 2 ? "rgba(50,52,63,.075)" : "rgba(250,230,241,.14)";
-      g.fill();
-    }
-    for (let x = 0; x < 768; x += 191) {
-      g.fillStyle = "#888e88";
-      g.fillRect(x, 0, 6, 320);
-      g.fillStyle = "#c9cbbd";
-      g.fillRect(x + 6, 0, 2, 320);
-    }
-  });
+  for (const x of [.64, 1.50]) {
+    b.shape(new PlaneGeometry(.855, 1.4), "#e1e1d2", [x,1.2,3.434], [0,Math.PI,0], "foil");
+  }
   for (const x of [0.21, 1.92])
     for (const z of [2.87, 3.38]) {
       b.box([x, 0.98, z], [0.035, 1.89, 0.035], steel);
@@ -477,14 +554,27 @@ function garden(b: Bay) {
   b.plate([1.08, 0.25, 2.902], 0.46, 0.16, Math.PI, "RETURN / 18 L", ["TOP UP AT DUSK"]);
   const leafy = ["#4b764e", "#6d975c", "#819f52", "#a4b86a", "#608e68"];
   // One tapered, veined blade shared by every plant. Instance colours and rotations vary by tray.
-  const vertex = [
-    -0.01, 0, 0, 0, 0, 0.012, 0.01, 0, 0, -0.035, 0.48, 0.05, 0, 0.53, 0.074, 0.035, 0.44, 0.05, 0, 1, 0.19,
-  ];
+  const vertices: number[] = [], colours: number[] = [], indices: number[] = [], uvs: number[] = [];
+  // A curved midrib and two darker edges give each instanced rosette a soft, cupped silhouette.
+  for (let row = 0; row <= 7; row++) {
+    const t = row / 7, width = .039 * Math.pow(Math.sin(Math.PI * t), .8) + .0008;
+    for (const side of [-1, 0, 1]) {
+      uvs.push((side + 1) / 2, t);
+      vertices.push(side * width * (1+.07*Math.sin(row*2.3+side)), t - .035 * side * side * Math.sin(Math.PI*t), .28*t*t + (1-side*side)*.027*Math.sin(Math.PI*t));
+      colours.push(...(side ? [.73,.84,.62] : [1,.99,.74]));
+    }
+    if (row) for (let col = 0; col < 2; col++) {
+      const a = (row-1)*3 + col;
+      indices.push(a,a+1,a+3,a+1,a+4,a+3);
+    }
+  }
   const leaf = new BufferGeometry();
-  leaf.setAttribute("position", new BufferAttribute(new Float32Array(vertex), 3));
-  leaf.setIndex([0, 1, 3, 1, 4, 3, 1, 2, 4, 2, 5, 4, 3, 4, 6, 4, 5, 6]);
+  leaf.setAttribute("position", new BufferAttribute(new Float32Array(vertices), 3));
+  leaf.setAttribute("color", new BufferAttribute(new Float32Array(colours), 3));
+  leaf.setAttribute("uv", new BufferAttribute(new Float32Array(uvs), 2));
+  leaf.setIndex(indices);
   leaf.computeVertexNormals();
-  const crop = new InstancedMesh(leaf, new MeshStandardMaterial({ side: DoubleSide, roughness: 0.88 }), 216);
+  const crop = new InstancedMesh(leaf, new MeshStandardMaterial({ map: leafSkin(), side: DoubleSide, vertexColors:true, roughness: .83 }), 216);
   const stem = new Object3D();
   let leafIndex = 0;
   for (const [tier, y] of [0.57, 1.22].entries()) {
@@ -502,8 +592,9 @@ function garden(b: Bay) {
           const angle = n * 2.4 + k * 0.9 + tray;
           const tall = h * (0.7 + 0.09 * (n % 3));
           stem.position.set(cx, y + 0.151, cz);
-          stem.rotation.set(0.44 + n * 0.15, angle, 0.08 * Math.sin(angle), "YXZ");
-          stem.scale.set(1.02 + (n % 2) * 0.16, tall, 0.29);
+          const chard = tray !== 1;
+          stem.rotation.set((chard ? .24 : .41) + n * .13, angle, .12 * Math.sin(angle), "YXZ");
+          stem.scale.set((chard ? 1.18 : .75) + (n % 2) * .14, tall * (chard ? 1.4 : 1.05), .24);
           stem.updateMatrix();
           crop.setMatrixAt(leafIndex, stem.matrix);
           crop.setColorAt(leafIndex++, new Color(leafy[(n + k + tier) % leafy.length]));
@@ -572,11 +663,27 @@ function service(b: Bay) {
     0.018,
     brass,
   );
-  for (let i = 0; i < 10; i++) {
-    const z = 3.39 - i * 0.043;
-    b.box([3.055 + (i % 2) * 0.028, 1.13, z], [0.032, 1.39, 0.055], i % 2 ? olive : "#99a18d", 0.013);
-    b.loop([3.04, 1.865, z], 0.037, 0.005, steel);
+  // One hanging fabric surface; the ring positions follow the peaks of the pleats.
+  const curtain = new PlaneGeometry(1, 1, 48, 6);
+  const cp = curtain.attributes.position;
+  for (let i = 0; i < cp.count; i++) {
+    const u = cp.getX(i)+.5, v = cp.getY(i)+.5, wave = Math.cos(u*16*Math.PI);
+    cp.setXYZ(i, .034*wave + .013*Math.sin(v*5+u*8)*(1-v),
+      1.41*v + .019*wave*(1-v), u*(.47 + .06*(1-v)));
   }
+  curtain.computeVertexNormals();
+  b.shape(curtain, cloth("#a19c77"), [3.045,.44,2.942]);
+  for (let i=0; i<=8; i++) b.loop([3.071,1.869,2.942+.47*i/8],.035,.0045,steel);
+  // Transit cradle for the two fuel cans recorded in watch.log. The meter rides above splash height.
+  for (const z of [2.245, 2.475]) {
+    b.box([3.966,.255,z], [.25,.39,.21], "#9b714a", .027);
+    b.box([3.966,.46,z], [.14,.038,.14], rubber, .014);
+    for (const dz of [-.05,.05]) b.box([3.836,.239,z+dz], [.012,.28,.018], brass, 0, [.23,0,0]);
+    b.box([3.828,.29,z], [.014,.035,.214], cloth("#756448"));
+  }
+  b.box([4.034,.70,2.36], [.21,.17,.34], blue, .018);
+  b.shape(new PlaneGeometry(.295,.13), "#d2b895", [3.923,.70,2.36], [0,-half,0], "panel");
+  for (const z of [2.25,2.47]) b.box([3.914,.70,z],[.012,.17,.023], cloth("#91876a"));
   // Rear insulated hatch with a dogged wheel, kick plate and rubber perimeter.
   b.box([4.18, 1.0, 1.65], [0.08, 1.88, 0.92], rubber, 0.035);
   b.box([4.125, 1.0, 1.65], [0.072, 1.79, 0.84], olive, 0.033);
@@ -647,17 +754,48 @@ function service(b: Bay) {
     0.016,
     ink,
   );
-  b.plate([4.075, 1.73, 1.65], 0.51, 0.12, -half, "KEEP DOGS CLEAR", [], primer, cream);
+  b.plate([4.075, 1.73, 1.65], .53, .155, -half, "SIX / OUTBOUND", ["2 FUEL CANS + METER"], primer, cream);
   b.box([4.05, 1.13, 2.98], [0.15, 0.26, 0.32], blue, 0.023);
   b.plate([3.969, 1.13, 2.98], 0.22, 0.13, -half, "SOAP", []);
 }
 
 export const builders = { wheelhouse, berths, galley, garden, service };
-let finish: MeshStandardMaterial | undefined;
-export function buildBay(name: keyof typeof builders, atlas: Texture | null) {
-  finish ??= new MeshStandardMaterial({ map: atlas, roughness: .8, metalness: .12, vertexColors: true, side: DoubleSide });
-  const bay = new Bay(finish);
-  builders[name](bay);
+let materials: Promise<[MeshStandardMaterial, MeshStandardMaterial]> | undefined;
+let cover: Promise<BufferGeometry | undefined> | undefined;
+/** Four roughness/metalness pairs use the colour atlas UVs and stay in a single GPU batch. */
+function surfaceMaterial(map: Texture | null, tiles: [number, number][]) {
+  const data = Uint8Array.from(tiles.flatMap(([rough, metal]) => [255, rough, metal, 255]));
+  const response = new DataTexture(data, 2, 2);
+  response.needsUpdate = true;
+  return new MeshStandardMaterial({
+    map, roughness: 1, metalness: 1, roughnessMap: response, metalnessMap: response,
+    vertexColors: true, side: DoubleSide,
+  });
+}
+async function bayMaterials(atlas: Texture | null): Promise<[MeshStandardMaterial, MeshStandardMaterial]> {
+  const small = matchMedia("(max-width: 640px) and (pointer: coarse)").matches;
+  const map = await new TextureLoader().loadAsync(`/textures/${small ? "half/" : ""}cabin-trim.webp`).catch(() => null);
+  if (map) {
+    map.colorSpace = SRGBColorSpace;
+    map.anisotropy = 4;
+  }
+  // Bottom row first, matching the UV origin: birch/leather, enamel/canvas.
+  const finish = surfaceMaterial(atlas, [[158, 0], [125, 0], [143, 40], [239, 0]]);
+  // Paper/painted hardware, salvaged foil/wool.
+  const trim = surfaceMaterial(map, [[213, 0], [141, 65], [117, 156], [248, 0]]);
+  return [finish, trim];
+}
+
+export async function buildBay(name: keyof typeof builders, atlas: Texture | null) {
+  materials ??= bayMaterials(atlas);
+  if (name === "berths") {
+    cover ??= new GLTFLoader().loadAsync("/models/watch-blanket.glb")
+      .then(asset => (asset.scene.children[0] as Mesh<BufferGeometry>).geometry)
+      .catch(() => undefined);
+  }
+  const bay = new Bay(...await materials);
+  if (name === "berths") berths(bay, await cover);
+  else builders[name](bay);
   bay.group.name = name;
   return bay.finish();
 }

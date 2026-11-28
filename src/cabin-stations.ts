@@ -63,8 +63,8 @@ export function cabinStations(scene: Scene, floorY: number, wallZ: number, atlas
     const cached = pending.get(k);
     if (cached) return cached;
     const job = import("./quarters")
-      .then(({ buildBay }) => {
-        group.add(buildBay(k, atlas));
+      .then(async ({ buildBay }) => {
+        group.add(await buildBay(k, atlas));
         request();
       })
       .catch((err) => {

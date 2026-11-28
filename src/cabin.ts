@@ -15,11 +15,22 @@ const portY = 0.52, radius = 0.235;
 const metal = (color: string, roughness = 0.65) => new MeshStandardMaterial({ color, roughness, metalness: 0.24 });
 
 /** Repeatable enamel panel with folded edges, rivet heads and rubbed paint. */
-function skin() {
+function skin(atlas: Texture | null) {
   const c = document.createElement("canvas");
   c.width = 384; c.height = 512;
   const g = c.getContext("2d")!;
   g.fillStyle = "#819086"; g.fillRect(0, 0, 384, 512);
+  const image = atlas?.image as HTMLImageElement | undefined;
+  if (image?.naturalWidth) {
+    // Use the loaded top-left enamel swatch beneath the seams. No second hull image request.
+    const inset = image.naturalWidth / 128;
+    const tile = image.naturalWidth / 2 - 2*inset;
+    g.save();
+    g.globalCompositeOperation = "multiply";
+    g.globalAlpha = .6;
+    g.drawImage(image, inset, inset, tile, tile, 0, 0, c.width, c.height);
+    g.restore();
+  }
   let seed = 21;
   const rand = () => (seed = Math.imul(1664525, seed) + 1013904223 >>> 0) / 4294967296;
   for (let i = 0; i < 2200; i++) {
@@ -28,7 +39,14 @@ function skin() {
   }
   g.fillStyle = "#45564e"; g.fillRect(0, 0, 3, 512);
   g.fillStyle = "#9fa99b"; g.fillRect(3, 0, 2, 512);
+  // Oxidation follows the panel joins and the water running down from individual fasteners.
+  const join = g.createLinearGradient(0,0,36,0);
+  join.addColorStop(0,"rgba(47,39,30,.25)"); join.addColorStop(1,"rgba(57,52,39,0)");
+  g.fillStyle = join; g.fillRect(0,0,36,512);
   for (const x of [11, 372]) for (let y = 16; y < 512; y += 80) {
+    const streak = g.createLinearGradient(0,y,0,y+33);
+    streak.addColorStop(0,"rgba(90,60,40,.32)"); streak.addColorStop(1,"rgba(90,60,40,0)");
+    g.fillStyle = streak; g.fillRect(x-1,y,3,33);
     g.fillStyle = "#5e6c61"; g.beginPath(); g.arc(x, y, 2.6, 0, Math.PI * 2); g.fill();
     g.fillStyle = "#b2b9aa"; g.fillRect(x - 1, y - 2, 2, 1);
   }
@@ -83,6 +101,39 @@ function radioPlate() {
   return plate;
 }
 
+/** Nika kept the allocation slip so the next watch could see who corrected the machine. */
+function dispatchSlip() {
+  const paper = document.createElement("canvas");
+  paper.width = 448; paper.height = 456;
+  const g = paper.getContext("2d")!;
+  g.fillStyle = "#aa976e"; g.fillRect(0, 0, 448, 456);
+  const stock = g.createLinearGradient(0, 0, 415, 456);
+  stock.addColorStop(0, "#e6dcc0"); stock.addColorStop(.52, "#d9caab"); stock.addColorStop(1, "#bcaa86");
+  g.fillStyle = stock; g.fillRect(5, 6, 433, 443);
+  g.fillStyle = "#454c47"; g.font = "bold 28px monospace";
+  g.fillText("TRAVERSE CONTROL", 26, 68);
+  g.fillRect(27, 84, 376, 4); g.font = "19px monospace";
+  g.fillText("ALLOCATION COPY    06 / 23", 27, 115);
+  g.font = "bold 31px monospace"; g.fillText("RELAY SIX", 27, 175);
+  g.font = "22px monospace"; g.fillText("METER OFFLINE", 27, 219);
+  g.fillText("OCCUPANTS      0", 27, 254);
+  g.strokeStyle = "#993b30"; g.lineWidth = 5;
+  g.beginPath(); g.moveTo(20,256); g.lineTo(263,237); g.stroke();
+  g.save(); g.translate(36, 306); g.rotate(-.056);
+  g.fillStyle = "#66392e"; g.font = "italic bold 38px serif"; g.fillText("11 by voice.", 0, 0);
+  g.font = "italic 26px serif"; g.fillText("Irena · 04:17   /   N.", 12, 44); g.restore();
+  g.strokeStyle = "#968e77"; g.lineWidth = 2; g.setLineDash([6,4]);
+  g.beginPath(); g.moveTo(18,389); g.lineTo(421,389); g.stroke();
+  g.fillStyle = "#555b50"; g.font = "18px monospace"; g.fillText("NEXT CALL AT FIRST LIGHT",27,422);
+  g.fillStyle = "#b09369"; g.fillRect(157, 3, 117, 20);
+  const map = new CanvasTexture(paper);
+  map.colorSpace = SRGBColorSpace; map.anisotropy = 4;
+  const slip = new Mesh(new PlaneGeometry(.252, .257), new MeshStandardMaterial({ map, roughness: .95 }));
+  slip.name = "corrected dispatch slip";
+  slip.userData.hotspot = { kind: "cabinPlate", label: "Relay Six · allocation copy", hint: "inspect the correction" };
+  return slip;
+}
+
 /** The salvage receiver on the porthole ledge. Its dial is legible in a close view. */
 function receiver() {
   const set = new Group();
@@ -119,7 +170,7 @@ export function buildCabin(scene: Scene, floorY: number, wallZ: number, polarVie
   shell.name = "Kharkivchanka No. 23";
   shell.position.z = wallZ;
   scene.add(shell);
-  const enamel = new MeshStandardMaterial({ map: skin(), roughness: 0.65, metalness: 0.18, shadowSide: DoubleSide });
+  const enamel = new MeshStandardMaterial({ map: skin(atlas), roughness: 0.65, metalness: 0.18, shadowSide: DoubleSide });
   const steel = metal("#414e4c"), alloy = metal("#a9afa5", 0.42), vermilion = metal("#984d36"), canvas = metal("#6d634b");
   const swatches = new Map<MeshStandardMaterial, Surface>();
   function clad(mat: MeshStandardMaterial, tile: Surface) {
@@ -200,6 +251,8 @@ export function buildCabin(scene: Scene, floorY: number, wallZ: number, polarVie
   // A bolted ledge for the operator's keepsakes below the main porthole.
   box(0.86, 0.025, 0.19, -0.99, 0.188, 0.09, steel);
   const radio = receiver(); radio.position.set(-0.73, 0.269, 0.086); shell.add(radio);
+  const slip = dispatchSlip();
+  slip.position.set(-1.225, .61, .035); slip.rotation.z = -.045; shell.add(slip);
   const shade = metal("#b9ad89");
   shade.emissive.set("#ffe4ae"); shade.emissiveIntensity = 0.9;
   box(0.28, 0.067, 0.056, -0.81, 0.998, 0.045, steel);
@@ -210,11 +263,13 @@ export function buildCabin(scene: Scene, floorY: number, wallZ: number, polarVie
   // Ribbed deck plates down the passage, kick panels, cable trunk and guarded overhead lamps.
   const casePaint = metal("#78816c"), tread = deckMat(), lining = metal("#b6b39d");
   clad(casePaint, "enamel"); clad(lining, "enamel");
+  const veneer = clad(metal("#ad8b67", .79), "birch");
   for (let i=0;i<13;i++) {
     const x=-3.9+i*.65;
     box(.633,.014,1.22,x,floorY+.008,1.78,tread);
     for (const z of [1.225,2.335]) box(.59,.003,.012,x,floorY+.017,z,alloy);
-    box(.633,.89,.026,x,floorY+.46,3.466,casePaint);
+    box(.633,.89,.026,x,floorY+.46,3.466,veneer);
+    for (const dx of [-.21,0,.21]) box(.005,.84,.007,x+dx,floorY+.46,3.449,casePaint);
     box(.633,.96,.022,x,floorY+1.48,3.468,lining);
     for (const y of [.16,1.84]) box(.051,.03,.038,x+.27,floorY+y,3.45,alloy);
   }

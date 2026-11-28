@@ -33,3 +33,26 @@ Snupp’s **Kharkovchanka** is listed as downloadable under CC BY 4.0. The listi
 Bohdan Lvov’s **Underground Bunker** is a reference for an inhabited radio installation and its practical lighting. [Bunker listing](https://sketchfab.com/3d-models/underground-bunker-720d2958484345d7b535554e14122b5c)
 
 The South Pole Station archive shows the first-generation tractors on the 1959 traverse, including Navy photographs at the Pole. These are a period reference for the hull, windows and tracks. The living arrangements aboard No. 23 follow the supplied cutaways and the needs of its fictional crew. [1959 traverse photographs](https://www.southpolestation.com/trivia/igy1/dralkin1.html)
+
+## What informed the refit
+
+The photograph of the worn cab shows a long metal enclosure immediately below the sloping windshields, with separate lift-out covers and loop handles. No. 23 carries that detail through to the wheelhouse. The cutaways supplied for the project guided the bunks, passage and galley. The repeater, garden and crew belongings are later additions in the fiction. [Interior photograph](https://img.novosti-n.org/upload/ukraine/672715.jpg) · [Photograph in context](https://novosti-n.org/ukraine/Arktycheskyj-vezdehod-Harkovchanka-na-snymkah-FOTO-250425)
+
+The vented galley cupboards and closely spaced work surfaces draw on Mike Hill’s designs for K’s apartment in *Blade Runner 2049*. The small HF repeater takes its green readout and amber controls from the instrument hierarchy in Martí Romances’s work for the Milano in *Guardians of the Galaxy*. For the cyberpunk influence, V’s apartment suggested how to give a small room an identifiable occupant. Here the traces are a pouch of books on one bunk, a darned blanket and Nika’s saved bread heel. [K’s apartment and kitchen](https://www.mikehill.design/blade-runner-2049/) · [Milano screen designs](https://www.martiromances.com/the-guardians-of-the-galaxy/) · [V’s apartment environment art](https://jpthrash.artstation.com/projects/XnYKBw)
+
+The corrected allocation slip beside the porthole records what the computer missed. Relay Six lost its meter. Irena answered the radio at 04:17 and confirmed eleven people. In the wheelhouse, Oleg’s pencilled route detours around the lead the routing model missed. By the rear hatch, two fuel cans and a replacement meter are packed for the next sledge. The crew is still waiting for the spare valve offered in return.
+
+The bunks use a mesh authored in Blender. Its UVs cross the curved edge so the weave follows the hanging cloth. Rebuild it from the repository root with `blender -b --python scripts/build-bunk-cover.py`. The fitted cabinets, engine covers, repeater and water equipment are modeled in Three.js. The wool, foil, can wrappers and chipped panel share an ImageGen texture sheet, with material-specific roughness and metalness. The scene loads the sheet when a bay is needed and requests the blanket mesh when the berths are built.
+
+### Measured cost of the five bays
+
+Measured in Chromium after visiting the wheelhouse, berths, galley, garden and service bay, with the same station cameras on both revisions. The figures below cover the five station groups. The original desk, hull and texture memory are outside this count.
+
+| Resident station geometry | Before the refit | After the refit |
+| --- | ---: | ---: |
+| Stored vertices | 93,071 | 21,480 |
+| Vertex, index and instance buffers | 4,110,752 bytes | 950,484 bytes |
+| Triangles across all five bays, including instanced leaves | 32,330 | 36,400 |
+| Mesh objects across the five bays | 25 | 30 |
+
+Adjacent faces now reuse matching vertices, and vertex tints use three bytes. That frees buffer space for curved leaf blades, cloth folds and small hardware. The 216 leaves still share one instanced mesh. Desktop downloads 290 KiB for the additional WebP sheet, phones download 68 KiB, and the reusable blanket mesh adds 17 KiB. These are transfer sizes. A decoded 1024-square RGBA texture with mipmaps occupies about 5.3 MiB of graphics memory.

@@ -15,6 +15,7 @@ const equipment: Footprint[] = [
   [.14, 2.02, 2.82, 3.50],      // grow rack
   [2.54, 3.28, 0, .58],         // heater and batteries
   [3.46, 4.25, 0, 1.18],        // water tanks
+  [3.83, 4.25, 2.13, 2.59],     // outbound supplies strapped beside the hatch
   [3.00, 4.25, 2.42, 3.50],     // wash closet
 ];
 const radius = .18;
