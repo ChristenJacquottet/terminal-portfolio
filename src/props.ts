@@ -1,6 +1,5 @@
 // Things on the desk and the wall. Loaded after the computer so `exit` never waits on them.
-// Models are merged into public/models/props.glb (scripts/build-props.sh), one glTF scene per prop
-// in ORDER: Poly Haven (CC0) and Sketchfab (CC BY, see credit.ts). The rest is made here in code.
+// The bench and fittings packs use named glTF scenes: Poly Haven (CC0) and Sketchfab (CC BY, see credit.ts). The rest is made here in code.
 //
 // What's here is true to Christen: tennis (college team), Réunion and French Guiana (the globe and
 // the print), photography and filmmaking (the cameras, the slate, the studio light), computer
@@ -60,13 +59,7 @@ import { mug } from "./mug";
 import { labServer, patchHook, cableColour, cableLoop, cableSpool, ethernetRun, partsDrawers, piCluster, powerCords, powerStrip, solderingStation, spareDrives, spot, steelRule, tapeRoll, ups, widthOf } from "./lab";
 import type { Room } from "./room";
 
-const PROPS_URL = "/models/props.glb";
-const ORDER = [
-  "lamp", "cassette", "pens", "spectacles", "duck", "camera", "plant", "clock", "frame", "globe", "super8", "phone",
-  "longhorn", "rugby", "skateboard", "clapper", "biplane", "studiolight", "chair", "suitcase",
-  "breadboard", "multimeter", "joystick", "answering",
-  "rack", "switch", "nas", "crt", "pegboard", "pliers", "screwdrivers", "cutters", "thinkpad", "macbook", "c64", "ivy", "monstera", "kiev",
-] as const;
+export const BENCH_URL = "/models/bench.glb";
 
 /** Decals (shadows, labels, paper) sit a hair above what they're on and win the depth test. */
 const decal = { polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 };
@@ -986,14 +979,14 @@ export async function addProps(
 
   let gltf: GLTF;
   try {
-    gltf = await loader.loadAsync(PROPS_URL, (e) => e.total && onLoad(e.loaded / e.total));
+    gltf = await loader.loadAsync(BENCH_URL, (e) => e.total && onLoad(e.loaded / e.total));
   } catch {
     return; // the scene is complete without them
   }
-  const byName = Object.fromEntries(ORDER.map((name, i) => [name, gltf.scenes[i]])) as Record<(typeof ORDER)[number], Group | undefined>;
+  const byName = Object.fromEntries(gltf.scenes.map(o => [o.name, o])) as Record<string, Group | undefined>;
   const arrivals = new Group(); // off-scene until `prepare` is done
   into = arrivals;
-  const add = (name: (typeof ORDER)[number], fn: (o: Group) => Object3D) => {
+  const add = (name: string, fn: (o: Group) => Object3D) => {
     const o = byName[name];
     if (o) put(name, fn(o));
   };
@@ -1052,17 +1045,6 @@ export async function addProps(
   add("plant", (o) => onSill(o, sill.x1 - 0.42, { height: 0.2 }));
   add("clock", (o) => hang(o, shelfX + 0.1, 0.88, wall, 0.17));
   add("clapper", (o) => place(o, min.x - 0.14, back + 0.1, { width: 0.22, rotY: 1.35 })); // imagination side, by the globe
-  add("longhorn", (o) => { // above the map
-    o.rotation.set(Math.PI / 2, 0, -Math.PI / 2, "ZYX"); // face out from the wall, nose down
-    return hang(o, mid, 1.02, wall, 0.2); // a steer skull over the map, DFW style
-  });
-  add("biplane", (o) => onSill(o, sill.x0 + 0.18, { width: 0.24, rotY: 0.5 }));
-  add("rugby", (o) => place(o, room.desk.minX - 0.45, wall + 0.75, { width: 0.28, rotY: -0.4, y: floor, shadow: true }));
-  add("chair", (o) => place(o, min.x - 0.62, front + 0.32, { height: 0.85, rotY: 0.9, y: floor, shadow: true }));
-  add("studiolight", (o) => place(o, room.desk.minX - 0.7, wall + 0.8, { height: 1.6, rotY: 0.7, y: floor, shadow: true })); // by the window, out of the lab's way
-  add("suitcase", (o) => place(o, room.desk.minX - 0.3, wall + 0.3, { width: 0.6, rotY: 0.15, y: floor, shadow: true }));
-  add("skateboard", (o) => place(o, room.desk.minX - 0.12, wall + 0.2, { height: 0.7, y: floor, shadow: true }));
-  // The implementation side: a breadboard mid-build, the meter behind it, the joystick by the keys.
   add("breadboard", (o) => place(o, max.x + 0.58, back + 0.36, { width: 0.15, rotY: -0.3 }));
   add("multimeter", (o) => place(o, max.x + 0.60, back + 0.21, { height: 0.12, rotY: -0.48 }));
   add("joystick", (o) => place(o, max.x + 0.12, max.z + 0.18, { height: 0.11, rotY: -0.3 }));
@@ -1077,7 +1059,7 @@ export async function addProps(
     const down = new Raycaster(new Vector3(labX, floor + 3, labZ), new Vector3(0, -1, 0));
     const tops = [...new Set(down.intersectObject(rack, true).filter((h) => h.face && h.face.normal.y > 0.5).map((h) => Math.round(h.point.y * 1000) / 1000))].sort((a, b) => a - b);
     const along = new Vector3(Math.cos(turn), 0, -Math.sin(turn)); // the rack's width, in the room
-    const onRack = (name: (typeof ORDER)[number], level: number, dx: number, opts: PlaceOpts, lift = 0) => {
+    const onRack = (name: string, level: number, dx: number, opts: PlaceOpts, lift = 0) => {
       const o = byName[name];
       const y = tops[tops.length - 1 - level];
       if (!o || y === undefined) return null;
@@ -1203,54 +1185,6 @@ export async function addProps(
       powerCords(strip, feeds);
     }
   }
-  if (byName.pegboard) {
-    const board = byName.pegboard;
-    board.rotation.y = Math.PI / 2;
-    put("pegboard", hang(board, room.desk.maxX + 0.62, 0.8, wall, 0.42));
-    const tool = (name: (typeof ORDER)[number], x: number, y: number, h: number, tilt = 0) => {
-      const o = byName[name];
-      if (!o) return;
-      // Hung flat on the board, whichever way the model was made: its longest side goes up and
-      // its thinnest side goes against the board.
-      const size = new Box3().setFromObject(o).getSize(new Vector3()).toArray();
-      const axes = [new Vector3(1, 0, 0), new Vector3(0, 1, 0), new Vector3(0, 0, 1)];
-      const order = [0, 1, 2].sort((i, j) => size[j] - size[i]);
-      const long = axes[order[0]];
-      const thin = axes[order[2]];
-      const basis = new Matrix4().makeBasis(long.clone().cross(thin), long, thin); // board space → model space
-      o.quaternion.setFromRotationMatrix(basis.transpose());
-      const holder = new Group();
-      holder.add(o);
-      holder.rotation.z = tilt;
-      put(name, hang(holder, room.desk.maxX + 0.62 + x, y, wall + 0.012, h));
-    };
-    tool("pliers", -0.22, 0.86, 0.17, 0.2);
-    tool("screwdrivers", -0.03, 0.82, 0.2);
-    tool("cutters", 0.16, 0.86, 0.15, -0.3);
-    // and on the lower hooks: a roll of tape, a hank of cable, a steel rule
-    const pegX = room.desk.maxX + 0.62;
-    const onPeg = (name: string, o: Object3D, x: number, y: number, h: number, hotspot: ReturnType<typeof spot>) => {
-      const holder = put(name, hang(o, pegX + x, y, wall + 0.012, h));
-      holder.userData.hotspot = hotspot;
-      return holder;
-    };
-    // (the lower board is behind the PVM and the Mac from the chair, so these go along the top)
-    onPeg("tape", tapeRoll(), -0.125, 0.95, 0.058, spot("electrical tape", "black, always black"));
-    onPeg("cableloop", cableLoop("#1f1d1b"), 0.245, 0.985, 0.09, { ...spot("a hank of cable", "coiled, for once"), kind: "swing" });
-    onPeg("rule", steelRule(), 0.06, 0.985, 0.028, spot("steel rule", "twelve inches"));
-  }
-  // A trailing ivy on the end of the wall shelf, the vines hanging over its edge; the Kiev next to it.
-  if (byName.ivy) {
-    const ivy = byName.ivy;
-    const s = 1.7;
-    ivy.scale.setScalar(s);
-    const holder = new Group();
-    holder.add(ivy);
-    holder.position.set(shelfX + 0.33, shelfY + 0.01 * s, wall + 0.1);
-    put("ivy", holder);
-  }
-  add("kiev", (o) => onShelf(o, 0.21, { width: 0.13, rotY: -0.4 }));
-  add("monstera", (o) => place(o, room.desk.minX - 0.3, wall + 0.35, { height: 0.95, y: floor, shadow: true }));
   if (byName.frame) {
     byName.frame.traverse((o) => {
       const mesh = o as Mesh;
@@ -1285,4 +1219,71 @@ export async function addProps(
     if (spill) spill.intensity = 0.35;
   }
   onChange();
+  return async () => {
+    const fittings = await loader.loadAsync("/models/fittings.glb");
+    for (const item of fittings.scenes) byName[item.name] = item;
+    const batch = new Group();
+    into = batch;
+    add("longhorn", (o) => { // above the map
+      o.rotation.set(Math.PI / 2, 0, -Math.PI / 2, "ZYX"); // face out from the wall, nose down
+      return hang(o, mid, 1.02, wall, 0.2); // a steer skull over the map, DFW style
+    });
+    add("biplane", (o) => onSill(o, sill.x0 + 0.18, { width: 0.24, rotY: 0.5 }));
+    add("rugby", (o) => place(o, room.desk.minX - 0.45, wall + 0.75, { width: 0.28, rotY: -0.4, y: floor, shadow: true }));
+    add("chair", (o) => place(o, min.x - 0.62, front + 0.32, { height: 0.85, rotY: 0.9, y: floor, shadow: true }));
+    add("suitcase", (o) => place(o, room.desk.minX - 0.3, wall + 0.3, { width: 0.6, rotY: 0.15, y: floor, shadow: true }));
+    add("skateboard", (o) => place(o, room.desk.minX - 0.12, wall + 0.2, { height: 0.7, y: floor, shadow: true }));
+    // The implementation side: a breadboard mid-build, the meter behind it, the joystick by the keys.
+    if (byName.pegboard) {
+      const board = byName.pegboard;
+      board.rotation.y = Math.PI / 2;
+      put("pegboard", hang(board, room.desk.maxX + 0.62, 0.8, wall, 0.42));
+      const tool = (name: string, x: number, y: number, h: number, tilt = 0) => {
+        const o = byName[name];
+        if (!o) return;
+        // Hung flat on the board, whichever way the model was made: its longest side goes up and
+        // its thinnest side goes against the board.
+        const size = new Box3().setFromObject(o).getSize(new Vector3()).toArray();
+        const axes = [new Vector3(1, 0, 0), new Vector3(0, 1, 0), new Vector3(0, 0, 1)];
+        const order = [0, 1, 2].sort((i, j) => size[j] - size[i]);
+        const long = axes[order[0]];
+        const thin = axes[order[2]];
+        const basis = new Matrix4().makeBasis(long.clone().cross(thin), long, thin); // board space → model space
+        o.quaternion.setFromRotationMatrix(basis.transpose());
+        const holder = new Group();
+        holder.add(o);
+        holder.rotation.z = tilt;
+        put(name, hang(holder, room.desk.maxX + 0.62 + x, y, wall + 0.012, h));
+      };
+      tool("pliers", -0.22, 0.86, 0.17, 0.2);
+      tool("screwdrivers", -0.03, 0.82, 0.2);
+      tool("cutters", 0.16, 0.86, 0.15, -0.3);
+      // and on the lower hooks: a roll of tape, a hank of cable, a steel rule
+      const pegX = room.desk.maxX + 0.62;
+      const onPeg = (name: string, o: Object3D, x: number, y: number, h: number, hotspot: ReturnType<typeof spot>) => {
+        const holder = put(name, hang(o, pegX + x, y, wall + 0.012, h));
+        holder.userData.hotspot = hotspot;
+        return holder;
+      };
+      // (the lower board is behind the PVM and the Mac from the chair, so these go along the top)
+      onPeg("tape", tapeRoll(), -0.125, 0.95, 0.058, spot("electrical tape", "black, always black"));
+      onPeg("cableloop", cableLoop("#1f1d1b"), 0.245, 0.985, 0.09, { ...spot("a hank of cable", "coiled, for once"), kind: "swing" });
+      onPeg("rule", steelRule(), 0.06, 0.985, 0.028, spot("steel rule", "twelve inches"));
+    }
+    // A trailing ivy on the end of the wall shelf, the vines hanging over its edge; the Kiev next to it.
+    if (byName.ivy) {
+      const ivy = byName.ivy;
+      const s = 1.7;
+      ivy.scale.setScalar(s);
+      const holder = new Group();
+      holder.add(ivy);
+      holder.position.set(shelfX + 0.33, shelfY + 0.01 * s, wall + 0.1);
+      put("ivy", holder);
+    }
+    add("kiev", (o) => onShelf(o, 0.21, { width: 0.13, rotY: -0.4 }));
+    add("monstera", (o) => place(o, room.desk.minX - 0.3, wall + 0.35, { height: 0.95, y: floor, shadow: true }));
+    await prepare(batch);
+    scene.add(...[...batch.children]);
+    onChange();
+  };
 }

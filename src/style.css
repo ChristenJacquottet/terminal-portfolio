@@ -354,6 +354,17 @@ body {
   white-space: nowrap;
 }
 
+.desk-hint select {
+  font: inherit;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--ink-soft);
+  padding: 4px;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
 .desk-hint button {
   background: transparent;
   color: var(--ink);

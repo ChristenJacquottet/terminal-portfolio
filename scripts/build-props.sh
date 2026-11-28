@@ -1,16 +1,15 @@
 #!/usr/bin/env bash
-# Rebuilds public/models/props.glb from the downloads below.
+# Rebuilds the bench and peripheral fitting packs from the downloads below.
 #   scripts/build-props.sh path/to/downloads
 # Poly Haven (CC0): <dir>/<id>/<id>_2k.gltf (https://polyhaven.com/a/<id>); 2K for the props the camera gets
 # close to (their budgets are in scripts/props-budget.mjs). The others are still 1K.
 # Sketchfab (CC BY, credited in src/credit.ts): <dir>/sketchfab/<name>.glb, the 1k-texture glb download.
-# The order matters: src/props.ts and scripts/optimize-props.mjs read the merged scenes in this order.
+# The order matters: scripts/props-budget.mjs and scripts/optimize-props.mjs read the merged scenes in this order.
 set -euo pipefail
 export PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1
 src="${1:?usage: scripts/build-props.sh path/to/downloads}"
 props=(
   "lamp|desk_lamp_arm_01/desk_lamp_arm_01_2k.gltf"
-  "cassette|portable_cassette_player/portable_cassette_player_2k.gltf"
   "pens|stationery_supplies/stationery_supplies_2k.gltf"
   "spectacles|round_spectacles/round_spectacles_2k.gltf"
   "duck|rubber_duck_toy/rubber_duck_toy_2k.gltf"
@@ -26,7 +25,6 @@ props=(
   "skateboard|sketchfab/cruiser.glb"
   "clapper|sketchfab/clapper.glb"
   "biplane|sketchfab/biplane.glb"
-  "studiolight|sketchfab/spotlight.glb"
   "chair|sketchfab/chair.glb"
   "suitcase|sketchfab/suitcase.glb"
   "breadboard|sketchfab/breadboard.glb"
@@ -70,5 +68,6 @@ for entry in "${props[@]}"; do
 done
 for pid in "${pids[@]+"${pids[@]}"}"; do wait "$pid"; done
 
-node scripts/optimize-props.mjs "$tmp" public/models/props.glb
-ls -lh public/models/props.glb
+node scripts/optimize-props.mjs "$tmp" "$tmp/props.glb"
+node scripts/split-props.mjs "$tmp/props.glb"
+ls -lh public/models/{bench,fittings}.glb

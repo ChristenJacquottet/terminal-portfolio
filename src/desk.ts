@@ -18,6 +18,7 @@ import {
   CanvasTexture,
   Color,
   Float32BufferAttribute,
+  Frustum,
   Group,
   HemisphereLight,
   type Material,
@@ -54,6 +55,7 @@ import { CSS3DObject, CSS3DRenderer } from "three/examples/jsm/renderers/CSS3DRe
 import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { cabinStations, stations, type CabinStation } from "./cabin-stations";
 import { bus } from "./bus";
 import { MODEL_CREDIT } from "./credit";
 import { editing, locked } from "./layout";
@@ -61,7 +63,7 @@ import { fileName, projects } from "./content";
 import { display, findFile } from "./fs";
 import type { Cue } from "./audio";
 import { createInteractions, type Drive } from "./interact";
-import { addProps, type Disk } from "./props";
+import { addProps, BENCH_URL, type Disk } from "./props";
 import { ROOM_TEXTURES, buildRoom, loadRoom, type Time } from "./room";
 import { pulses } from "./alive";
 import { features } from "./features";
@@ -92,8 +94,6 @@ export const MODEL = {
   /** Fraction of the glass the terminal covers; the rest is theme background under the glass. */
   inset: 0.93,
 };
-
-const PROPS_URL = "/models/props.glb";
 
 // Shared in-flight prefetches populate THREE.Cache so an `exit` mid-prefetch reuses the download.
 Cache.enabled = true;
@@ -163,7 +163,7 @@ function parseGltfCached(url: string, lowPriority: boolean): Promise<GLTF | null
 /** Starts downloading the desk's files at low priority (network only; parsing waits for idle). */
 export function preloadDeskFiles() {
   void fetchBinaryCached(MODEL.url, true);
-  void fetchBinaryCached(PROPS_URL, true);
+  void fetchBinaryCached(BENCH_URL, true);
   for (const url of ROOM_TEXTURES) void fetchImageCached(url, true);
 }
 
@@ -180,7 +180,7 @@ export function prefetchDesk(onProgress?: (fraction: number) => void): Promise<v
   };
   const texWeight = 0.11 / ROOM_TEXTURES.length;
   parsedModelJob ??= parseGltfCached(MODEL.url, true);
-  parsedPropsJob ??= parseGltfCached(PROPS_URL, true);
+  parsedPropsJob ??= parseGltfCached(BENCH_URL, true);
   warmJob = Promise.all([
     MeshoptDecoder.ready,
     parsedModelJob.then(() => step(0.28)),
@@ -199,7 +199,7 @@ export type Desk = {
   sitDown(): Promise<void>;
   setGlow(fg: string): void;
   hasModel: boolean;
-  /** Everything on the desk loaded and prepared: step back only after this, so nothing pops in. */
+  /** The opening view is ready to show. */
   ready: Promise<void>;
 };
 
@@ -215,9 +215,10 @@ function featuredDisks(): Disk[] {
 }
 
 /** Every texture on the materials under `root`, to upload before they are first drawn. */
-function textures(root: Object3D) {
+function textures(root: Object3D, view?: Frustum) {
   const found = new Set<Texture>();
-  root.traverse((o) => {
+  root.traverseVisible((o) => {
+    if (view && (o as Mesh).isMesh && !view.intersectsObject(o)) return;
     const material = (o as Mesh).material;
     for (const m of Array.isArray(material) ? material : material ? [material] : []) {
       for (const value of Object.values(m)) if ((value as Texture | null)?.isTexture) found.add(value as Texture);
@@ -669,13 +670,13 @@ export async function createDesk(opts: {
   const roomLoader = new GLTFLoader();
   roomLoader.setMeshoptDecoder(MeshoptDecoder);
   MeshoptDecoder.useWorkers?.(2); // decode the models off the main thread
-  // Start props.glb in parallel if idle prefetch hasn't pre-parsed it yet, and reuse any in-flight work.
+  // Start the bench pack in parallel if idle prefetch hasn't pre-parsed it yet, and reuse any in-flight work.
   const preParsedProps = parsedPropsJob;
   parsedPropsJob = null;
-  const propsPrefetch = preParsedProps ? null : fetchBinaryCached(PROPS_URL, false);
+  const propsPrefetch = preParsedProps ? null : fetchBinaryCached(BENCH_URL, false);
   const rawLoadAsync = roomLoader.loadAsync.bind(roomLoader);
   roomLoader.loadAsync = async (url, onProgress) => {
-    if (url === PROPS_URL) {
+    if (url === BENCH_URL) {
       if (preParsedProps) {
         const readyGltf = await preParsedProps;
         if (readyGltf) {
@@ -710,7 +711,7 @@ export async function createDesk(opts: {
   // day, swapped as the light turns (see `captureRoom`). Until the first capture it's black, at
   // the capture's size, so the shaders compile once.
   const atmosphere = post ? createAtmosphere(scene, room, lamp, renderer.getPixelRatio()) : null;
-  const probe = post ? createRoomProbe(renderer, scene, new Vector3(0.1, 0.32, screen.center.z + 0.3)) : null;
+  const probe = post ? createRoomProbe(renderer, scene, new Vector3(0.1, 0.32, screen.center.z + 0.3), 64) : null;
   const envs: Record<Time, WebGLRenderTarget | null> = { dusk: probe?.blank() ?? null, night: null };
   if (envs.dusk) scene.environment = envs.dusk.texture;
   /** Dusk (the default: warm, everything reads) or the middle of the night (the window toggles it). */
@@ -744,18 +745,17 @@ export async function createDesk(opts: {
   };
   /**
    * Captures the room into the environment for `which` time of day, as lit right now (twice: the
-   * second sees the first one's bounce). After load, at the end of a change of light, on idle for
-   * the other time of day. A few small renders, never per frame.
+   * second sees the first bounce). Startup uses one pass. Subsequent light changes use two.
    */
   let capturedKey = "";
   const stale: Record<Time, boolean> = { dusk: true, night: true };
   const lightKey = () => `${lamp.intensity.toFixed(2)}|${spill.intensity.toFixed(2)}`;
-  const captureRoom = (which: Time) => {
+  const captureRoom = (which: Time, passes = 2) => {
     if (!probe || darken) return;
     const was = timeK;
     applyTime(which === "night" ? 1 : 0);
     const hide = atmosphere ? [atmosphere.object] : [];
-    for (let i = 0; i < 2; i++) {
+    for (let i = 0; i < passes; i++) {
       envs[which] = probe.capture(envs[which], hide);
       scene.environment = envs[which]!.texture;
     }
@@ -832,6 +832,8 @@ export async function createDesk(opts: {
   const worldH = SCREEN_H * scale;
 
   // A near plane of 5 cm (the close-up is ~30 cm away) keeps depth precision for the flat props.
+  const quarters = cabinStations(scene, room.floorY, room.wallZ, request);
+  let station: CabinStation | null = null;
   const camera = new PerspectiveCamera(FOV, 1, 0.05, 30);
   const bounds = new Box3().setFromObject(root);
   const size = bounds.getSize(new Vector3());
@@ -853,6 +855,7 @@ export async function createDesk(opts: {
     vw = window.innerWidth;
     vh = window.innerHeight;
     camera.aspect = vw / vh;
+    if (station && !transitioning) camera.fov = vw < vh ? 72 : 61;
     camera.updateProjectionMatrix();
     renderer.setSize(vw, vh);
     css.setSize(vw, vh);
@@ -862,7 +865,7 @@ export async function createDesk(opts: {
     // At the desk, keep where you're looking but sit where the new window shape puts you.
     if (monitorFocused && !transitioning) place(monitorPose());
     if (!seated && !transitioning && !editing && look.active) {
-      sitAt(widePose());
+      sitAt(station ? quarters.pose(station) : widePose());
       const [minYaw, maxYaw] = yawBounds();
       look.toYaw = clamp(look.toYaw, minYaw, maxYaw);
       updateLook(true);
@@ -946,7 +949,7 @@ export async function createDesk(opts: {
     look.pitch += (look.toPitch - look.pitch) * k;
     look.lean += (look.toLean - look.lean) * k;
     // Lift the sightline from the keyboard to the equipment as the chair turns right.
-    const rackTurn = clamp(-look.yaw / 0.9, 0, 1);
+    const rackTurn = station ? 0 : clamp(-look.yaw / 0.9, 0, 1);
     lookEuler.set(look.basePitch + look.pitch + 0.15 * rackTurn * rackTurn, look.baseYaw + look.yaw, 0);
     camera.quaternion.setFromEuler(lookEuler);
     forward.set(0, 0, -1).applyQuaternion(camera.quaternion);
@@ -956,6 +959,7 @@ export async function createDesk(opts: {
   const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
   // Portrait screens crop horizontally, so let the head turn a bit further left to the window and right to the rack.
   const yawBounds = () => {
+    if (station) return [-1.3, 1.3] as const;
     const yawToRack = Math.atan2(room.desk.maxX + 0.5 - look.head.x, look.head.z - (room.wallZ + 0.22));
     return [-Math.max(LIMITS.yaw, yawToRack + look.baseYaw), camera.aspect < 1 ? 0.72 : LIMITS.yaw] as const;
   };
@@ -1012,6 +1016,7 @@ export async function createDesk(opts: {
     // Seated, the canvas is hidden: motions still finish, but nothing is drawn that nobody sees.
     if (!host.hidden) {
       const t0 = performance.now();
+      if (!transitioning && !seated && !darken) quarters.visible(camera);
       renderer.render(scene, camera);
       css.render(scene, camera);
       const server = props.get("server");
@@ -1152,6 +1157,7 @@ export async function createDesk(opts: {
   let framedNow = false;
   const frameOn = async (target: Object3D | Box3, o: { dir?: Vector3; fill?: number; ms?: number } = {}) => {
     if (seated || transitioning) return;
+    station = null;
     setMonitorFocus(false);
     const box = target instanceof Box3 ? target.clone() : new Box3().setFromObject(target);
     const centre = box.getCenter(new Vector3());
@@ -1171,10 +1177,14 @@ export async function createDesk(opts: {
   };
   const unframe = async (ms = 900) => {
     if (!framedNow || seated || transitioning) return;
+    const wasExploring = !!station;
+    if (look.active) camTarget.copy(lookTarget());
+    look.active = false;
+    station = null;
     setMonitorFocus(false);
     transitioning = true;
     const wide = widePose();
-    await fly(wide, ms, glass.uniforms.uStrength.value as number, ease);
+    await fly(wide, ms, glass.uniforms.uStrength.value as number, ease, FOV, wasExploring);
     sitAt(wide);
     Object.assign(look, { active: true, yaw: 0, pitch: 0, lean: 0, toYaw: 0, toPitch: 0, toLean: 0 });
     updateLook(true);
@@ -1187,9 +1197,10 @@ export async function createDesk(opts: {
     if (e.key === "Escape" && framedNow && !seated && !transitioning) void unframe();
   });
 
-  const fly = (to: { position: Vector3; target: Vector3 }, ms: number, glassTo = glass.uniforms.uStrength.value as number, curve = ease) =>
+  const fly = (to: { position: Vector3; target: Vector3 }, ms: number, glassTo = glass.uniforms.uStrength.value as number, curve = ease, fov = FOV, alongAisle = false) =>
     new Promise<void>((done) => {
       const glassFrom = glass.uniforms.uStrength.value as number;
+      const startFov = camera.fov;
       const fromPos = camera.position.clone();
       const fromTarget = (controls ? controls.target : camTarget).clone();
       const fromOffset = fromPos.clone().sub(fromTarget);
@@ -1208,6 +1219,11 @@ export async function createDesk(opts: {
         controls?.target.copy(camTarget);
         direction.lerpVectors(fromOffset, toOffset, e).normalize();
         camera.position.copy(camTarget).addScaledVector(direction, fromDistance * (toDistance / fromDistance) ** e);
+        if (alongAisle) camera.position.lerpVectors(fromPos, to.position, e);
+        if (startFov !== fov) {
+          camera.fov = lerp(startFov, fov, e);
+          camera.updateProjectionMatrix();
+        }
         camera.lookAt(camTarget);
         // The glass comes in over the first third of the flight out, and goes in the last third back.
         const g = glassTo > glassFrom ? Math.min(1, t * 3) : Math.max(0, (t - 2 / 3) * 3);
@@ -1365,6 +1381,38 @@ export async function createDesk(opts: {
   const backButton = document.createElement("button");
   backButton.textContent = "Back to desk";
   backButton.onclick = () => void unframe();
+  const stationSelect = document.createElement("select");
+  stationSelect.setAttribute("aria-label", "Explore cabin");
+  stationSelect.add(new Option("Explore cabin", ""));
+  stationSelect.options[0].disabled = true;
+  for (const [key, view] of Object.entries(stations)) stationSelect.add(new Option(view.label, key));
+  stationSelect.onchange = () => void visitStation(stationSelect.value as CabinStation);
+  async function visitStation(key: CabinStation) {
+    if (!stations[key] || transitioning || seated || darken) return;
+    transitioning = true;
+    stationSelect.disabled = true;
+    try {
+      await quarters.load(key);
+      if (look.active) camTarget.copy(lookTarget());
+      look.active = false;
+      framedNow = true;
+      station = key;
+      touch.leave();
+      setMonitorFocus(false);
+      const pose = quarters.pose(key);
+      await fly(pose, 1050, 1, ease, camera.aspect < 1 ? 72 : 61, true);
+      sitAt(pose);
+      Object.assign(look, { active: true, yaw: 0, pitch: 0, lean: 0, toYaw: 0, toPitch: 0, toLean: 0 });
+      updateLook(true);
+    } catch (err) {
+      console.warn("Could not open cabin station", err);
+    } finally {
+      transitioning = false;
+      stationSelect.disabled = false;
+      updateHint();
+      request();
+    }
+  }
   const enterButton = document.createElement("button");
   enterButton.textContent = "Enter terminal";
   enterButton.onclick = () => void api.sitDown();
@@ -1376,10 +1424,12 @@ export async function createDesk(opts: {
   }
   function updateHint() {
     if (!hint) return;
+    stationSelect.value = station ?? "";
     if (restoreStrip) hint.replaceChildren(restoreButton);
     else if (monitorFocused) hint.replaceChildren(backButton, enterButton);
+    else if (station) hint.replaceChildren(stationSelect, backButton);
     else if (framedNow) hint.replaceChildren(backButton);
-    else hint.textContent = wideHint;
+    else hint.replaceChildren(document.createTextNode(wideHint + " "), stationSelect);
   }
   setMonitorFocus(false);
 
@@ -1389,6 +1439,7 @@ export async function createDesk(opts: {
       camTarget.copy(lookTarget());
       look.active = false;
     }
+    station = null;
     transitioning = true;
     framedNow = true;
     touch.leave();
@@ -1472,7 +1523,7 @@ export async function createDesk(opts: {
           if (touch.leave()) request();
         }, 1800);
       }
-    } else if (framedNow) void unframe(); // a click on nothing comes back from a close-up
+    } else if (framedNow && !station) void unframe(); // a click on nothing comes back from a close-up
   });
   // Hover: one raycast per frame at most, however fast the pointer moves.
   let hoverEvent: PointerEvent | null = null;
@@ -1583,7 +1634,6 @@ export async function createDesk(opts: {
     },
   });
 
-  let nightWarmed = false;
   const api: Desk = {
     hasModel: Boolean(loaded),
     get ready() {
@@ -1637,24 +1687,14 @@ export async function createDesk(opts: {
       transitioning = false;
       showCaption();
       void touch.warm(6000); // the coffee's still warm
-      if (!nightWarmed) {
-        nightWarmed = true;
-        const scheduleWarmNight = () => {
-          const onIdle = window.requestIdleCallback ?? ((fn: () => void) => setTimeout(fn, 900));
-          onIdle(() => {
-            if (running || transitioning) scheduleWarmNight();
-            else {
-              if (!envs.night || stale.night) captureRoom("night"); // so the first click on the window doesn't pop
-            }
-          });
-        };
-        scheduleWarmNight();
-      }
+      (window.requestIdleCallback ?? window.setTimeout)(() => void loadFittings());
+
     },
 
     async sitDown() {
       if (restoreStrip || seated || transitioning) return;
       transitioning = true;
+      station = null;
       framedNow = false;
       setMonitorFocus(false);
       touch.leave();
@@ -1799,24 +1839,33 @@ export async function createDesk(opts: {
   const props = new Map<string, Object3D>();
   resize();
   place(closeUp());
-  const prepare = async (_arrivals: Object3D) => {
+  let fittingsStarted = false;
+  const prepare = async (arrivals: Object3D) => {
     let count = 0;
     let slice = performance.now();
-    for (const [name, prop] of props) {
-      mergeStaticLeaves(name, prop);
+    for (const prop of arrivals.children) {
+      mergeStaticLeaves(prop.name, prop);
       count++;
       if (performance.now() - slice > 8) {
-        opts.onProgress(0.55 + 0.14 * count / props.size, "assembling props");
+        if (!fittingsStarted) opts.onProgress(0.55 + 0.14 * count / arrivals.children.length, "assembling props");
         await nextFrame();
         slice = performance.now();
       }
     }
   };
   const propsReady = loaded ? addProps(scene, roomLoader, bounds, room, lamp, props, prepare, relight, featuredDisks(), (f) => opts.onProgress(0.18 + f * 0.37, f >= 1 ? "assembling props" : "loading props")) : Promise.resolve();
+  let fittingsJob: Promise<void> | undefined;
+  function loadFittings() {
+    fittingsStarted = true;
+    return fittingsJob ??= propsReady.then(load => load?.()).catch(err => {
+      fittingsJob = undefined;
+      console.warn("Cabin fittings could not load", err);
+    });
+  }
   // `?edit`: the layout editor, for arranging the props (never loaded otherwise).
   if (editing && loaded && controls) {
     const editorControls = controls;
-    void Promise.all([import("./editor"), propsReady]).then(([{ startEditor }]) =>
+    void Promise.all([import("./editor"), loadFittings()]).then(([{ startEditor }]) =>
       startEditor({ scene, camera, canvas, controls: editorControls, props, request: relight, sitDown: () => api.sitDown(), wideDistance }),
     );
   }
@@ -1912,11 +1961,20 @@ export async function createDesk(opts: {
     renderer.setRenderTarget(bound);
     await compiling;
     opts.onProgress(0.83, "uploading textures");
-    await uploadTextures(all);
+    const firstView = camera.clone();
+    const wide = widePose();
+    firstView.position.copy(wide.position);
+    firstView.lookAt(wide.target);
+    firstView.updateMatrixWorld();
+    const firstFrustum = new Frustum().setFromProjectionMatrix(
+      new Matrix4().multiplyMatrices(firstView.projectionMatrix, firstView.matrixWorldInverse),
+    );
+    scene.updateMatrixWorld();
+    await uploadTextures(textures(scene, firstFrustum));
     opts.onProgress(0.97, "lighting room");
     await nextFrame();
     renderer.shadowMap.needsUpdate = true;
-    captureRoom(time); // the room, lit, as its own environment
+    captureRoom(time, 1); // one reflection pass before first paint
     while (blobUrls.length) URL.revokeObjectURL(blobUrls.pop()!);
     opts.onProgress(1, "ready");
   });

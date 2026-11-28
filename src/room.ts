@@ -148,8 +148,9 @@ export function buildRoom(
   scene.traverse((o) => {
     const mesh = o as Mesh;
     if (!mesh.isMesh || mesh === cabin.view || (mesh.material as MeshStandardMaterial).transparent) return;
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
+    // The desk shadow cameras cover the operator station. The long deck extends past their edges.
+    mesh.castShadow = !mesh.userData.deck;
+    mesh.receiveShadow = !mesh.userData.deck;
   });
 
 

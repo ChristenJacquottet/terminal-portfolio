@@ -12,15 +12,17 @@ That leaves room for people on both ends of the radio to matter. Eleven people n
 
 ## Inside the vehicle
 
-Use the long hull to order the space. The bench runs along the side, so looking up takes in the porthole and looking right finds the rack within arm’s reach. Behind the operator is the future passage between driving position, berths and galley. The first scene uses the radio bench and two berths. The warm task light marks a place where repairs happen. Cold light comes through real circular openings. The original globe, photographs, cassette player and project disks are things this particular operator brought aboard.
+![No. 23 interior cutaway and views from the wheelhouse, bunks, galley, greenhouse and service hatch](cabin-interior.jpg)
 
-The bunker reference suggests an improvised broadcast installation. Mount the receiver on a bolted shelf, run heat along the hull and give the controls enough space for a hand. One repaired circuit that feeds both a lamp and a radio tells more about scarcity than a wall of warning signs.
+Type `exit`, then use **Explore cabin** to move along the aisle. Drag to look around from each stop. **Back to desk** or Escape returns to the Apple II.
 
-## Extending the prototype
+Nika and Oleg first slept in their coats and ate from tins. The bunks now have stitched covers, individual rolls and lockers. They take opposite radio and engine watches. A folded seat at the galley leaves room for boots in the passage. Two enamel cups sit by the stove.
 
-- `src/cabin.ts` owns the hull in metres, openings, berths, receiver and watch plate. The room origin stays at the radio bench. An exterior shell can align to that origin when a route takes the visitor outside.
-- `src/room.ts` still supplies the desk bounds, window position and lighting to the existing interactions. The cabin receives one exterior texture and blends its exposure with the watch. The polar landscape is an original generated matte. A second biome would need its own horizon, light colours and weather sound together.
-- The first walkable route should be bench → berth → driver’s seat. Use those three standing positions to test aisle clearance, low overheads and the view back to the Apple II on a phone before adding unrestricted movement. Desktop terminal focus, touch look and picking already have their own input paths.
+The galley stores the calories. The grow rack supplies fresh greens from six shallow trays, with a return tank underneath. The crew keeps seed for Relay Six. Drinking water and wash water occupy separate strapped tanks by the rear service hatch. A heater, flue and spare batteries share the dry side of the service bay. A pulled-back curtain screens the toilet across the aisle. In the wheelhouse, the driver can compare the route card and the flags outside before committing both tracks to a crossing.
+
+## Scene and loading
+
+The hull, glazing and berths live in `src/cabin.ts`. The Apple II and bench pack load for the opening view. Peripheral fittings arrive after the camera settles. The camera tests the bounds of each cabin bay before importing and building its geometry. Choosing a station prepares it before the camera moves. Each bay shares a painted finish and batches fixed objects for frustum culling. The polar horizon and its dusk-to-night blend are shared between the portholes and the windshield.
 
 ## Model references
 

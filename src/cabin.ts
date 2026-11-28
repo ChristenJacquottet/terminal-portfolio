@@ -38,6 +38,30 @@ function skin() {
   return texture;
 }
 
+/** Bolted sheets of salvaged anti-slip rubber in the aisle. */
+function deckMat() {
+  const c = document.createElement("canvas");
+  c.width = 128; c.height = 256;
+  const g = c.getContext("2d")!;
+  g.fillStyle = "#555b50"; g.fillRect(0, 0, 128, 256);
+  g.lineWidth = 2;
+  for (let row = -1; row < 32; row++) {
+    for (let col = -1; col < 16; col++) {
+      const x = col * 10 + (row % 2) * 5, y = row * 9;
+      const tilt = col % 2 ? -2 : 2;
+      g.strokeStyle = "#41483f";
+      g.beginPath(); g.moveTo(x, y); g.lineTo(x + 4, y + tilt); g.stroke();
+      g.strokeStyle = "#64695c";
+      g.beginPath(); g.moveTo(x, y + 1); g.lineTo(x + 4, y + tilt + 1); g.stroke();
+    }
+  }
+  for (const x of [5,123]) for (const y of [6,250]) {
+    g.fillStyle="#878778"; g.beginPath(); g.arc(x,y,2,0,Math.PI*2); g.fill();
+  }
+  const map = new CanvasTexture(c); map.colorSpace = SRGBColorSpace; map.anisotropy = 4;
+  return new MeshStandardMaterial({ map, roughness: .94 });
+}
+
 /** A painted maker's plate. The radio log can also be read from the terminal. */
 function radioPlate() {
   const c = document.createElement("canvas"); c.width = 896; c.height = 196;
@@ -109,10 +133,15 @@ export function buildCabin(scene: Scene, floorY: number, wallZ: number, polarVie
     bulkhead.holes.push(hole);
   }
   shell.add(new Mesh(new ShapeGeometry(bulkhead, 48), enamel));
-  box(length, 0.035, width, 0, floorY - 0.018, width / 2, steel);
+  const deck = metal("#48504b");
+  box(length, 0.035, width, 0, floorY - 0.018, width / 2, deck);
   box(length, 0.04, width, 0, roof, width / 2, metal("#a9ac97"));
   box(0.06, height, width, length / 2, floorY + height / 2, width / 2, steel);
-  box(0.06, height, width, -length / 2, floorY + height / 2, width / 2, steel);
+  // The original forward glazing spans the cab. Solid kick and header panels frame it.
+  box(.06, 1.12, width, -length/2, floorY+.56, width/2, steel);
+  box(.06, .16, width, -length/2, roof-.08, width/2, steel);
+  for (const z of [.06, width-.06]) box(.06,.82,.12,-length/2,floorY+1.53,z,steel);
+
   box(length, height, 0.04, 0, floorY + height / 2, width, steel);
   box(length, 0.15, 0.014, 0, 0.035, 0.009, vermilion);
   box(length, 0.012, 0.016, 0, 0.13, 0.010, alloy);
@@ -166,14 +195,40 @@ export function buildCabin(scene: Scene, floorY: number, wallZ: number, polarVie
   for (let i = -2; i <= 2; i++) box(0.006, 0.056, 0.052, -0.81 + i * 0.051, 0.998, 0.084, steel);
   const watchLight = new PointLight("#ffe3ae", 0.56, 1.9, 1.45);
   watchLight.position.set(-0.81, 0.94, 0.23); shell.add(watchLight);
+  // Ribbed deck plates down the passage, kick panels, cable trunk and guarded overhead lamps.
+  const casePaint = metal("#78816c"), tread = deckMat(), lining = metal("#b6b39d");
+  for (let i=0;i<13;i++) {
+    const x=-3.9+i*.65;
+    box(.633,.014,1.22,x,floorY+.008,1.78,tread);
+    for (const z of [1.225,2.335]) box(.59,.003,.012,x,floorY+.017,z,alloy);
+    box(.633,.89,.026,x,floorY+.46,3.466,casePaint);
+    box(.633,.96,.022,x,floorY+1.48,3.468,lining);
+    for (const y of [.16,1.84]) box(.051,.03,.038,x+.27,floorY+y,3.45,alloy);
+  }
+  box(8.43,.061,.064,0,floorY+1.96,3.40,steel);
+  for (const x of [-3.1,-.9,1.1,3.3]) {
+    box(.48,.065,.16,x,roof-.06,2.29,steel);
+    box(.43,.036,.12,x,roof-.103,2.29,shade);
+    for (const dx of [-.16,0,.16]) box(.012,.043,.134,x+dx,roof-.105,2.29,steel);
+  }
+  for (const [x, hue] of [[-2.35,"#ffdab1"],[2.14,"#eef1d1"]] as const) {
+    const light = new PointLight(hue, 4.1, 5.5, 1.65);
+    light.position.set(x,roof-.16,2.29); shell.add(light);
+  }
   // Structural members share materials and stay fixed. Batch them without merging the hotspots.
   for (const [material, parts] of panels) {
-    shell.add(new Mesh(mergeGeometries(parts), material));
+    const mesh = new Mesh(mergeGeometries(parts), material);
+    mesh.userData.deck = material === deck || material === tread;
+    shell.add(mesh);
     for (const part of parts) part.dispose();
   }
   const landscape = new MeshBasicMaterial({ map: polarView, color: polarView ? "#ffffff" : "#a9c4d1", toneMapped: false });
   const view = new Mesh(new PlaneGeometry(7.2, 4.05), landscape);
   view.position.set(-0.46, 0.91, -1.2); shell.add(view);
+  const windscreen = new Mesh(new PlaneGeometry(3.6,1.24),landscape);
+  windscreen.rotation.y = Math.PI/2;
+  windscreen.position.set(-4.32,floorY+1.55,1.75);
+  shell.add(windscreen);
   const dusk = new Color(polarView ? "#ffffff" : "#a9c4d1"), night = new Color("#536e98");
   return {
     frame, view, x: ports[1], y: portY, radius,

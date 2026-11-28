@@ -90,7 +90,6 @@ const CAPTIONS: Record<string, Say> = {
   biplane: ["Toy plane", "propeller and all"],
   rugby: ["Rugby ball", "the oval one"],
   chair: (desk) => ["My chair", desk.seated() ? "taken" : "empty while you stand"],
-  studiolight: ["Spotlight", "shooting"],
   suitcase: ["The suitcase", "always moving"],
   skateboard: ["Skateboard", "I built them for friends"],
   breadboard: ["Breadboard", "something half wired"],

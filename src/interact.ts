@@ -50,7 +50,6 @@ const BY_NAME: Record<string, Hotspot> = {
   super8: { kind: "wiggle", label: "Super 8", hint: "filmmaking" },
   camera: { kind: "flash", label: "35mm camera", hint: "photography" },
   clapper: { kind: "hop", label: "the slate", hint: "directing" },
-  studiolight: { kind: "wiggle", label: "spotlight", hint: "shooting" },
   notebook: { kind: "wiggle", label: "graph-paper notebook", hint: "computer science" },
   card: { kind: "hop", label: "CAN YOU HEAR ME?", hint: "the call where the mic died" },
   racquet: { kind: "wiggle", label: "a wooden racquet", hint: "tennis at Taylor" },
@@ -115,7 +114,7 @@ const MATERIAL_CUES: Record<string, string> = {
 
 // These actions require the room's mains or would navigate to the unpowered Apple II.
 const POWERED = new Set(["computer", "lamp", "time", "server", "ups", "nas", "picluster", "soldering",
-  "games-arcade", "breadboard", "slate", "keylight"]);
+  "games-arcade", "breadboard", "slate"]);
 
 /** The defaults, with every feature's labels over them (src/features). */
 const HOTSPOTS: Record<string, Hotspot> = { ...BY_NAME, ...featureHotspots };
