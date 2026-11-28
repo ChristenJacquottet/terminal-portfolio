@@ -212,6 +212,7 @@ window.matchMedia("(max-width: 560px)").addEventListener("change", () => apply()
 export function restoreDisplay() {
   const saved = store.get("cjsh.theme");
   current = THEMES.find((t) => t.name === saved) ?? THEMES[0];
-  crt = store.get("cjsh.crt") === "on";
+  const savedCrt = store.get("cjsh.crt");
+  crt = savedCrt ? savedCrt === "on" : !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   apply();
 }

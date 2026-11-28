@@ -321,7 +321,7 @@ export const COMMANDS: Record<string, Command> = {
   },
 
   crt: {
-    desc: "turn terminal text glow on or off",
+    desc: "toggle terminal scanlines and text glow",
     usage: "crt [on | off]",
     run: (args) => {
       const arg = operands(args)[0];

@@ -4,6 +4,8 @@ The Apple II is the radio operator’s terminal aboard a recommissioned Kharkivc
 
 ![The radio bench, expedition plate, and illuminated relay hut seen through the porthole](relay-23.jpg)
 
+[Follow the build from the original desk to the walkable interior.](visual-history.md)
+
 ## What happened to the world
 
 Relay Six lost a meter. A dispatch system inferred that everyone had left, reassigned its fuel, and made that decision look increasingly reasonable with every subsequent week of missing data. The people aboard No. 23 can still use that system to draft a crossing. Someone walks the flags before the driver trusts the route. Someone has to hear a voice before the operator closes an entry.

@@ -48,6 +48,15 @@ body {
   transform-origin: 0 0;
 }
 
+/* The screen moves into a CSS3D tube on exit. Draw native-size lines only while seated. */
+[data-crt="on"] #desk[hidden] ~ #screen::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(to bottom, rgb(0 0 0 / 22%) 0 1px, transparent 1px 3px);
+}
+
 .term {
   position: relative;
   height: 100%;
