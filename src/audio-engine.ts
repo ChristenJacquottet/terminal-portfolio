@@ -508,6 +508,12 @@ export function playCue(cue: Cue, vol: number, rate: number, pan = 0) {
       playSample(URLS.tapeIn, 0.42 * vol, rate * [0.96, 1, 1.045][v] * jitter(25), out);
       break;
     }
+    case "tapeMotor": {
+      // A small capstan settling up to speed, heard briefly through the plastic case.
+      td(c, out, 0.35, 340 * rate, 520 * rate, 0.025 * vol, "triangle", 0, 980, 0.055);
+      nb(c, out, pinkBuf, 0.42, 0.035 * vol, 1600, 1.1, 0.035, 2200, 0.075);
+      break;
+    }
     case "tapeButton": {
       const v = pick(cue, 2);
       playSample(v ? URLS.tapeBtn2 : URLS.tapeBtn1, 0.44 * vol, rate * jitter(40), out);
